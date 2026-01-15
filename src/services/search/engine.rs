@@ -1,4 +1,5 @@
 use super::indexer::IndexManager;
+#[cfg(not(target_os = "macos"))]
 use super::ripgrep::RipgrepBackend;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
@@ -9,7 +10,7 @@ use tokio::task::JoinHandle;
 
 pub struct SearchEngine {
     index_manager: Arc<IndexManager>,
-    ripgrep_backend: Arc<RipgrepBackend>,
+    root_backend: Arc<dyn SearchBackend>,
     _watcher: FileWatcher, // Keep alive
     _watcher_task: JoinHandle<()>,
     progress_rx: tokio::sync::watch::Receiver<f32>,
@@ -18,7 +19,15 @@ pub struct SearchEngine {
 impl SearchEngine {
     pub async fn new() -> Result<Self> {
         let index_manager = Arc::new(IndexManager::new()?);
-        let ripgrep_backend = Arc::new(RipgrepBackend::new(std::path::PathBuf::from("/")));
+
+        #[cfg(target_os = "macos")]
+        let root_backend: Arc<dyn SearchBackend> =
+            Arc::new(super::spotlight::SpotlightBackend::new());
+
+        #[cfg(not(target_os = "macos"))]
+        let root_backend: Arc<dyn SearchBackend> = Arc::new(super::ripgrep::RipgrepBackend::new(
+            std::path::PathBuf::from("/"),
+        ));
 
         // Channel for watcher events
         let (tx, mut rx) = mpsc::channel(100);
@@ -86,7 +95,7 @@ impl SearchEngine {
 
         Ok(Self {
             index_manager,
-            ripgrep_backend,
+            root_backend,
             _watcher: watcher,
             _watcher_task: watcher_task,
             progress_rx,
@@ -107,11 +116,11 @@ impl SearchEngine {
         // Since both backends have synchronous search methods currently, we should wrap in spawn_blocking.
 
         let index_manager = self.index_manager.clone();
-        let ripgrep_backend = self.ripgrep_backend.clone();
+        let root_backend = self.root_backend.clone();
 
         tokio::task::spawn_blocking(move || match scope {
             SearchScope::Home => index_manager.as_ref().search(&query),
-            SearchScope::Root => ripgrep_backend.as_ref().search(&query),
+            SearchScope::Root => root_backend.as_ref().search(&query),
         })
         .await?
     }

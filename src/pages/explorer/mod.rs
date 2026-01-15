@@ -3,22 +3,20 @@ use crate::services::search::{SearchScope, SearchService};
 use crate::ui::components::file_list::FileListDelegate;
 
 use crate::services::syntax::SyntaxService;
+
 use gpui::{
-    px, size, AnyElement, AppContext, Context, Entity, FocusHandle, Focusable, IntoElement, Render,
-    ScrollHandle, Window,
+    px, size, AnyElement, AppContext, AsyncApp, Context, Entity, FocusHandle, Focusable,
+    IntoElement, Render, Window,
 };
 use gpui_component::input::InputState;
 use gpui_component::list::{List, ListEvent};
 use gpui_component::resizable::ResizableState;
 use gpui_component::VirtualListScrollHandle;
 use std::{
-    collections::HashMap,
     rc::Rc,
     sync::Arc,
     time::{Duration, Instant},
 };
-use tokio::runtime::Handle;
-use tokio::task;
 
 mod entries;
 mod search;
@@ -143,7 +141,7 @@ impl ExplorerPage {
         }
     }
 
-    fn trigger_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn trigger_search(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
         if self.search_query.is_empty() {
             self.search_results = None;
             self.apply_filter();
@@ -158,27 +156,37 @@ impl ExplorerPage {
         let query = self.search_query.clone();
         let scope = self.search_scope;
 
-        let handle = Handle::current();
-        let results = task::block_in_place(move || handle.block_on(service.search(query, scope)));
+        cx.spawn(
+            move |this: gpui::WeakEntity<ExplorerPage>, cx: &mut AsyncApp| {
+                let mut cx = cx.clone();
+                async move {
+                    let results = service.search(query, scope).await;
 
-        match results {
-            Ok(res) => {
-                let grouped = search::group_results(res);
-                let entries = search::results_to_entries(&grouped);
+                    this.update(&mut cx, |this, cx| {
+                        match results {
+                            Ok(res) => {
+                                let grouped = search::group_results(res);
+                                let entries = search::results_to_entries(&grouped);
 
-                self.filtered_entries = entries;
-                self.search_results = Some(grouped);
-            }
-            Err(e) => {
-                tracing::error!("Search failed: {}", e);
-                self.search_results = Some(Vec::new());
-                self.filtered_entries = Vec::new(); // Clear filtered entries on search error
-            }
-        }
-        self.is_performing_search = false;
-        self.update_item_sizes();
-        self.update_editor_search(window, cx);
-        cx.notify();
+                                this.filtered_entries = entries;
+                                this.search_results = Some(grouped);
+                            }
+                            Err(e) => {
+                                tracing::error!("Search failed: {}", e);
+                                this.search_results = Some(Vec::new());
+                                this.filtered_entries = Vec::new();
+                            }
+                        }
+                        this.is_performing_search = false;
+                        this.update_item_sizes();
+                        // TODO: Update editor search highlights. Requires &mut Window access which is not available in async callback.
+                        // this.update_editor_search(window, cx);
+                        cx.notify();
+                    })
+                }
+            },
+        )
+        .detach();
     }
 
     fn set_search_scope(&mut self, scope: SearchScope, cx: &mut Context<Self>) {

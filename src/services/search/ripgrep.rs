@@ -20,7 +20,6 @@ impl RipgrepBackend {
 struct MatchStorage {
     results: Arc<Mutex<Vec<SearchResult>>>,
     path: PathBuf,
-    max_results: usize,
 }
 
 impl Sink for MatchStorage {
@@ -36,11 +35,6 @@ impl Sink for MatchStorage {
             .results
             .lock()
             .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Lock poisoned"))?;
-
-        // Check if limit reached
-        if results.len() >= self.max_results {
-            return Ok(false); // Stop searching this file
-        }
 
         results.push(SearchResult {
             path: self.path.clone(),
@@ -63,20 +57,7 @@ impl SearchBackend for RipgrepBackend {
             .git_ignore(true)
             .build();
 
-        const MAX_RESULTS: usize = 100;
-
         for result in walker {
-            // Check if we've hit the result limit
-            {
-                let current_results = results
-                    .lock()
-                    .map_err(|_| anyhow::anyhow!("Lock poisoned"))?;
-                if current_results.len() >= MAX_RESULTS {
-                    tracing::info!("Search hit result limit of {}", MAX_RESULTS);
-                    break;
-                }
-            }
-
             match result {
                 Ok(entry) => {
                     if entry.file_type().map_or(false, |ft| ft.is_file()) {
@@ -85,7 +66,6 @@ impl SearchBackend for RipgrepBackend {
                         let sink = MatchStorage {
                             results: results_clone,
                             path: path.clone(),
-                            max_results: MAX_RESULTS,
                         };
 
                         let mut searcher = Searcher::new();

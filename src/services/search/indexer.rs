@@ -338,7 +338,8 @@ impl super::backend::SearchBackend for IndexManager {
         );
         let query = query_parser.parse_query(query_str)?;
 
-        let top_docs = searcher.search(&query, &tantivy::collector::TopDocs::with_limit(50))?;
+        // Removed limit from TopDocs to return all results
+        let top_docs = searcher.search(&query, &tantivy::collector::TopDocs::with_limit(10000))?;
 
         let mut results = Vec::new();
         for (_score, doc_address) in top_docs {

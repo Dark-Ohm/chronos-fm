@@ -2,6 +2,7 @@ pub mod backend;
 pub mod engine;
 pub mod indexer;
 pub mod ripgrep;
+pub mod spotlight;
 pub mod watcher;
 
 use std::path::PathBuf;
