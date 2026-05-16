@@ -3,7 +3,7 @@
 use crate::core::telemetry::logging::init_logging;
 use crate::pages::{
     explorer::ExplorerPage, extensions::ExtensionsPage, git::GitPage, s3::S3Page,
-    search::SearchPage, settings::SettingsPage, PageKind,
+    settings::SettingsPage, PageKind,
 };
 use crate::ui::assets::Assets;
 use crate::ui::components::layout::footer::{footer, FooterProps};
@@ -14,15 +14,19 @@ use crate::ui::components::layout::unified_toolbar::{
 use crate::ui::theme::theme;
 use crate::ui::window::{self, traffic_lights::TrafficLightsHook};
 
+use crate::services::search::SearchService;
 use gpui::Entity;
 use gpui::{
-    div, prelude::*, px, rgb, size, AnyElement, App, Application, Bounds, Context, FocusHandle,
-    Focusable, IntoElement, Render, Window,
+    div, prelude::*, px, rgb, size, AnyElement, App, AppContext, Application, Bounds, Context,
+    FocusHandle, Focusable, InteractiveElement, Render, Window,
 };
 use gpui_component::input::InputState;
 use gpui_component::resizable::ResizableState;
 use gpui_component::Icon;
 use gpui_component::Root;
+use std::sync::Arc;
+use tokio::runtime::Handle;
+use tokio::task;
 use tracing::info;
 
 pub struct NohrsApp;
@@ -42,25 +46,48 @@ impl NohrsApp {
                 let search_input = cx.new(|cx| InputState::new(window, cx));
                 let focus_handle = cx.focus_handle();
 
+                // Initialize SearchService
+                let handle = Handle::current();
+                let search_service =
+                    task::block_in_place(move || match handle.block_on(SearchService::new()) {
+                        Ok(service) => Arc::new(service),
+                        Err(e) => {
+                            panic!("Failed to create SearchService: {}", e);
+                        }
+                    });
+
                 // Create page instances
                 let explorer = cx.new(|cx| {
-                    ExplorerPage::new(resizable.clone(), search_input.clone(), cx.focus_handle())
+                    ExplorerPage::new(
+                        resizable.clone(),
+                        search_input.clone(),
+                        search_service.clone(),
+                        cx.focus_handle(),
+                    )
                 });
-                let search = cx.new(|_cx| SearchPage::new());
+                // Search page removed
+                // let search = ...
+
                 let git = cx.new(|_cx| GitPage::new());
                 let s3 = cx.new(|_cx| S3Page::new());
                 let extensions = cx.new(|_cx| ExtensionsPage::new());
                 let settings = cx.new(|_cx| SettingsPage::new());
 
-                let view = cx.new(|_cx| RootView {
-                    current_page: PageKind::Explorer,
-                    focus_handle,
-                    explorer,
-                    search,
-                    git,
-                    s3,
-                    extensions,
-                    settings,
+                let view = cx.new(|cx| {
+                    let mut view = RootView {
+                        current_page: PageKind::Explorer,
+                        focus_handle,
+                        explorer,
+                        // search removed
+                        git,
+                        s3,
+                        extensions,
+                        settings,
+                        search_service: search_service.clone(),
+                        indexing_progress: Some(1.0), // Start as hidden/done
+                    };
+                    view.start_progress_loop(window, cx);
+                    view
                 });
 
                 cx.new(|cx| Root::new(view.into(), window, cx))
@@ -75,11 +102,12 @@ pub struct RootView {
     focus_handle: FocusHandle,
     // Page entities
     explorer: Entity<ExplorerPage>,
-    search: Entity<SearchPage>,
     git: Entity<GitPage>,
     s3: Entity<S3Page>,
     extensions: Entity<ExtensionsPage>,
     settings: Entity<SettingsPage>,
+    search_service: Arc<SearchService>,
+    indexing_progress: Option<f32>,
 }
 
 impl RootView {
@@ -88,6 +116,25 @@ impl RootView {
             self.current_page = page;
             cx.notify();
         }
+    }
+
+    fn start_progress_loop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(progress) = self.check_progress_update() {
+            self.indexing_progress = Some(progress);
+            cx.notify();
+        }
+
+        // Poll every frame (simple and effective for this case)
+        cx.on_next_frame(window, |view: &mut RootView, window, cx| {
+            view.start_progress_loop(window, cx);
+        });
+    }
+
+    fn check_progress_update(&self) -> Option<f32> {
+        let rx = self.search_service.progress_subscription();
+        // Just read current value
+        let val = *rx.borrow();
+        Some(val)
     }
 }
 
@@ -139,7 +186,11 @@ impl Render for RootView {
             )
             .child(
                 // Footer status bar
-                footer(FooterProps::default(), cx),
+                {
+                    let mut props = FooterProps::default();
+                    props.indexing_progress = self.indexing_progress;
+                    footer(props, cx)
+                },
             )
             .children(Root::render_modal_layer(window, cx))
             .children(Root::render_drawer_layer(window, cx))
@@ -235,7 +286,7 @@ impl RootView {
     fn render_active_page(&self, _window: &mut Window, _cx: &mut Context<Self>) -> AnyElement {
         match self.current_page {
             PageKind::Explorer => self.explorer.clone().into_any_element(),
-            PageKind::Search => self.search.clone().into_any_element(),
+
             PageKind::Git => self.git.clone().into_any_element(),
             PageKind::S3 => self.s3.clone().into_any_element(),
             PageKind::Extensions => self.extensions.clone().into_any_element(),

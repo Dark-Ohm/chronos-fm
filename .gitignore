@@ -20,6 +20,9 @@
 # Coverage / tooling
 coverage/
 
+# AI Agent
+.agent
+
 # personal
 /.github
 /.specify
