@@ -82,11 +82,6 @@ After completing the above, try building the GUI again.
 - [ ] Cross-device sync and offline-first workflows
 - [ ] Secure sharing with access controls
 
-### Cloud Features
-- Cloud storage integrations (S3-compatible services and more)
-- Cross-device sync and offline-first workflows
-- Secure sharing with access controls
-
 ### S3-Compatible Storage
 - [ ] MinIO, Wasabi, and Cloudflare R2 support
 - [ ] Transfer queue and parallel uploads
