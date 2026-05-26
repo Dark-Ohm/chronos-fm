@@ -117,7 +117,7 @@ struct Node {
     children: Vec<impl Into<Node>>,  // Error: impl Trait not allowed here
 }
 
-// ❌ Performance-critical hot paths (minor overhead of trait dispatch)
+// ❌ Performance-critical hot paths (monomorphization bloat, conversion call overhead)
 fn hot_path(value: impl Into<u64>) {
     // Consider taking u64 directly if called billions of times
 }

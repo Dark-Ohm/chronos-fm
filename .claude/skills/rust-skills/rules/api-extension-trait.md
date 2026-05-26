@@ -119,7 +119,15 @@ mod string_utils {
             if self.len() <= max_len {
                 self.to_string()
             } else {
-                format!("{}...", &self[..max_len.saturating_sub(3)])
+                // Find the last UTF-8 char boundary ≤ max_len - 3 so we
+                // never slice through a multi-byte codepoint.
+                let cutoff = max_len.saturating_sub(3);
+                let end = self
+                    .char_indices()
+                    .take_while(|(i, _)| *i <= cutoff)
+                    .last()
+                    .map_or(0, |(i, _)| i);
+                format!("{}...", &self[..end])
             }
         }
     }

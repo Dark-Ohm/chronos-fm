@@ -34,6 +34,8 @@ struct UserId(u64);
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 struct GroupId(u64);
 
+// Note: cannot derive `Copy` when the wrapped type isn't `Copy` (e.g. `String`).
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 struct Timestamp(u64);
 

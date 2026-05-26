@@ -122,12 +122,15 @@ async fn with_cancellation() -> Result<()> {
 use tokio::time::{timeout, Duration};
 
 async fn fetch_with_timeout() -> Result<(A, B)> {
+    // `try_join!` awaits internally and evaluates to a `Result`, so wrap it
+    // in an `async` block to get a `Future` for `timeout()`.
     timeout(
         Duration::from_secs(10),
-        try_join!(fetch_a(), fetch_b())
+        async { try_join!(fetch_a(), fetch_b()) },
     )
     .await
-    .map_err(|_| Error::Timeout)?
+    .map_err(|_| Error::Timeout)?  // outer `?`: timeout elapsed
+    // inner `?` happens via try_join! returning Err on first failure
 }
 
 // Per-operation timeout

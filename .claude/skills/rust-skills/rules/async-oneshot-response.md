@@ -150,11 +150,18 @@ if tx.is_closed() {
     tx.send(result).ok();
 }
 
-// Async wait for close
-let tx_clone = tx.clone();  // Note: can't actually clone, just showing concept
+// Async wait for close: race the computation against the receiver dropping.
+// `tx.closed()` borrows `tx` only for the duration of the select arm; once
+// the `compute()` arm wins, the borrow is released and `tx.send` can consume
+// `tx`.
+let (mut tx, rx) = oneshot::channel::<i32>();
 tokio::select! {
-    _ = tx.closed() => println!("Receiver dropped"),
-    result = compute() => { tx.send(result).ok(); }
+    _ = tx.closed() => {
+        println!("Receiver dropped, skipping computation");
+    }
+    result = compute() => {
+        let _ = tx.send(result);
+    }
 }
 ```
 
