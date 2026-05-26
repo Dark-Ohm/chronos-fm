@@ -133,7 +133,7 @@ Other entities can then register a callback to handle these events by doing `cx.
 
 ## Build guidelines
 
-- Use `./script/clippy` instead of `cargo clippy`
+- Use `cargo clippy` for linting
 
 # Pull request hygiene
 
