@@ -1,6 +1,6 @@
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::input::{InputState, TextInput};
+use gpui_component::input::{InputState, RopeExt, TextInput};
 use std::sync::Once;
 
 actions!(preview, [SafeSearch]);
@@ -56,23 +56,33 @@ impl PreviewEditor {
         // For search results, we might need a different approach or see if `search` functionality covers it.
     }
 
-    pub fn scroll_to(&mut self, offset: usize, _window: &mut Window, cx: &mut Context<Self>) {
+    pub fn scroll_to(&mut self, offset: usize, window: &mut Window, cx: &mut Context<Self>) {
+        // `InputState::scroll_to` is private; moving the cursor to the offset triggers the
+        // same scroll-into-view logic through the public `set_cursor_position` API.
         self.editor_state.update(cx, |state, cx| {
-            state.scroll_to(offset, cx);
+            let position = state.text().offset_to_position(offset);
+            state.set_cursor_position(position, window, cx);
         });
     }
 
-    pub fn set_search_query(&mut self, query: String, window: &mut Window, cx: &mut Context<Self>) {
-        self.editor_state.update(cx, |state, cx| {
-            state.set_search_query(query, window, cx);
-        });
+    pub fn set_search_query(
+        &mut self,
+        _query: String,
+        _window: &mut Window,
+        _cx: &mut Context<Self>,
+    ) {
+        // gpui-component 0.3.1 exposes no public API to drive the editor's search panel
+        // programmatically, so syncing the explorer's query into the preview is a no-op here.
+        // Users can still open the in-editor search panel manually (see `on_safe_search`).
     }
 
     fn on_safe_search(&mut self, _: &SafeSearch, window: &mut Window, cx: &mut Context<Self>) {
-        // Trigger search using set_search_query which defers the panel update, avoiding panic.
+        // Open the built-in search panel by focusing the editor and dispatching the
+        // gpui-component `Search` action.
         self.editor_state.update(cx, |state, cx| {
-            state.set_search_query("", window, cx);
+            state.focus(window, cx);
         });
+        window.dispatch_action(Box::new(gpui_component::input::Search), cx);
     }
 }
 

@@ -134,6 +134,8 @@ Other entities can then register a callback to handle these events by doing `cx.
 ## Build guidelines
 
 - Use `cargo clippy` for linting
+- To build/run/operate the GUI on Linux and verify your own UI changes, follow
+  `docs/agent-ui-verification.md` (helpers in `script/ui-run.sh`).
 
 # Pull request hygiene
 
