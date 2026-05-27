@@ -58,9 +58,12 @@ def read_xwd(path):
             r = (px & red_mask) >> rsh
             g = (px & green_mask) >> gsh
             b = (px & blue_mask) >> bsh
-            if rw and rw < 8: r <<= (8 - rw)
-            if gw and gw < 8: g <<= (8 - gw)
-            if bw and bw < 8: b <<= (8 - bw)
+            if rw and rw < 8:
+                r <<= (8 - rw)
+            if gw and gw < 8:
+                g <<= (8 - gw)
+            if bw and bw < 8:
+                b <<= (8 - bw)
             rows += bytes((r & 0xFF, g & 0xFF, b & 0xFF))
     return pixmap_width, pixmap_height, bytes(rows)
 

@@ -88,7 +88,7 @@ DISPLAY=:108 target/debug/nohrs
 GPU が無い環境では llvmpipe で描画するため、**起動直後の数秒はウィンドウが黒いまま**
 になる（フォントアトラスや UI 要素の生成待ち）。ログに以下が出れば描画準備完了:
 
-```
+```text
 blade_graphics::hal::init: Adapter: "llvmpipe (...)"   # ソフトウェア Vulkan を使用
 ... name 'atlas' ...                                    # フォントアトラス生成
 gpui::platform::linux::x11::client: Refreshing every 16ms

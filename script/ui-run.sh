@@ -58,11 +58,12 @@ launch() {
   : > "$LOG"
   DISPLAY="$disp" setsid "$BIN" > "$LOG" 2>&1 < /dev/null &
   # Software (llvmpipe) rendering: the window is black until the first real frame.
-  # Wait for the steady-state render marker, then let UI/fonts settle.
-  timeout 30 bash -c "until grep -q 'Refreshing every' '$LOG' 2>/dev/null; do :; done" \
-    || { echo "render marker not seen; tail of $LOG:" >&2; tail -5 "$LOG" >&2; }
+  # Wait for the steady-state render marker (poll, don't busy-spin), then let UI/fonts settle.
+  timeout 30 bash -c "until grep -q 'Refreshing every' '$LOG' 2>/dev/null; do sleep 0.2; done" \
+    || { echo "render marker not seen; tail of $LOG:" >&2; tail -5 "$LOG" >&2; return 1; }
   perl -e 'select(undef,undef,undef,4)'   # 'sleep' may be blocked in some agent shells; this is not.
   local w; w="$(win_id)"
+  [ -n "$w" ] || { echo "window id not found; tail of $LOG:" >&2; tail -5 "$LOG" >&2; return 1; }
   echo "WINDOW=$w DISPLAY=$disp PID=$(pgrep -x nohrs | head -1)"
 }
 
@@ -72,7 +73,7 @@ shot() {
   pgrep -x nohrs >/dev/null || launch >/dev/null
   local xwd="/tmp/ui-shot.$$.xwd"
   DISPLAY="$disp" xwd -root -silent -out "$xwd" || { echo "xwd failed" >&2; return 1; }
-  python3 "$ROOT/script/xwd2png.py" "$xwd" "$out"
+  python3 "$ROOT/script/xwd2png.py" "$xwd" "$out" || { rm -f "$xwd"; echo "xwd2png failed" >&2; return 1; }
   rm -f "$xwd"
 }
 
