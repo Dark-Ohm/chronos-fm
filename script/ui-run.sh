@@ -70,7 +70,7 @@ launch() {
 shot() {
   local out="${1:?usage: ui-run.sh shot <out.png>}"
   local disp; disp="$(resolve_display)" || return 1
-  pgrep -x nohrs >/dev/null || launch >/dev/null
+  pgrep -x nohrs >/dev/null || launch >/dev/null || return 1
   local xwd="/tmp/ui-shot.$$.xwd"
   DISPLAY="$disp" xwd -root -silent -out "$xwd" || { echo "xwd failed" >&2; return 1; }
   python3 "$ROOT/script/xwd2png.py" "$xwd" "$out" || { rm -f "$xwd"; echo "xwd2png failed" >&2; return 1; }
