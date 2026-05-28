@@ -107,7 +107,10 @@ impl ExplorerPage {
         self.preview_image_path = None;
         self.preview_message = None;
         self.preview_text = None;
-        self.preview_path = None;
+        // Record the path being loaded so that out-of-order async completions
+        // (the user clicking another file before this read finishes) can be
+        // detected and discarded below.
+        self.preview_path = Some(path.clone());
         cx.notify();
 
         let read_task = cx.background_spawn({
@@ -122,6 +125,10 @@ impl ExplorerPage {
                 async move {
                     let outcome = read_task.await;
                     if let Err(error) = this.update_in(&mut cx, |this, window, cx| {
+                        // Skip if a newer preview was requested while we were reading.
+                        if this.preview_path.as_deref() != Some(path.as_str()) {
+                            return;
+                        }
                         this.apply_preview_outcome(path, outcome, window, cx);
                     }) {
                         tracing::debug!("Preview update skipped: {error}");
@@ -173,9 +180,11 @@ impl ExplorerPage {
                 if let Some(results) = &self.search_results {
                     if let Some(file_result) = results.iter().find(|r| r.path == path) {
                         if let Some(first_match) = file_result.matches.first() {
-                            if let Some(offset) =
-                                line_start_offset(&text, first_match.line_number)
-                            {
+                            // `line_number` is 1-based; `line_start_offset` takes a 0-based index.
+                            if let Some(offset) = line_start_offset(
+                                &text,
+                                first_match.line_number.saturating_sub(1),
+                            ) {
                                 if let Some(editor) = self.preview_editor.clone() {
                                     editor.update(cx, |editor, cx| {
                                         editor.scroll_to(offset, window, cx);

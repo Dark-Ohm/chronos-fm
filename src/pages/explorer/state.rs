@@ -56,6 +56,9 @@ pub struct ExplorerPage {
     pub use_regex: bool,
     pub search_results: Option<Vec<SearchFileResult>>,
     pub is_performing_search: bool,
+    // Monotonic counter incremented on every search request; used to discard
+    // results from a stale in-flight search that completes after a newer one.
+    pub search_generation: u64,
     pub expanded_search_files: std::collections::HashSet<String>,
     // Syntax
     pub syntax_service: Arc<SyntaxService>,
@@ -121,6 +124,7 @@ impl ExplorerPage {
             use_regex: false,
             search_results: None,
             is_performing_search: false,
+            search_generation: 0,
             expanded_search_files: std::collections::HashSet::new(),
             syntax_service: Arc::new(SyntaxService::new()),
             preview_editor: None,

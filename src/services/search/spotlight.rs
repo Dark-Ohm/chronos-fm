@@ -56,7 +56,10 @@ impl SearchBackend for SpotlightBackend {
         // the user's home directory with `-onlyin`. mdfind has no `--`
         // end-of-options separator, so `-literal` is the closest equivalent for
         // forcing the argument to be treated as a literal query.
-        let home = dirs::home_dir().unwrap_or_else(|| PathBuf::from("/"));
+        let home = dirs::home_dir().unwrap_or_else(|| {
+            tracing::warn!("Home directory not found; scoping mdfind search to filesystem root");
+            PathBuf::from("/")
+        });
         let output = Command::new("mdfind")
             .arg("-onlyin")
             .arg(&home)

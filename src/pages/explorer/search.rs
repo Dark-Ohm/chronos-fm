@@ -7,6 +7,12 @@ use std::collections::HashMap;
 
 impl ExplorerPage {
     pub(crate) fn trigger_search(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        // Invalidate any in-flight search; only the latest request may apply its
+        // results (including the empty-query and degraded-mode early returns,
+        // which clear results and must not be overwritten by a slower search).
+        self.search_generation = self.search_generation.wrapping_add(1);
+        let generation = self.search_generation;
+
         if self.search_query.is_empty() {
             self.search_results = None;
             self.apply_filter();
@@ -42,6 +48,10 @@ impl ExplorerPage {
                     let results = service.search(query, scope).await;
 
                     this.update(&mut cx, |this, cx| {
+                        // Discard results if a newer search has since been issued.
+                        if this.search_generation != generation {
+                            return;
+                        }
                         match results {
                             Ok(res) => {
                                 let grouped = group_results(res);
