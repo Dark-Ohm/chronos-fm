@@ -23,8 +23,8 @@
 
 **Extism を経由せず、最初から wit-bindgen + WASM Component Model 一直線で plugin host を実装する**。
 
-- **WASM runtime**: wasmtime 30+
-- **モード**: sync API ([ADR 0004](./0004-remove-tokio.md) と整合)
+- **WASM runtime**: wasmtime 30+ + wasmtime-wasi (WASI Preview 2 ホスト)
+- **実行モデル**: wasmtime-wasi は tokio に依存するため、専用の `current_thread` tokio runtime に隔離して駆動する ([ADR 0004](./0004-remove-tokio.md))。公開プラグイン API (`Plugin` trait) は sync で、内部の async 呼び出しを `block_on` でブリッジする
 - **bindgen**: wit-bindgen
 - **WIT world**: `nohrs:plugin@0.1.0` (`crates/nohrs-plugin-host/wit/world.wit`)
 - **対応言語 (P4)**: Rust + TypeScript + Python の 3 つ。Go は P5 以降 (tinygo の component model 対応待ち)

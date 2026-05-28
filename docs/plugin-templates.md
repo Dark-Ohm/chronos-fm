@@ -164,7 +164,7 @@ npm パッケージとして配布 (Node ベース MCP server):
 - build / install / test のコマンド一覧
 - nohrs 本家との互換 version 確認方法
 - よくある落とし穴:
-  - `tokio` を持ち込もうとしてビルド失敗
+  - guest (plugin) 側で `tokio` を持ち込もうとしてビルド失敗 (WIT host import は sync。async runtime は不要。tokio はホスト側の実行層に隔離されており guest からは見えない)
   - 絶対パス指定で permission に当たる
   - WIT 型の変換ミス
   - manifest の `engine.nohrs_version` 範囲ミス

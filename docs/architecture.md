@@ -72,7 +72,7 @@ serde             = { version = "1", features = ["derive"] }
 serde_json        = "1"
 time              = { version = "0.3", features = ["formatting", "macros"] }
 # (P2 以降に追加)
-# rusqlite, redb, postage, async-channel, ureq, wasmtime, wit-bindgen, ...
+# rusqlite, redb, postage, async-channel, ureq, wasmtime, wasmtime-wasi, tokio (plugin-host のみ), wit-bindgen, ...
 
 [workspace.lints.rust]
 unsafe_code  = "deny"
@@ -128,7 +128,7 @@ expect_used  = "warn"
 | **nohrs (bin)** | GUI エントリ、CLI サブコマンド、起動シーケンス | 全 crate |
 | **nohrs-pages** | explorer / settings / git / s3 などのページ | `ui`, `services`, `models`, `core`, (P2) `store` |
 | **nohrs-launcher** (P3) | ランチャー window、Command trait、結果リスト | `ui`, `services`, `core`, `store`, (P4) `plugin-host` |
-| **nohrs-plugin-host** (P4) | wasmtime + WIT host、permission ガード | `core`, `store`, `services`, `models` |
+| **nohrs-plugin-host** (P4) | wasmtime + wasmtime-wasi + WIT host、permission ガード、専用 tokio runtime (隔離) | `core`, `store`, `services`, `models` |
 | **nohrs-ui** | gpui コンポーネント、テーマ、ウィンドウ管理 | `core`, `models` |
 | **nohrs-services** | fs listing、search、syntax highlighting | `core`, `models`, (P2) `store` |
 | **nohrs-store** (P2) | SQLite (rusqlite) + redb (plugin KV) | `core`, `models` |
@@ -187,11 +187,11 @@ User selects plugin command in launcher
   ↓
 Launcher::dispatch(command_id, args) (launcher)
   ↓
-PluginHost::run_command(plugin_id, command_id, args, ctx) (plugin-host)
+PluginHost::run_command(plugin_id, command_id, args, ctx) (plugin-host, sync な公開 API)
   ↓ permission check
 PermissionGuard::check_capability(...)?
-  ↓
-wasmtime::component::Instance::call(...) (sync)
+  ↓ 専用 tokio runtime で block_on
+wasmtime::component::Instance::call_async(...) (wasmtime-wasi)
   ↓ returns CommandResult variant
 Launcher render view-node or instant result
 ```
@@ -217,7 +217,7 @@ Launcher render view-node or instant result
 | `clippy::expect_used` | `warn` | 同上 |
 | `missing_docs` | `warn` (P1 から)、`deny` (P7 から) | `cfg(test)` モジュールは除外 |
 | `disallowed-methods` | clippy.toml で `std::fs::read` 等を禁止し `services::fs` 経由を強制 | 必要なら crate ローカルで `#[allow]` |
-| `bans` (cargo-deny) | `tokio` を deny (P2 以降) | — |
+| `bans` (cargo-deny) | `tokio` を deny (P2 以降)。`nohrs-plugin-host` 経由のみ `wrappers` で許可 | plugin 実行層 (P4) |
 
 ---
 

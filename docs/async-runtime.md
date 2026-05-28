@@ -1,9 +1,9 @@
-# Async Runtime — tokio 撤去と GPUI executor 統一
+# Async Runtime — アプリコアの tokio 撤去と GPUI executor 統一
 
 > Status: Draft (P1 でフラグ撤去、P2 で完全置換)
 > Related: [`ROADMAP.md`](./ROADMAP.md), [ADR 0004 (remove-tokio)](./adr/0004-remove-tokio.md)
 
-本書は tokio 依存を撤去し GPUI executor + runtime-agnostic crates に置換する戦略を定めます。
+本書はアプリコアの tokio 依存を撤去し GPUI executor + runtime-agnostic crates に置換する戦略と、tokio を WASI プラグイン実行層に隔離する方針 (§6) を定めます。
 
 ---
 
@@ -13,7 +13,7 @@
 |------|------|
 | **重い依存** | tokio は依存ツリーが大きく、ビルド時間とバイナリサイズに影響 |
 | **GPUI executor との二重スタック** | GPUI は独自 executor を持つ。tokio と並走させると thread の使い分けが不明確 |
-| **WASM 統合** | wasmtime sync API を使えば tokio 不要。non-tokio で plugin host を組める |
+| **WASM 統合の切り分け** | wasmtime core async は executor 非依存だが wasmtime-wasi は tokio 依存。tokio はアプリ全体ではなくプラグイン実行層に隔離する (§6) |
 | **HTTP server を持たない** | nohrs は GUI app であり axum/HTTP server は当面不要 |
 
 ---
@@ -73,16 +73,34 @@ let res = cx.background_spawn(async {
 
 ---
 
-## 6. Wasmtime (P4)
+## 6. Wasmtime / プラグイン実行層 (P4)
 
-| モード | 採用 |
-|--------|------|
-| **sync API** | ✅ P4 で採用。tokio 不要、シンプル |
-| async API | ❌ 当面不採用 (tokio 依存) |
+wasmtime core の async は executor 非依存だが、**wasmtime-wasi は tokio に深く結合している** (公式に「Tokio executor を必要とし、設計に結びついている」と明記)。nohrs プラグインは WASI Preview 2 を前提とする ([ADR 0005](./adr/0005-wit-bindgen-component-model.md)) ため、ホストは wasmtime-wasi を使い、tokio が必要になる。
+
+方針: **アプリ全体を tokio 化せず、tokio を `nohrs-plugin-host` 内の専用 `current_thread` runtime に隔離する**。
+
+| レイヤー | ランタイム |
+|---------|-----------|
+| アプリコア (UI / 検索 / インデックス / ファイル操作 / HTTP) | GPUI executor / worker thread / rayon / notify (tokio-free) |
+| プラグイン実行層 (wasmtime + wasmtime-wasi) | 専用の小さな tokio `current_thread` runtime |
+| 公開プラグイン API (`Plugin` trait) | sync (tokio 非依存、内部で `block_on` してブリッジ) |
+
+```rust
+pub struct WasiRuntime { rt: tokio::runtime::Runtime }   // Builder::new_current_thread().enable_all()
+
+impl Plugin for WasiPlugin {
+    fn search(&self, query: &str) -> anyhow::Result<Vec<SearchItem>> {
+        // tokio を crate の外に漏らさない
+        self.wasi_runtime.rt.block_on(async { self.call_wasm_search(query).await })
+    }
+}
+```
+
+ホストは `Plugin` trait を `cx.background_spawn` 内で sync 呼び出しし、UI を block しない。
 
 詳細は [`docs/plugin-overview.md`](./plugin-overview.md) と [`docs/plugin-api.md`](./plugin-api.md) 参照。
 
-将来の `nohrs-gpui-wasmtime` (GPUI executor 上で wasmtime async を動かすブリッジ) は Future Work。詳細は [`ROADMAP.md`](./ROADMAP.md) §Future Work。
+将来の `nohrs-gpui-wasmtime` (GPUI executor 上で wasmtime async を駆動し、専用 tokio runtime を不要にするブリッジ) は Future Work。詳細は [`ROADMAP.md`](./ROADMAP.md) §Future Work。
 
 ---
 
@@ -92,7 +110,7 @@ let res = cx.background_spawn(async {
 |-------|------|
 | **P1** | <ul><li>`axum` を削除 (未使用)</li><li>`#[tokio::main]` → GPUI main 化</li><li>`tokio::task::spawn_blocking` を `cx.background_spawn` に置換 (旧 QUALITY_IMPROVEMENT_PLAN P1.3 と統合)</li></ul> |
 | **P2** | <ul><li>残りの `tokio::sync::*` を `postage` / `async-channel` / `futures::channel::oneshot` に置換</li><li>`tokio::spawn` を `cx.background_spawn` に統一</li><li>`Cargo.toml` から `tokio` を削除</li><li>HTTP は `ureq` に置換</li></ul> |
-| **検証** | `cargo tree \| grep -E '^tokio'` が **空**であることを CI でチェック (`cargo-deny` の `[bans] deny = ["tokio"]`) |
+| **検証** | `cargo-deny` で tokio を deny し、`nohrs-plugin-host` 経由 (P4 以降) のみ `wrappers` で許可。P2〜P3 は plugin host 未導入のため `cargo tree \| grep -E '^tokio'` は **空** |
 
 ---
 
@@ -113,13 +131,15 @@ let res = cx.background_spawn(async {
 ```toml
 [bans]
 deny = [
-  { name = "tokio" },              # P2 以降、混入を防ぐ
-  { name = "tokio-util" },
+  # tokio はアプリコアでは禁止。WASI プラグイン実行層 (nohrs-plugin-host, P4 以降)
+  # からの依存のみ wrappers で許可する
+  { name = "tokio", wrappers = ["nohrs-plugin-host"] },
+  { name = "tokio-util", wrappers = ["nohrs-plugin-host"] },
   { name = "openssl-sys" },        # rustls 統一
 ]
 ```
 
-間接依存に tokio が混入したら CI で fail。
+`nohrs-plugin-host` 以外の crate に tokio が混入したら CI で fail。P2〜P3 は plugin host 未導入のため tokio は完全に消える。
 
 ---
 

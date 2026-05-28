@@ -15,7 +15,7 @@
                     │                                 │
                     │  ┌──────────────────────────┐  │
                     │  │  nohrs-plugin-host       │  │
-                    │  │  - wasmtime (sync API)   │  │
+                    │  │  - wasmtime-wasi + tokio │  │
                     │  │  - WIT host imports      │  │
                     │  │  - permission guard      │  │
                     │  └────┬─────────┬───────────┘  │
@@ -32,16 +32,18 @@
 
 | 要素 | 採用 |
 |------|------|
-| WASM runtime | **wasmtime 30+** (sync API) |
+| WASM runtime | **wasmtime 30+** + **wasmtime-wasi** (WASI Preview 2 ホスト) |
 | 仕様 | **WASI Preview 2 + Component Model** |
 | bindgen | **wit-bindgen** (Extism は経由しない) |
-| 通信モデル | sync (host → plugin, plugin → host とも) |
+| 通信モデル | 公開 API は sync (host → plugin, plugin → host とも)。内部は専用 tokio runtime で wasmtime-wasi を駆動し `block_on` でブリッジ |
+| tokio 隔離 | wasmtime-wasi は tokio 依存。`nohrs-plugin-host` 内の専用 `current_thread` runtime に閉じ込め、アプリコアは tokio-free を維持 ([ADR 0004](./adr/0004-remove-tokio.md)) |
 | 並列性 | plugin ごとに別 wasmtime `Store` + `Instance`、host 側で `cx.background_spawn` で並列実行 |
 
 理由:
 - **Extism MVP → wit-bindgen 移行** ではなく、wit-bindgen 一直線で開始 (移行コストの二重投資を回避)
 - 2026 年現在、Component Model は実用段階 (wasmtime 30+ で stable)
 - ユーザー要件 "wasm preview2 の仕様" と整合
+- WASI Preview 2 ホスト (wasmtime-wasi) は tokio 依存だが、専用 runtime に隔離してアプリコアへ漏らさない ([ADR 0004](./adr/0004-remove-tokio.md))
 
 ---
 

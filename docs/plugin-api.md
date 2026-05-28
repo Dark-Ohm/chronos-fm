@@ -414,8 +414,8 @@ record badge {
 
 | 観点 | 仕様 |
 |------|------|
-| host → plugin | **sync** (wasmtime sync API)。host 側で `cx.background_spawn` 経由で実行し UI を block しない |
-| plugin → host | **sync** (WIT 関数は sync 呼び出し) |
+| host → plugin | **sync** な公開 API。内部は `nohrs-plugin-host` の専用 tokio runtime で wasmtime-wasi (async) を `block_on` 駆動。host 側は `cx.background_spawn` 経由で呼び UI を block しない ([ADR 0004](./adr/0004-remove-tokio.md)) |
+| plugin → host | **sync** (WIT host import は sync 呼び出し。guest は tokio 不要) |
 | 長時間処理 | P4 では cancel 不可。plugin 側で chunk 化推奨 |
 | async task | P5+ で検討。`host.spawn-task` で投げて結果を `events.on-task-complete` で受け取る形 |
 
