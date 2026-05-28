@@ -152,7 +152,8 @@ yanked = "deny"
 [bans]
 multiple-versions = "warn"
 deny = [
-  { name = "tokio" },              # P2 以降、撤去後の混入防止
+  # アプリコアでは禁止。WASI プラグイン実行層 (nohrs-plugin-host, P4 以降) のみ許可
+  { name = "tokio", wrappers = ["nohrs-plugin-host"] },
   { name = "openssl-sys" },        # rustls 統一
 ]
 

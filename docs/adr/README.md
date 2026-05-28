@@ -32,7 +32,7 @@
 | [0001](./0001-sqlite-tantivy-hybrid-search.md) | SQLite + Tantivy ハイブリッド検索採用 | Accepted |
 | [0002](./0002-macos-only-short-term.md) | macOS 専用を当面維持 | Accepted |
 | [0003](./0003-cargo-workspace-layer-split.md) | レイヤー別 Cargo workspace 分割 | Accepted |
-| [0004](./0004-remove-tokio.md) | tokio を撤去し GPUI executor + runtime-agnostic crates に統一 | Accepted |
+| [0004](./0004-remove-tokio.md) | tokio をアプリコアから撤去し WASI プラグイン層に隔離 | Accepted |
 | [0005](./0005-wit-bindgen-component-model.md) | プラグインホストは wit-bindgen + WASM Component Model 一直線 | Accepted |
 | [0006](./0006-monorepo-web.md) | web/ を nohrs リポジトリ同居 (monorepo) | Accepted |
 | [0007](./0007-cloudflare-hosting.md) | web ホスティングは Cloudflare Pages + Workers + R2 | Accepted |
