@@ -91,7 +91,7 @@ pub struct WasiRuntime { rt: tokio::runtime::Runtime }   // Builder::new_current
 impl Plugin for WasiPlugin {
     fn search(&self, query: &str) -> anyhow::Result<Vec<SearchItem>> {
         // tokio を crate の外に漏らさない
-        self.wasi_runtime.block_on(async { self.call_wasm_search(query).await })
+        self.wasi_runtime.rt.block_on(async { self.call_wasm_search(query).await })
     }
 }
 ```
