@@ -13,6 +13,10 @@ pub struct FooterProps {
     pub git_branch: Option<String>,
     pub storage_status: Option<String>,
     pub indexing_progress: Option<f32>,
+    /// Transient message (e.g. an error) surfaced to the user. When
+    /// `status_is_error` is set it is rendered in the error color.
+    pub status_message: Option<String>,
+    pub status_is_error: bool,
 }
 
 impl Default for FooterProps {
@@ -25,6 +29,8 @@ impl Default for FooterProps {
             git_branch: None,
             storage_status: None,
             indexing_progress: None,
+            status_message: None,
+            status_is_error: false,
         }
     }
 }
@@ -92,7 +98,30 @@ pub fn footer<V: gpui::Render>(props: FooterProps, cx: &mut Context<V>) -> impl 
                     IconName::File,
                     &props.total_size,
                     cx,
-                )),
+                ))
+                // Transient status / error message
+                .when_some(props.status_message.clone(), |this, message| {
+                    let color = if props.status_is_error {
+                        theme::DANGER
+                    } else {
+                        theme::GRAY_700
+                    };
+                    this.child(
+                        div()
+                            .id(("footer-status", 6_usize))
+                            .h(px(24.0))
+                            .px(px(8.0))
+                            .flex()
+                            .items_center()
+                            .gap_1()
+                            .child(
+                                Icon::new(IconName::Info)
+                                    .size_3()
+                                    .text_color(rgb(color)),
+                            )
+                            .child(div().text_xs().text_color(rgb(color)).child(message)),
+                    )
+                }),
         )
         .child(
             // Right section - Info items

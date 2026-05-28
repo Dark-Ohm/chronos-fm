@@ -3,7 +3,7 @@ use super::indexer::IndexManager;
 use super::ripgrep::RipgrepBackend;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -32,7 +32,7 @@ impl SearchEngine {
         // Channel for watcher events
         let (tx, mut rx) = mpsc::channel(100);
 
-        let home_dir = dirs::home_dir().expect("Home dir not found");
+        let home_dir = dirs::home_dir().context("Home directory not found")?;
         use std::time::Duration;
         let watcher = FileWatcher::new(home_dir, tx, Duration::from_secs(2))?;
 

@@ -5,12 +5,13 @@ use crate::ui::theme::theme;
 use gpui::{div, px, rgb, ParentElement, Styled, Window};
 use gpui_component::list::{List, ListDelegate, ListItem};
 use gpui_component::{Icon, IconName, IndexPath};
+use std::sync::Arc;
 
 pub struct FileListDelegate {
     pub items: Vec<FileEntryDto>,
     pub selected: Option<IndexPath>,
     // Callback hooks
-    pub on_confirm: Option<Box<dyn Fn(&FileEntryDto) + 'static>>,
+    pub on_confirm: Option<Arc<dyn Fn(&FileEntryDto) + 'static>>,
 }
 
 impl FileListDelegate {
@@ -151,15 +152,11 @@ impl ListDelegate for FileListDelegate {
             );
 
         // enable click to confirm
-        let item_clone = item.clone();
-        if self.on_confirm.is_some() {
-            let cb = self.on_confirm.as_ref().unwrap();
-            // We cannot capture trait object by move directly; wrap call inside closure
-            let ptr = cb as *const _;
-            row = row.on_click(move |_, _, _| unsafe {
-                // SAFETY: lifetime tied to delegate existence within app
-                let f: &Box<dyn Fn(&FileEntryDto)> = &*ptr;
-                (f)(&item_clone);
+        if let Some(on_confirm) = self.on_confirm.as_ref() {
+            let on_confirm = Arc::clone(on_confirm);
+            let item_clone = item.clone();
+            row = row.on_click(move |_, _, _| {
+                on_confirm(&item_clone);
             });
         }
         Some(row)
@@ -207,21 +204,15 @@ pub fn human_bytes(size: u64) -> String {
 }
 
 pub fn format_date(timestamp: &u64) -> String {
-    // Convert unix timestamp to readable date
-    use std::time::{Duration, UNIX_EPOCH};
+    use time::macros::format_description;
+    use time::OffsetDateTime;
 
-    let d = UNIX_EPOCH + Duration::from_secs(*timestamp);
-    if let Ok(datetime) = d.duration_since(UNIX_EPOCH) {
-        let secs = datetime.as_secs();
-        let days = secs / 86400;
-        let years_since_epoch = days / 365;
-        let year = 1970 + years_since_epoch;
-        let remaining_days = days % 365;
-        let month = (remaining_days / 30) + 1;
-        let day = (remaining_days % 30) + 1;
-        format!("{:04}/{:02}/{:02}", year, month, day)
-    } else {
-        "-".to_string()
+    let format = format_description!("[year]/[month]/[day]");
+    match OffsetDateTime::from_unix_timestamp(*timestamp as i64) {
+        Ok(datetime) => datetime
+            .format(&format)
+            .unwrap_or_else(|_| "-".to_string()),
+        Err(_) => "-".to_string(),
     }
 }
 

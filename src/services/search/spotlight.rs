@@ -1,5 +1,6 @@
 use super::backend::SearchBackend;
 use super::SearchResult;
+use crate::core::config::{SEARCH_MAX_LINE_LEN, SEARCH_MAX_MATCHES_PER_FILE};
 use anyhow::{Context, Result};
 use std::fs::File;
 use std::io::{BufRead, BufReader};
@@ -25,7 +26,7 @@ impl SpotlightBackend {
         // Simple case-insensitive search
         for (index, line) in reader.lines().enumerate() {
             if let Ok(content) = line {
-                if content.len() > 1000 {
+                if content.len() > SEARCH_MAX_LINE_LEN {
                     continue; // Skip very long lines
                 }
 
@@ -36,8 +37,7 @@ impl SpotlightBackend {
                         line_content: content.trim().to_string(),
                     });
 
-                    // Sanity limit per file to avoid OOM on massive matches, but increased significantly
-                    if results.len() >= 1000 {
+                    if results.len() >= SEARCH_MAX_MATCHES_PER_FILE {
                         break;
                     }
                 }
@@ -50,16 +50,34 @@ impl SpotlightBackend {
 
 impl SearchBackend for SpotlightBackend {
     fn search(&self, query: &str) -> Result<Vec<SearchResult>> {
-        // Use mdfind to locate files
-        // -0 for null delimiter is safer but string split matching output lines is easier for simple impl
-        // mdfind outputs one path per line.
+        // `Command` invokes `mdfind` directly (no shell), so there is no
+        // shell-injection vector. To stop Spotlight from interpreting query
+        // operators in user input we pass `-literal`, and we scope the search to
+        // the user's home directory with `-onlyin`. mdfind has no `--`
+        // end-of-options separator, so `-literal` is the closest equivalent for
+        // forcing the argument to be treated as a literal query.
+        let home = dirs::home_dir().unwrap_or_else(|| {
+            tracing::warn!("Home directory not found; scoping mdfind search to filesystem root");
+            PathBuf::from("/")
+        });
         let output = Command::new("mdfind")
+            .arg("-onlyin")
+            .arg(&home)
+            .arg("-literal")
             .arg(query)
             .output()
             .context("Failed to execute mdfind")?;
 
-        if !output.status.success() {
-            return Err(anyhow::anyhow!("mdfind failed"));
+        match output.status.code() {
+            Some(0) => {}
+            Some(code) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                return Err(anyhow::anyhow!(
+                    "mdfind exited with status {code}: {}",
+                    stderr.trim()
+                ));
+            }
+            None => return Err(anyhow::anyhow!("mdfind was terminated by a signal")),
         }
 
         let stdout = String::from_utf8_lossy(&output.stdout);

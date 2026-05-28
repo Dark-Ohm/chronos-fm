@@ -1,7 +1,128 @@
-use super::types::{SearchFileResult, SearchMatch};
+use super::types::{SearchFileResult, SearchMatch, StatusLevel};
+use super::ExplorerPage;
 use crate::services::fs::listing::FileEntryDto;
 use crate::services::search::SearchResult;
+use gpui::{AppContext, AsyncApp, Context, Window};
 use std::collections::HashMap;
+
+impl ExplorerPage {
+    pub(crate) fn trigger_search(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        // Invalidate any in-flight search; only the latest request may apply its
+        // results (including the empty-query and degraded-mode early returns,
+        // which clear results and must not be overwritten by a slower search).
+        self.search_generation = self.search_generation.wrapping_add(1);
+        let generation = self.search_generation;
+
+        if self.search_query.is_empty() {
+            self.search_results = None;
+            self.apply_filter();
+            self.clear_status();
+            cx.notify();
+            return;
+        }
+
+        let Some(service) = self.search_service.clone() else {
+            // Degraded mode: full-text search is unavailable, so fall back to
+            // filtering the already-loaded directory by filename.
+            self.search_results = None;
+            self.apply_filter();
+            self.set_status(
+                StatusLevel::Error,
+                "Search index unavailable; filtering current folder by name only",
+            );
+            cx.notify();
+            return;
+        };
+
+        self.is_performing_search = true;
+        self.clear_status();
+        cx.notify();
+
+        let query = self.search_query.clone();
+        let scope = self.search_scope;
+
+        cx.spawn(
+            move |this: gpui::WeakEntity<ExplorerPage>, cx: &mut AsyncApp| {
+                let mut cx = cx.clone();
+                async move {
+                    let search_result = service.search(query, scope).await;
+
+                    // Grouping and `results_to_entries` resolve per-file metadata
+                    // (stat calls), so run them on a background thread rather than
+                    // blocking the UI thread inside the entity update.
+                    let processed = match search_result {
+                        Ok(res) => Ok(cx
+                            .background_spawn(async move {
+                                let grouped = group_results(res);
+                                let entries = results_to_entries(&grouped);
+                                (grouped, entries)
+                            })
+                            .await),
+                        Err(error) => Err(error),
+                    };
+
+                    this.update(&mut cx, |this, cx| {
+                        // Discard results if a newer search has since been issued.
+                        if this.search_generation != generation {
+                            return;
+                        }
+                        match processed {
+                            Ok((grouped, entries)) => {
+                                this.filtered_entries = entries;
+                                this.search_results = Some(grouped);
+                                this.clear_status();
+                            }
+                            Err(error) => {
+                                tracing::error!("Search failed: {}", error);
+                                this.search_results = Some(Vec::new());
+                                this.filtered_entries = Vec::new();
+                                this.set_status(
+                                    StatusLevel::Error,
+                                    format!("Search failed: {}", error),
+                                );
+                            }
+                        }
+                        this.is_performing_search = false;
+                        this.update_item_sizes();
+                        cx.notify();
+                    })
+                }
+            },
+        )
+        .detach();
+    }
+
+    pub(crate) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_visible {
+            return;
+        }
+        self.search_visible = true;
+        self.search_input.update(cx, |input, cx| {
+            input.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.search_visible {
+            return;
+        }
+        self.search_visible = false;
+        self.search_results = None;
+        self.search_query.clear();
+        self.apply_filter();
+        self.update_editor_search(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_visible {
+            self.close_search(window, cx);
+        } else {
+            self.open_search(window, cx);
+        }
+    }
+}
 
 pub fn group_results(results: Vec<SearchResult>) -> Vec<SearchFileResult> {
     let mut file_map: HashMap<String, SearchFileResult> = HashMap::new();
