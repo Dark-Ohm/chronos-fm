@@ -14,6 +14,7 @@ use crate::ui::components::layout::unified_toolbar::{
 use crate::ui::theme::theme;
 use crate::ui::window::{self, traffic_lights::TrafficLightsHook};
 
+use crate::core::config;
 use crate::services::search::SearchService;
 use gpui::Entity;
 use gpui::{
@@ -38,7 +39,11 @@ impl NohrsApp {
         Application::new().with_assets(Assets).run(|app: &mut App| {
             gpui_component::init(app);
             let resizable = ResizableState::new(app);
-            let bounds = Bounds::centered(None, size(px(1280.0), px(780.0)), app);
+            let bounds = Bounds::centered(
+                None,
+                size(px(config::WINDOW_WIDTH), px(config::WINDOW_HEIGHT)),
+                app,
+            );
             let traffic_lights = TrafficLightsHook::new().center_vertically(UNIFIED_TOOLBAR_HEIGHT);
             let window_options = window::unified_window_options(bounds, &traffic_lights);
 
@@ -46,13 +51,18 @@ impl NohrsApp {
                 let search_input = cx.new(|cx| InputState::new(window, cx));
                 let focus_handle = cx.focus_handle();
 
-                // Initialize SearchService
+                // Initialize SearchService. Failure is non-fatal: the app starts
+                // with full-text search disabled rather than crashing.
                 let handle = Handle::current();
-                let search_service =
+                let search_service: Option<Arc<SearchService>> =
                     task::block_in_place(move || match handle.block_on(SearchService::new()) {
-                        Ok(service) => Arc::new(service),
+                        Ok(service) => Some(Arc::new(service)),
                         Err(e) => {
-                            panic!("Failed to create SearchService: {}", e);
+                            tracing::error!(
+                                "Failed to initialize search service; starting with search disabled: {}",
+                                e
+                            );
+                            None
                         }
                     });
 
@@ -106,7 +116,7 @@ pub struct RootView {
     s3: Entity<S3Page>,
     extensions: Entity<ExtensionsPage>,
     settings: Entity<SettingsPage>,
-    search_service: Arc<SearchService>,
+    search_service: Option<Arc<SearchService>>,
     indexing_progress: Option<f32>,
 }
 
@@ -131,7 +141,8 @@ impl RootView {
     }
 
     fn check_progress_update(&self) -> Option<f32> {
-        let rx = self.search_service.progress_subscription();
+        let service = self.search_service.as_ref()?;
+        let rx = service.progress_subscription();
         // Just read current value
         let val = *rx.borrow();
         Some(val)
@@ -189,6 +200,10 @@ impl Render for RootView {
                 {
                     let mut props = FooterProps::default();
                     props.indexing_progress = self.indexing_progress;
+                    if let Some((text, is_error)) = self.explorer.read(cx).status_for_footer() {
+                        props.status_message = Some(text);
+                        props.status_is_error = is_error;
+                    }
                     footer(props, cx)
                 },
             )

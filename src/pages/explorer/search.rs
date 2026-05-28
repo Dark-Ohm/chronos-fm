@@ -1,7 +1,107 @@
-use super::types::{SearchFileResult, SearchMatch};
+use super::types::{SearchFileResult, SearchMatch, StatusLevel};
+use super::ExplorerPage;
 use crate::services::fs::listing::FileEntryDto;
 use crate::services::search::SearchResult;
+use gpui::{AsyncApp, Context, Window};
 use std::collections::HashMap;
+
+impl ExplorerPage {
+    pub(crate) fn trigger_search(&mut self, _window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_query.is_empty() {
+            self.search_results = None;
+            self.apply_filter();
+            self.clear_status();
+            cx.notify();
+            return;
+        }
+
+        let Some(service) = self.search_service.clone() else {
+            // Degraded mode: full-text search is unavailable, so fall back to
+            // filtering the already-loaded directory by filename.
+            self.search_results = None;
+            self.apply_filter();
+            self.set_status(
+                StatusLevel::Error,
+                "Search index unavailable; filtering current folder by name only",
+            );
+            cx.notify();
+            return;
+        };
+
+        self.is_performing_search = true;
+        self.clear_status();
+        cx.notify();
+
+        let query = self.search_query.clone();
+        let scope = self.search_scope;
+
+        cx.spawn(
+            move |this: gpui::WeakEntity<ExplorerPage>, cx: &mut AsyncApp| {
+                let mut cx = cx.clone();
+                async move {
+                    let results = service.search(query, scope).await;
+
+                    this.update(&mut cx, |this, cx| {
+                        match results {
+                            Ok(res) => {
+                                let grouped = group_results(res);
+                                let entries = results_to_entries(&grouped);
+
+                                this.filtered_entries = entries;
+                                this.search_results = Some(grouped);
+                                this.clear_status();
+                            }
+                            Err(e) => {
+                                tracing::error!("Search failed: {}", e);
+                                this.search_results = Some(Vec::new());
+                                this.filtered_entries = Vec::new();
+                                this.set_status(
+                                    StatusLevel::Error,
+                                    format!("Search failed: {}", e),
+                                );
+                            }
+                        }
+                        this.is_performing_search = false;
+                        this.update_item_sizes();
+                        cx.notify();
+                    })
+                }
+            },
+        )
+        .detach();
+    }
+
+    pub(crate) fn open_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_visible {
+            return;
+        }
+        self.search_visible = true;
+        self.search_input.update(cx, |input, cx| {
+            input.focus(window, cx);
+        });
+        cx.notify();
+    }
+
+    pub(crate) fn close_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.search_visible {
+            return;
+        }
+        self.search_visible = false;
+        self.search_results = None;
+        self.search_query.clear();
+        self.apply_filter();
+        self.update_editor_search(window, cx);
+        cx.notify();
+    }
+
+    pub(crate) fn toggle_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.search_visible {
+            self.close_search(window, cx);
+        } else {
+            self.open_search(window, cx);
+        }
+    }
+}
 
 pub fn group_results(results: Vec<SearchResult>) -> Vec<SearchFileResult> {
     let mut file_map: HashMap<String, SearchFileResult> = HashMap::new();

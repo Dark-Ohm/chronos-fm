@@ -42,4 +42,7 @@ pub mod theme {
     pub const ACCENT: u32 = 0xDEA584; // Blue
     pub const ACCENT_HOVER: u32 = 0x2563EB;
     pub const ACCENT_LIGHT: u32 = 0xDCEEFF;
+
+    // Status colors
+    pub const DANGER: u32 = 0xDC2626; // Red, for error messages
 }

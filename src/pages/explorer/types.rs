@@ -52,3 +52,18 @@ pub struct LastClickInfo {
     pub timestamp: Instant,
     pub click_count: usize,
 }
+
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum StatusLevel {
+    Info,
+    Error,
+}
+
+/// A transient message surfaced to the user via the footer status bar, used to
+/// report failures (e.g. a directory that could not be read or a failed search)
+/// instead of only logging them.
+#[derive(Clone)]
+pub struct StatusMessage {
+    pub text: String,
+    pub level: StatusLevel,
+}
