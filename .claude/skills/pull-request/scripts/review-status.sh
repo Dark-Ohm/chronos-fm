@@ -79,9 +79,18 @@ query($owner:String!, $repo:String!, $pr:Int!) {
   }
 }' 2>/dev/null) || { echo "error: graphql query failed" >&2; exit 2; }
 
-unresolved=$(printf '%s' "$threads_json" | REVIEW_BOTS="$REVIEW_BOTS" python3 -c '
+# Python emits the human-readable listing followed by a final
+# "__UNRESOLVED_COUNT__=N" line. We must FAIL FAST if it errors: defaulting the
+# count to 0 on parse failure would report a false "green" and unblock the gate.
+parsed=$(printf '%s' "$threads_json" | REVIEW_BOTS="$REVIEW_BOTS" python3 -c '
 import sys, json, os
-bots = set(os.environ.get("REVIEW_BOTS", "").split())
+
+def norm(name):
+    # GraphQL author.login omits the trailing "[bot]" that the REST API adds;
+    # normalize so the configured names match regardless of which form is used.
+    return name[:-5] if name.endswith("[bot]") else name
+
+bots = {norm(b) for b in os.environ.get("REVIEW_BOTS", "").split()}
 data = json.load(sys.stdin)
 threads = (((data.get("data") or {}).get("repository") or {})
            .get("pullRequest") or {}).get("reviewThreads", {}).get("nodes", [])
@@ -91,19 +100,20 @@ for t in threads:
         continue
     comments = (t.get("comments") or {}).get("nodes") or []
     author = (comments[0].get("author") or {}).get("login", "") if comments else ""
-    if bots and author not in bots:
+    if bots and norm(author) not in bots:
         continue
     count += 1
     body = (comments[0].get("body", "") if comments else "").strip().replace("\n", " ")
     outdated = " (outdated)" if t.get("isOutdated") else ""
     loc = f'"'"'{t.get("path","?")}:{t.get("line","?")}'"'"'
     print(f"  [{author}] {loc}{outdated}: {body[:160]}")
-print(f"__UNRESOLVED_COUNT__={count}", file=sys.stderr)
-' 2>/tmp/.review-count.$$)
-echo "$unresolved"
-unresolved_count=$(sed -n 's/^__UNRESOLVED_COUNT__=//p' "/tmp/.review-count.$$" 2>/dev/null)
-rm -f "/tmp/.review-count.$$"
-unresolved_count="${unresolved_count:-0}"
+print(f"__UNRESOLVED_COUNT__={count}")
+') || { echo "error: failed to parse review threads" >&2; exit 2; }
+
+printf '%s\n' "$parsed" | grep -v '^__UNRESOLVED_COUNT__='
+unresolved_count=$(printf '%s\n' "$parsed" | sed -n 's/^__UNRESOLVED_COUNT__=//p')
+[[ "$unresolved_count" =~ ^[0-9]+$ ]] \
+  || { echo "error: parser did not report a thread count" >&2; exit 2; }
 [ "$unresolved_count" -eq 0 ] && echo "  (none)"
 
 # --- verdict ---------------------------------------------------------------

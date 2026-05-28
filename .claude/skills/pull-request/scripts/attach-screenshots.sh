@@ -19,12 +19,23 @@ slug="${1:-}"
 shift || true
 [ -n "$slug" ] && [ "$#" -ge 1 ] || {
   echo "usage: attach-screenshots.sh <slug> <file1> [file2 ...]" >&2; exit 2; }
+# slug is interpolated into the published path; restrict it to a safe charset so
+# values like "../.." or "a/b" can't escape the screenshots/ subdirectory.
+[[ "$slug" =~ ^[A-Za-z0-9._-]+$ ]] || {
+  echo "error: slug must match ^[A-Za-z0-9._-]+$ (no path separators)" >&2; exit 2; }
 
 ASSET_BRANCH="${PR_ASSETS_BRANCH:-pr-assets}"
 
-# Validate inputs up front so we never push a half-empty batch.
+# Validate inputs up front so we never create a worktree or push a bad batch.
+# Files are stored by basename, so two inputs sharing one would overwrite each
+# other and yield wrong embeds — reject the batch rather than silently lose one.
+declare -A seen_basenames=()
 for f in "$@"; do
   [ -f "$f" ] || { echo "error: not a file: $f" >&2; exit 2; }
+  base=$(basename "$f")
+  [ -z "${seen_basenames[$base]:-}" ] \
+    || { echo "error: duplicate filename in batch: $base" >&2; exit 2; }
+  seen_basenames[$base]=1
 done
 
 origin_url=$(git remote get-url origin 2>/dev/null) \
@@ -49,7 +60,8 @@ if git ls-remote --exit-code --heads origin "$ASSET_BRANCH" >/dev/null 2>&1; the
   git worktree add --quiet -B "$ASSET_BRANCH" "$tmp" "origin/$ASSET_BRANCH" \
     || { echo "error: failed to check out $ASSET_BRANCH" >&2; exit 1; }
 else
-  git worktree add --quiet --orphan "$ASSET_BRANCH" "$tmp" \
+  # git 2.43: --orphan takes the branch name via -b, not as a positional arg.
+  git worktree add --quiet --orphan -b "$ASSET_BRANCH" "$tmp" \
     || { echo "error: failed to create orphan $ASSET_BRANCH" >&2; exit 1; }
 fi
 
