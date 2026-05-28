@@ -9,12 +9,15 @@ use super::ExplorerPage;
 
 impl ExplorerPage {
     pub(crate) fn ensure_loaded(&mut self) {
-        if self.entries.is_empty() {
+        if !self.loaded {
             self.reload();
         }
     }
 
     pub(crate) fn reload(&mut self) {
+        // Mark as loaded regardless of outcome so an empty or unreadable
+        // directory is not re-read on every subsequent render.
+        self.loaded = true;
         match list_dir_sync(ListParams {
             path: &self.cwd,
             limit: config::DIR_LISTING_LIMIT,

@@ -21,6 +21,10 @@ pub struct ExplorerPage {
     pub history_index: usize,
     pub entries: Vec<FileEntryDto>,
     pub filtered_entries: Vec<FileEntryDto>,
+    // Whether the current directory has been loaded. Tracked explicitly rather
+    // than via `entries.is_empty()` so an empty (or failed-to-read) directory is
+    // not reloaded on every render.
+    pub loaded: bool,
     pub sort_key: SortKey,
     pub sort_asc: bool,
     pub search_query: String,
@@ -91,6 +95,7 @@ impl ExplorerPage {
             history_index: 0,
             entries: Vec::new(),
             filtered_entries: Vec::new(),
+            loaded: false,
             sort_key: SortKey::Name,
             sort_asc: true,
             search_query: String::new(),
@@ -260,9 +265,7 @@ impl ExplorerPage {
             self.sort_key = key;
             self.sort_asc = true;
         }
-        let mut e = self.entries.clone();
-        entries::sort_entries(&mut e, self.sort_key, self.sort_asc);
-        self.entries = e;
+        entries::sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
         self.apply_filter();
     }
 }

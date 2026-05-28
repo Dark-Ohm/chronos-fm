@@ -51,6 +51,20 @@ fn is_image_path(path: &str) -> bool {
     )
 }
 
+/// Raster image formats that cannot be meaningfully decoded as UTF-8 text.
+/// SVG is intentionally excluded so it still previews as text in the editor.
+fn is_binary_image_path(path: &str) -> bool {
+    let extension = std::path::Path::new(path)
+        .extension()
+        .and_then(|s| s.to_str())
+        .unwrap_or("")
+        .to_lowercase();
+    matches!(
+        extension.as_str(),
+        "png" | "jpg" | "jpeg" | "gif" | "bmp" | "webp"
+    )
+}
+
 /// Reads `path` and classifies it for preview. Runs on a background thread, so
 /// it must not touch any GPUI state.
 fn read_preview(path: &str) -> PreviewOutcome {
@@ -63,6 +77,11 @@ fn read_preview(path: &str) -> PreviewOutcome {
     }
     if metadata.len() > config::PREVIEW_MAX_FILE_SIZE {
         return PreviewOutcome::TooLarge;
+    }
+    // Binary images are rendered from disk by path, so avoid reading the whole
+    // file and attempting a UTF-8 decode just to discover it is binary.
+    if is_binary_image_path(path) {
+        return PreviewOutcome::Image;
     }
     match std::fs::read(path) {
         Ok(bytes) => match String::from_utf8(bytes) {
