@@ -8,8 +8,7 @@
   [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](../LICENSE)
   [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](../rust-toolchain.toml)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
-  [![CI](https://github.com/noh-rs/nohrs/actions/workflows/ci.yml/badge.svg)](https://github.com/noh-rs/nohrs/actions/workflows/ci.yml)
-  [![Discord](https://img.shields.io/discord/0?label=Discord&logo=discord&logoColor=white&color=5865F2)](https://discord.gg/dZM7fUtE94)
+  [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/dZM7fUtE94)
 
   [クイックスタート](#クイックスタート) · [なぜ-nohrs](#なぜ-nohrs) · [ロードマップ](ROADMAP.md) · [English README](../README.md)
 
