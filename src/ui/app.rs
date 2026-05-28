@@ -129,6 +129,12 @@ impl RootView {
     }
 
     fn start_progress_loop(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        // Without a search service there is no indexing progress to poll, so avoid
+        // rescheduling a per-frame no-op forever.
+        if self.search_service.is_none() {
+            return;
+        }
+
         if let Some(progress) = self.check_progress_update() {
             self.indexing_progress = Some(progress);
             cx.notify();

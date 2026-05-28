@@ -230,6 +230,13 @@ impl ExplorerPage {
     }
 
     pub(crate) fn apply_filter(&mut self) {
+        // When explicit search results are displayed, `filtered_entries` is owned
+        // by the search path; only refresh row sizes here.
+        if self.search_results.is_some() {
+            self.update_item_sizes();
+            return;
+        }
+
         if self.search_query.is_empty() {
             self.filtered_entries = self.entries.clone();
         } else {
@@ -241,20 +248,9 @@ impl ExplorerPage {
                 .cloned()
                 .collect();
         }
-        self.update_item_sizes();
-        if self.search_results.is_some() {
-            return;
-        }
 
-        if self.entries.is_empty() {
-            self.filtered_entries = Vec::new();
-            return;
-        }
-
-        self.filtered_entries = self.entries.clone();
-
-        // Apply sorting
         entries::sort_entries(&mut self.filtered_entries, self.sort_key, self.sort_asc);
+        self.update_item_sizes();
     }
 
     pub(crate) fn set_sort_key(&mut self, key: SortKey) {

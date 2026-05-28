@@ -63,6 +63,7 @@ impl ExplorerPage {
         self.cwd = path;
         self.entries.clear();
         self.reload();
+        cx.notify();
     }
 
     pub(crate) fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -73,6 +74,7 @@ impl ExplorerPage {
                 self.entries.clear();
                 self.close_search(window, cx);
                 self.reload();
+                cx.notify();
             }
         }
     }
@@ -85,6 +87,7 @@ impl ExplorerPage {
                 self.entries.clear();
                 self.close_search(window, cx);
                 self.reload();
+                cx.notify();
             }
         }
     }

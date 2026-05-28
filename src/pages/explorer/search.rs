@@ -2,7 +2,7 @@ use super::types::{SearchFileResult, SearchMatch, StatusLevel};
 use super::ExplorerPage;
 use crate::services::fs::listing::FileEntryDto;
 use crate::services::search::SearchResult;
-use gpui::{AsyncApp, Context, Window};
+use gpui::{AppContext, AsyncApp, Context, Window};
 use std::collections::HashMap;
 
 impl ExplorerPage {
@@ -45,29 +45,40 @@ impl ExplorerPage {
             move |this: gpui::WeakEntity<ExplorerPage>, cx: &mut AsyncApp| {
                 let mut cx = cx.clone();
                 async move {
-                    let results = service.search(query, scope).await;
+                    let search_result = service.search(query, scope).await;
+
+                    // Grouping and `results_to_entries` resolve per-file metadata
+                    // (stat calls), so run them on a background thread rather than
+                    // blocking the UI thread inside the entity update.
+                    let processed = match search_result {
+                        Ok(res) => Ok(cx
+                            .background_spawn(async move {
+                                let grouped = group_results(res);
+                                let entries = results_to_entries(&grouped);
+                                (grouped, entries)
+                            })
+                            .await),
+                        Err(error) => Err(error),
+                    };
 
                     this.update(&mut cx, |this, cx| {
                         // Discard results if a newer search has since been issued.
                         if this.search_generation != generation {
                             return;
                         }
-                        match results {
-                            Ok(res) => {
-                                let grouped = group_results(res);
-                                let entries = results_to_entries(&grouped);
-
+                        match processed {
+                            Ok((grouped, entries)) => {
                                 this.filtered_entries = entries;
                                 this.search_results = Some(grouped);
                                 this.clear_status();
                             }
-                            Err(e) => {
-                                tracing::error!("Search failed: {}", e);
+                            Err(error) => {
+                                tracing::error!("Search failed: {}", error);
                                 this.search_results = Some(Vec::new());
                                 this.filtered_entries = Vec::new();
                                 this.set_status(
                                     StatusLevel::Error,
-                                    format!("Search failed: {}", e),
+                                    format!("Search failed: {}", error),
                                 );
                             }
                         }
