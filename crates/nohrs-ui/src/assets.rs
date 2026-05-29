@@ -1,9 +1,10 @@
 use rust_embed::RustEmbed;
 
-// Assets live at the workspace root (`assets/`), so the path is relative to this
-// crate's manifest directory rather than a crate-local folder.
+// Crate-local assets so `nohrs-ui` stays self-contained and publishable: the
+// folder is resolved relative to this crate's manifest dir and is included in
+// the packaged crate. Workspace-root `assets/doc/` (README images) is separate.
 #[derive(RustEmbed)]
-#[folder = "../../assets/"]
+#[folder = "assets/"]
 pub struct Assets;
 
 impl gpui::AssetSource for Assets {

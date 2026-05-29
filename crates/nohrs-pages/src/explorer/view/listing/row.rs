@@ -84,16 +84,6 @@ pub fn render(
 
     // Create styled filename with highlighted matches
     let styled_name = if has_filename_match && !page.search_query.is_empty() {
-        // Need to import find_query_highlights from somewhere or helpers
-        // Assuming it's in view::mod or similar.
-        // For now, I will assume it is public on ExplorerPage or I can import it.
-        // Wait, I put it in view/mod.rs? No, I haven't written view/mod.rs yet.
-        // I should put find_query_highlights in `crate::explorer::view::utils` or similar.
-        // Or duplicate it? No.
-        // I will use ExplorerPage::find_query_highlights (static method) if I move it there?
-        // Actually, I can put it in `super` (listing/mod.rs) or `view/mod.rs`.
-        // Let's assume it's available via `crate::explorer::view::find_query_highlights`.
-        // I'll add `use crate::explorer::view::find_query_highlights;`
         let highlights = crate::explorer::view::find_query_highlights(&display_name, &query);
         StyledText::new(display_name.clone()).with_highlights(highlights)
     } else {

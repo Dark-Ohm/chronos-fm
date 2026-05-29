@@ -24,7 +24,7 @@ nohrs-ui       = { path = "../nohrs-ui" }
 nohrs-pages    = { path = "../nohrs-pages" }
 gpui = "0.2"
 gpui-component = "0.3"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread"] }
 tracing.workspace = true
 
 [lints]
