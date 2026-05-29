@@ -139,6 +139,8 @@ Other entities can then register a callback to handle these events by doing `cx.
 
 # Pull request hygiene
 
+When work is complete, use the pull-request skill (`/pull-request`) to open the PR.
+
 When an agent opens or updates a pull request, it must:
 
 - Use a clear, correctly capitalized, imperative PR title (for example, `Fix crash in project panel`).
@@ -156,6 +158,9 @@ Release Notes:
 
 - N/A
 ```
+
+- Name branches `<type>/<short-description>` where `<type>` is one of `feature`, `fix`, `docs`, or `chore` (for example, `feature/history-view`, `fix/search-crash`).
+- Delete the branch as soon as its pull request merges (enable GitHub's auto-delete-on-merge, or delete it right after merging) so stale branches do not accumulate.
 
 # Crash Investigation
 
