@@ -5,6 +5,7 @@
 
   **Launcher × Explorer** — a fast, extensible, plugin-ready file workspace for macOS, built in Rust.
 
+  [![CI](https://github.com/noh-rs/nohrs/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/noh-rs/nohrs/actions/workflows/ci.yml)
   [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
   [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](rust-toolchain.toml)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)

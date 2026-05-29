@@ -52,7 +52,7 @@ fn list_dir_impl(path: &str, limit: usize, cursor: Option<&str>) -> Result<ListR
         let file_name = os_str_to_string(entry.file_name());
         names.push((file_name, entry.path()));
     }
-    names.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+    names.sort_by_key(|a| a.0.to_lowercase());
 
     let total = names.len();
     let offset = cursor

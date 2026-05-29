@@ -119,12 +119,10 @@ impl IndexManager {
                 .hidden(false)
                 .git_ignore(true)
                 .build();
-            for result in walker {
-                if let Ok(entry) = result {
-                    // Count both files and directories
-                    if entry.path().is_file() || entry.path().is_dir() {
-                        total_files += 1;
-                    }
+            for entry in walker.flatten() {
+                // Count both files and directories
+                if entry.path().is_file() || entry.path().is_dir() {
+                    total_files += 1;
                 }
             }
         }
@@ -143,7 +141,7 @@ impl IndexManager {
                     if path.is_file() {
                         if let Err(e) = self.index_single_file(
                             path,
-                            &mut *writer_guard,
+                            &mut writer_guard,
                             path_field,
                             filename_field,
                             content_field,
@@ -154,7 +152,7 @@ impl IndexManager {
                     } else if path.is_dir() {
                         if let Err(e) = self.index_single_directory(
                             path,
-                            &mut *writer_guard,
+                            &mut writer_guard,
                             path_field,
                             filename_field,
                             content_field,
@@ -291,7 +289,7 @@ impl IndexManager {
             if path.exists() {
                 if let Err(e) = self.index_single_file(
                     path,
-                    &mut *writer_guard,
+                    &mut writer_guard,
                     path_field,
                     filename_field,
                     content_field,

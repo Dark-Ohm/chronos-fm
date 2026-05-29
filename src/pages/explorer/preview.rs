@@ -200,10 +200,9 @@ impl ExplorerPage {
                     if let Some(file_result) = results.iter().find(|r| r.path == path) {
                         if let Some(first_match) = file_result.matches.first() {
                             // `line_number` is 1-based; `line_start_offset` takes a 0-based index.
-                            if let Some(offset) = line_start_offset(
-                                &text,
-                                first_match.line_number.saturating_sub(1),
-                            ) {
+                            if let Some(offset) =
+                                line_start_offset(&text, first_match.line_number.saturating_sub(1))
+                            {
                                 if let Some(editor) = self.preview_editor.clone() {
                                     editor.update(cx, |editor, cx| {
                                         editor.scroll_to(offset, window, cx);

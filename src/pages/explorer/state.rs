@@ -217,8 +217,8 @@ impl ExplorerPage {
                 } else {
                     0
                 };
-                let total_height = config::BASE_ROW_HEIGHT
-                    + (snippet_count as f32 * config::SNIPPET_ROW_HEIGHT);
+                let total_height =
+                    config::BASE_ROW_HEIGHT + (snippet_count as f32 * config::SNIPPET_ROW_HEIGHT);
                 size(px(total_width), px(total_height))
             })
             .collect();

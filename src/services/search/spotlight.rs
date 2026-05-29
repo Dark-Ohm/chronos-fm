@@ -9,6 +9,12 @@ use std::process::Command;
 
 pub struct SpotlightBackend;
 
+impl Default for SpotlightBackend {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl SpotlightBackend {
     pub fn new() -> Self {
         Self
