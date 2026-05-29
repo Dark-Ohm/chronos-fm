@@ -24,7 +24,6 @@ coverage/
 .agent
 
 # personal
-/.github
 /.specify
 
 # Python bytecode

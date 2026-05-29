@@ -114,11 +114,7 @@ pub fn footer<V: gpui::Render>(props: FooterProps, cx: &mut Context<V>) -> impl 
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(
-                                Icon::new(IconName::Info)
-                                    .size_3()
-                                    .text_color(rgb(color)),
-                            )
+                            .child(Icon::new(IconName::Info).size_3().text_color(rgb(color)))
                             .child(div().text_xs().text_color(rgb(color)).child(message)),
                     )
                 }),

@@ -1,6 +1,4 @@
 use super::indexer::IndexManager;
-#[cfg(not(target_os = "macos"))]
-use super::ripgrep::RipgrepBackend;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
 use anyhow::{Context, Result};

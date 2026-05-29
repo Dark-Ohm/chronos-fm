@@ -34,7 +34,7 @@ impl Sink for MatchStorage {
         let mut results = self
             .results
             .lock()
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "Lock poisoned"))?;
+            .map_err(|_| std::io::Error::other("Lock poisoned"))?;
 
         results.push(SearchResult {
             path: self.path.clone(),
@@ -60,7 +60,7 @@ impl SearchBackend for RipgrepBackend {
         for result in walker {
             match result {
                 Ok(entry) => {
-                    if entry.file_type().map_or(false, |ft| ft.is_file()) {
+                    if entry.file_type().is_some_and(|ft| ft.is_file()) {
                         let path = entry.path().to_path_buf();
                         let results_clone = results.clone();
                         let sink = MatchStorage {

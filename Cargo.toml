@@ -2,6 +2,15 @@
 name = "nohrs"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.83"
+description = "Launcher × Explorer — a fast, extensible, plugin-ready file workspace built in Rust."
+authors = ["nohrs contributors"]
+license = "MIT"
+readme = "README.md"
+repository = "https://github.com/noh-rs/nohrs"
+homepage = "https://nohrs.app"
+keywords = ["launcher", "file-explorer", "file-manager", "gpui", "productivity"]
+categories = ["filesystem", "gui"]
 
 [lib]
 name = "nohrs"

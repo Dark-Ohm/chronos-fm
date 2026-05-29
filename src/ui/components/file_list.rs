@@ -209,9 +209,7 @@ pub fn format_date(timestamp: &u64) -> String {
 
     let format = format_description!("[year]/[month]/[day]");
     match OffsetDateTime::from_unix_timestamp(*timestamp as i64) {
-        Ok(datetime) => datetime
-            .format(&format)
-            .unwrap_or_else(|_| "-".to_string()),
+        Ok(datetime) => datetime.format(&format).unwrap_or_else(|_| "-".to_string()),
         Err(_) => "-".to_string(),
     }
 }
