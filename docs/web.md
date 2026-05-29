@@ -185,8 +185,8 @@ zed.dev の IA から商用要素 (Pricing / Business / Sign up / Jobs / Team / 
 
 ページ全体像 (上から下のスクロール、zed.dev のホーム構成を nohrs 流に):
 
-1. **Hero**: tagline + 製品デモ (額装した Explorer スクショ/GIF) + Download CTA + GitHub star
-   - **ヒーロー素材は正直主義**: 実在する Explorer のみを上質なウィンドウクローム + warm 背景 + Rust-tan グロウで額装。**en ロケールで撮り直し**、README が約束している操作 GIF を実録する。Launcher/Plugins/Search は **偽装せず**下部の機能カードで mock/Preview + "Coming in v0.x" として見せる。
+1. **Hero**: tagline + 製品デモ (額装した Explorer スクショ) + Download CTA + GitHub star
+   - **ヒーロー素材は正直主義**: 実在する Explorer のみを上質なウィンドウクローム + warm 背景 + Rust-tan グロウで額装。**当面は静止スクショで代替**し（**en ロケールで撮り直し**）、操作 GIF は後日差し替える（README 約束分）。Launcher/Plugins/Search は **偽装せず**下部の機能カードで mock/Preview + "Coming in v0.x" として見せる。
 2. **"Why nohrs?"** — 3-4 ポイントで差別化 (Launcher first-class / Explorer first-class / WASM plugins / Spotlight 非依存の検索。README の柱を流用)
 3. **主要機能ハイライト** (Explorer=実在 / Launcher・Plugin・Search=Coming カードで mock 提示)
 4. **Built in Rust / craft セクション** (tan ブランド・性能の語り。zed の care & craftsmanship 相当)
