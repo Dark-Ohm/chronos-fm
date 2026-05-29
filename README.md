@@ -51,12 +51,13 @@ Prebuilt macOS binaries will appear on the [Releases](https://github.com/noh-rs/
 ### Build from source
 
 ```sh
-# Core library only
+# Toolkit-free crates only (core / models / services) — this is what Linux CI builds
 cargo build
 
-# GUI binary
-cargo build --features gui
-cargo run --features gui --bin nohrs
+# Full workspace, including the GUI crates and binary
+# (requires gpui's platform toolchain; macOS recommended — see below)
+cargo build --workspace
+cargo run -p nohrs
 ```
 
 #### macOS prerequisites for gpui

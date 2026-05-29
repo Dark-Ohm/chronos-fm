@@ -1,0 +1,5 @@
+# `unwrap_used` / `expect_used` are warn-level workspace lints (see
+# [workspace.lints.clippy] in Cargo.toml). Tests are exempt per
+# docs/architecture.md §5, so allow them in test code.
+allow-unwrap-in-tests = true
+allow-expect-in-tests = true
