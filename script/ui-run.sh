@@ -11,7 +11,7 @@
 #   stop             Kill the running nohrs instance.
 #
 # Notes:
-#   - Build separately first: RUSTFLAGS="-L $HOME/.local/devlibs" cargo build --features gui --bin nohrs
+#   - Build separately first: RUSTFLAGS="-L $HOME/.local/devlibs" cargo build -p nohrs
 #   - Drive input yourself with xdotool against the window id from `launch`/`win`.
 set -uo pipefail
 
@@ -33,7 +33,7 @@ setup() {
   for p in "${pairs[@]}"; do
     ln -sf "$LIBDIR/${p%%:*}" "$DEVLIBS/${p##*:}"
   done
-  echo "devlibs ready at $DEVLIBS (build with: RUSTFLAGS=\"-L $DEVLIBS\" cargo build --features gui --bin nohrs)"
+  echo "devlibs ready at $DEVLIBS (build with: RUSTFLAGS=\"-L $DEVLIBS\" cargo build -p nohrs)"
 }
 
 resolve_display() {

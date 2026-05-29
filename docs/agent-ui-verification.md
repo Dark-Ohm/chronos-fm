@@ -38,7 +38,7 @@ sudo apt-get install -y xvfb                    # optional: only if there is NO 
 
 ```bash
 # 1. Implement your change, then build (note the RUSTFLAGS linker path from `setup`):
-RUSTFLAGS="-L $HOME/.local/devlibs" cargo build --features gui --bin nohrs
+RUSTFLAGS="-L $HOME/.local/devlibs" cargo build -p nohrs
 
 # 2. Launch + wait for first real frame. Prints the window id you'll target.
 ./script/ui-run.sh launch

@@ -1,55 +1,56 @@
-[package]
-name = "nohrs"
-version = "0.1.0"
-edition = "2021"
+[workspace]
+resolver = "2"
+members = [
+  "crates/nohrs",
+  "crates/nohrs-core",
+  "crates/nohrs-models",
+  "crates/nohrs-services",
+  "crates/nohrs-ui",
+  "crates/nohrs-pages",
+]
+# P2 以降に追加:
+#   "crates/nohrs-store",
+#   "crates/nohrs-launcher",
+#   "crates/nohrs-plugin-host",
+#   "crates/plugins/*"
+exclude = ["web"]
+
+# gpui renders with Metal/Blade and the GUI stack is only exercised on macOS, so
+# Linux CI builds headless. `default-members` keeps bare `cargo build`/`test`/
+# `clippy` to the toolkit-free crates; the GUI crates (nohrs-ui / nohrs-pages /
+# nohrs) are still workspace members and build with `--workspace`, `-p`, or on
+# macOS. This mirrors the previous single-crate `default = []` / `gui` feature.
+default-members = [
+  "crates/nohrs-core",
+  "crates/nohrs-models",
+  "crates/nohrs-services",
+]
+
+[workspace.package]
+version      = "0.2.0"
+edition      = "2021"
 rust-version = "1.83"
-description = "Launcher × Explorer — a fast, extensible, plugin-ready file workspace built in Rust."
-authors = ["nohrs contributors"]
-license = "MIT"
-readme = "README.md"
-repository = "https://github.com/noh-rs/nohrs"
-homepage = "https://nohrs.app"
-keywords = ["launcher", "file-explorer", "file-manager", "gpui", "productivity"]
-categories = ["filesystem", "gui"]
+license      = "MIT"
+repository   = "https://github.com/noh-rs/nohrs"
+homepage     = "https://nohrs.app"
+authors      = ["nohrs contributors"]
 
-[lib]
-name = "nohrs"
-path = "src/lib.rs"
-
-
-[features]
-default = []
-gui = ["dep:gpui", "dep:gpui-component", "dep:rust-embed"]
-
-[[bin]]
-name = "nohrs"
-path = "src/gui/main.rs"
-required-features = ["gui"]
-
-[dependencies]
-anyhow = "1"
-thiserror = "1"
-tracing = "0.1"
+[workspace.dependencies]
+anyhow             = "1"
+thiserror          = "1"
+tracing            = "0.1"
 tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-clap = { version = "4", features = ["derive"] }
-axum = "0.7"
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal"] }
-# Planned (add when implemented): sled = "0.34", sqlite crates, aws-sdk-s3/object_store, gix/git2, comrak, syntect, notify
-gpui = { version = "0.2", optional = true }
-gpui-component = { version = "0.3", optional = true }
-rust-embed = { version = "8", optional = true }
-comrak = "0.22"
-syntect = { version = "5", default-features = false, features = ["default-fancy"] }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
-notify = "6"
-trash = "5"
-time = { version = "0.3", features = ["formatting", "macros"] }
-tantivy = "0.22"
-ignore = "0.4"
-grep = "0.3"
-dirs = "5.0"
-notify-debouncer-mini = "0.4"
-[dev-dependencies]
-tempfile = "3"
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+time               = { version = "0.3", features = ["formatting", "macros"] }
+
+[workspace.lints.rust]
+unsafe_code  = "deny"
+missing_docs = "allow"   # TODO(#48): raise to "warn" (P1 target) once public APIs are
+                         # documented, then to "deny" (P7). Kept at "allow" for now so the
+                         # CI gate `cargo clippy -- -D warnings` stays green through the
+                         # workspace split, which does not add docs to the ~5k LOC surface.
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
