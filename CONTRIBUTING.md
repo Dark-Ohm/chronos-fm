@@ -48,7 +48,7 @@ available, so CI and the core library checks run **without** it.
 
 Every PR body ends with a `Release Notes:` section containing exactly one bullet:
 
-```
+```text
 Release Notes:
 
 - Added ...        # or "Fixed ..." / "Improved ..." for user-facing changes
