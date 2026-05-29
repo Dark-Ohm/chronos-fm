@@ -3,9 +3,12 @@ use gpui::AnyElement;
 pub mod explorer;
 pub mod extensions;
 pub mod git;
+pub mod root;
 pub mod s3;
 // removed search
 pub mod settings;
+
+pub use root::RootView;
 
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 pub enum PageKind {

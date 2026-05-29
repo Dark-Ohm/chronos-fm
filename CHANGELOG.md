@@ -19,8 +19,10 @@ While Nohrs is pre-alpha (`0.x`), minor versions may include breaking changes.
   `default-members`; the GUI crates build with `--workspace` (macOS). See
   [ADR 0003](docs/adr/0003-cargo-workspace-layer-split.md).
 - `FileEntryDto` moved to `nohrs-models` so the UI layer no longer depends on
-  services; the app shell (`NohrsApp`) moved from `nohrs-ui` to the `nohrs`
-  binary to keep `nohrs-ui` reusable and dependency-correct.
+  services. The Explorer window root (`RootView`) lives in `nohrs-pages` as the
+  Explorer "pillar", symmetric with the future launcher window (`nohrs-launcher`,
+  P3); `nohrs-ui` keeps only the shared window chrome, and the `nohrs` binary is
+  a thin startup sequence (`NohrsApp`) that opens the window(s).
 
 ### Added
 
