@@ -12,19 +12,23 @@ use crate::{
     extensions::ExtensionsPage, git::GitPage, s3::S3Page, settings::SettingsPage, PageKind,
 };
 use gpui::{
-    div, prelude::*, px, rgb, AnyElement, App, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, Render, Window,
+    div, prelude::*, px, rgb, AnyElement, App, AsyncWindowContext, Context, Entity, FocusHandle,
+    Focusable, InteractiveElement, Render, WeakEntity, Window,
 };
 use gpui_component::input::InputState;
 use gpui_component::resizable::ResizableState;
-use gpui_component::{Icon, Root};
+use gpui_component::{Icon, Root, Theme, ThemeMode as GpuiThemeMode};
+use nohrs_core::config::{self, Config, ConfigOverride, ConfigWatcher};
 use nohrs_services::search::SearchService;
 use nohrs_ui::components::layout::footer::{footer, FooterProps};
 use nohrs_ui::components::layout::unified_toolbar::{
     unified_toolbar, AccountMenuAction, AccountMenuCommand, UnifiedToolbarProps,
 };
 use nohrs_ui::theme::theme;
+use std::path::PathBuf;
+use std::sync::mpsc;
 use std::sync::Arc;
+use std::time::Duration;
 use tracing::info;
 
 pub struct RootView {
@@ -38,6 +42,18 @@ pub struct RootView {
     settings: Entity<SettingsPage>,
     search_service: Option<Arc<SearchService>>,
     indexing_progress: Option<f32>,
+    // Currently-applied configuration and the inputs needed to recompute it on
+    // hot reload: the file path and the env/CLI override layers that sit above
+    // the file (config.md §3).
+    config: Config,
+    config_path: PathBuf,
+    config_overrides: Vec<ConfigOverride>,
+    // Latest config load error, surfaced in the footer. Held here (not in the
+    // explorer's transient status) so it is not cleared by an explorer
+    // directory reload and survives across pages.
+    config_status: Option<String>,
+    // Kept alive for the window's lifetime so the OS watch is not dropped.
+    _config_watcher: Option<ConfigWatcher>,
 }
 
 impl RootView {
@@ -45,9 +61,14 @@ impl RootView {
     /// the indexing-progress poll. `resizable` is created at the application
     /// level and the search service is initialized by the binary (it owns the
     /// async runtime), keeping `nohrs-pages` free of runtime concerns.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         resizable: Entity<ResizableState>,
         search_service: Option<Arc<SearchService>>,
+        config: Config,
+        config_path: PathBuf,
+        config_overrides: Vec<ConfigOverride>,
+        config_error: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -77,9 +98,117 @@ impl RootView {
             settings,
             search_service,
             indexing_progress: Some(1.0), // Start as hidden/done
+            // Start from defaults so the initial `apply_config` below treats the
+            // loaded config as a change and applies theme + ui uniformly.
+            config: Config::default(),
+            config_path,
+            config_overrides,
+            config_status: None,
+            _config_watcher: None,
         };
         view.start_progress_loop(window, cx);
+        view.apply_config(config, config_error, window, cx);
+        view.start_config_watch(window, cx);
         view
+    }
+
+    /// Apply a freshly-merged configuration to the live UI: switch the theme
+    /// mode, propagate `[ui]` settings to the explorer, and surface any load
+    /// error in the status bar. Safe to call repeatedly (hot reload).
+    pub fn apply_config(
+        &mut self,
+        config: Config,
+        config_error: Option<String>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if config.theme.mode != self.config.theme.mode {
+            let mode = match config.theme.mode {
+                config::ThemeMode::Light => GpuiThemeMode::Light,
+                config::ThemeMode::Dark => GpuiThemeMode::Dark,
+                // `system` follows the OS appearance reported by the window.
+                config::ThemeMode::System => GpuiThemeMode::from(window.appearance()),
+            };
+            Theme::change(mode, Some(window), cx);
+        }
+
+        // Condense the (possibly multi-line) diagnostic to a single line plus the
+        // file path for the one-line status bar; full detail is in the logs.
+        self.config_status = config_error.as_ref().map(|error| {
+            let summary = error.lines().next().unwrap_or(error.as_str());
+            format!("config: {summary} ({})", self.config_path.display())
+        });
+
+        let ui = config.ui.clone();
+        self.explorer
+            .update(cx, |page, cx| page.apply_config_ui(&ui, cx));
+
+        self.config = config;
+        cx.notify();
+    }
+
+    /// Watch `config.toml` and re-apply on change. The `notify` callback runs on
+    /// a background thread and only pings a channel; a foreground poll loop does
+    /// the reload so all entity updates happen on the GPUI thread.
+    fn start_config_watch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let (sender, receiver) = mpsc::channel::<()>();
+        match ConfigWatcher::new(&self.config_path, move || {
+            // A closed channel just means the app is shutting down.
+            let _ = sender.send(());
+        }) {
+            Ok(watcher) => self._config_watcher = Some(watcher),
+            Err(error) => {
+                tracing::warn!("config hot reload disabled: {error}");
+                return;
+            }
+        }
+
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<RootView>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    loop {
+                        cx.background_executor()
+                            .timer(Duration::from_millis(400))
+                            .await;
+                        let mut changed = false;
+                        let mut disconnected = false;
+                        loop {
+                            match receiver.try_recv() {
+                                Ok(()) => changed = true,
+                                Err(mpsc::TryRecvError::Empty) => break,
+                                // The watcher was dropped; stop polling rather
+                                // than spinning every 400ms forever.
+                                Err(mpsc::TryRecvError::Disconnected) => {
+                                    disconnected = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if disconnected {
+                            break;
+                        }
+                        if !changed {
+                            continue;
+                        }
+                        let update = this.update_in(&mut cx, |this, window, cx| {
+                            let (mut config, diagnostics) =
+                                config::load_from_path(&this.config_path);
+                            for over in &this.config_overrides {
+                                config.apply_override(over);
+                            }
+                            let config_error = config::report_diagnostics(&diagnostics);
+                            this.apply_config(config, config_error, window, cx);
+                        });
+                        if update.is_err() {
+                            break; // The view (and window) is gone.
+                        }
+                    }
+                }
+            },
+        )
+        .detach();
     }
 
     pub fn set_page(&mut self, page: PageKind, cx: &mut Context<Self>) {
@@ -165,11 +294,15 @@ impl Render for RootView {
             .child(
                 // Footer status bar
                 {
-                    let (status_message, status_is_error) =
-                        match self.explorer.read(cx).status_for_footer() {
+                    // A config load error takes precedence over the explorer's
+                    // transient status and is always shown as an error.
+                    let (status_message, status_is_error) = match &self.config_status {
+                        Some(message) => (Some(message.clone()), true),
+                        None => match self.explorer.read(cx).status_for_footer() {
                             Some((text, is_error)) => (Some(text), is_error),
                             None => (None, false),
-                        };
+                        },
+                    };
                     let props = FooterProps {
                         indexing_progress: self.indexing_progress,
                         status_message,
