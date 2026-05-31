@@ -127,7 +127,7 @@ GitHub Actions では Ubuntu runner で同 image を使用。
 
 **buildInputs（共通）**: `rust`, `pkg-config`, `openssl`, `fontconfig`, `freetype`, `cargo-llvm-cov`, `cargo-deny`, `cargo-machete`, `typos`
 
-**buildInputs（Linux 追加）**: `libxkbcommon`, `wayland`, `mesa`, `libGL`, `xorg.libxcb`, `xorg.libX11`, `libxcursor`, `libxi`, `vulkan-loader`, `vulkan-headers`
+**buildInputs（Linux 追加）**: `libxkbcommon`, `wayland`, `mesa`, `libGL`, `libxcb`, `libx11`, `libxcursor`, `libxi`, `vulkan-loader`, `vulkan-headers`
 - macOS では Metal を使うためこれらは不要。`lib.optionals stdenv.isLinux` で条件付き。
 - `LD_LIBRARY_PATH` に `makeLibraryPath` で生成したパスを設定し、実行時リンクを解決。
 
