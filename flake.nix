@@ -18,16 +18,13 @@
         linuxDeps = pkgs.lib.optionals pkgs.stdenv.isLinux (
           with pkgs; [
             libxkbcommon wayland mesa libGL
-            xorg.libxcb xorg.libX11 libxcursor libxi
+            libxcb libx11 libxcursor libxi
             vulkan-loader vulkan-headers
           ]
         );
-        libPath = pkgs.lib.makeLibraryPath (with pkgs; [
-          libxkbcommon wayland mesa libGL
-          xorg.libxcb xorg.libX11
-          vulkan-loader
-          fontconfig freetype openssl
-        ] ++ linuxDeps);
+        libPath = pkgs.lib.makeLibraryPath (
+          (with pkgs; [ fontconfig freetype openssl ]) ++ linuxDeps
+        );
       in {
         devShells.default = pkgs.mkShell {
           buildInputs = with pkgs; [
