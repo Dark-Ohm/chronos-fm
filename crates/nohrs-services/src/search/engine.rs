@@ -2,6 +2,7 @@ use super::indexer::IndexManager;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
 use anyhow::{Context, Result};
+use nohrs_core::telemetry::LogErr;
 use std::sync::Arc;
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
@@ -56,7 +57,7 @@ impl SearchEngine {
                 tracing::info!(
                     "Schema outdated (missing filename field), forcing full indexing..."
                 );
-                let _ = progress_tx.send(0.0);
+                progress_tx.send(0.0).log_err();
                 if let Err(e) = initial_manager.index_home(Some(progress_tx)) {
                     tracing::error!("Initial indexing failed: {}", e);
                 }
@@ -69,7 +70,7 @@ impl SearchEngine {
                     let doc_count = reader.searcher().num_docs();
                     if doc_count == 0 {
                         tracing::info!("Index is empty, starting full indexing...");
-                        let _ = progress_tx.send(0.0); // Reset to 0 for indexing
+                        progress_tx.send(0.0).log_err(); // Reset to 0 for indexing
                         if let Err(e) = initial_manager.index_home(Some(progress_tx)) {
                             tracing::error!("Initial indexing failed: {}", e);
                         }
@@ -83,7 +84,7 @@ impl SearchEngine {
                 }
                 Err(e) => {
                     tracing::warn!("Failed to read index, running full indexing: {}", e);
-                    let _ = progress_tx.send(0.0);
+                    progress_tx.send(0.0).log_err();
                     if let Err(e) = initial_manager.index_home(Some(progress_tx)) {
                         tracing::error!("Initial indexing failed: {}", e);
                     }
