@@ -19,6 +19,7 @@ use gpui_component::input::InputState;
 use gpui_component::resizable::ResizableState;
 use gpui_component::{Icon, Root, Theme, ThemeMode as GpuiThemeMode};
 use nohrs_core::config::{self, Config, ConfigOverride, ConfigWatcher};
+use nohrs_core::telemetry::LogErr;
 use nohrs_services::search::SearchService;
 use nohrs_ui::components::layout::footer::{footer, FooterProps};
 use nohrs_ui::components::layout::unified_toolbar::{
@@ -154,7 +155,7 @@ impl RootView {
         let (sender, receiver) = mpsc::channel::<()>();
         match ConfigWatcher::new(&self.config_path, move || {
             // A closed channel just means the app is shutting down.
-            let _ = sender.send(());
+            sender.send(()).log_err();
         }) {
             Ok(watcher) => self._config_watcher = Some(watcher),
             Err(error) => {
