@@ -119,36 +119,19 @@ GitHub Actions では Ubuntu runner で同 image を使用。
 
 ### `flake.nix` (devshell のみ、P1 提供)
 
-```nix
-{
-  description = "nohrs devshell";
-  inputs = {
-    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
-    rust-overlay.url = "github:oxalica/rust-overlay";
-    flake-utils.url = "github:numtide/flake-utils";
-  };
-  outputs = { self, nixpkgs, rust-overlay, flake-utils }:
-    flake-utils.lib.eachDefaultSystem (system:
-      let
-        pkgs = import nixpkgs {
-          inherit system;
-          overlays = [ rust-overlay.overlays.default ];
-        };
-        rust = pkgs.rust-bin.fromRustupToolchainFile ./rust-toolchain.toml;
-      in {
-        devShells.default = pkgs.mkShell {
-          buildInputs = with pkgs; [
-            rust pkg-config openssl
-            libxkbcommon wayland
-            fontconfig freetype
-            mesa libGL
-            cargo-llvm-cov cargo-deny cargo-machete
-            typos wrangler
-          ];
-        };
-      });
-}
-```
+リポジトリルートの `flake.nix` が devshell を提供する。
+
+**inputs**:
+- `nixpkgs` (nixos-unstable) + `rust-overlay` + `flake-utils`
+- Rust toolchain は `rust-toolchain.toml` から自動取得（`rust-bin.fromRustupToolchainFile`）
+
+**buildInputs（共通）**: `rust`, `pkg-config`, `openssl`, `fontconfig`, `freetype`, `cargo-llvm-cov`, `cargo-deny`, `cargo-machete`, `typos`
+
+**buildInputs（Linux 追加）**: `libxkbcommon`, `wayland`, `mesa`, `libGL`, `xorg.libxcb`, `xorg.libX11`, `libxcursor`, `libxi`, `vulkan-loader`, `vulkan-headers`
+- macOS では Metal を使うためこれらは不要。`lib.optionals stdenv.isLinux` で条件付き。
+- `LD_LIBRARY_PATH` に `makeLibraryPath` で生成したパスを設定し、実行時リンクを解決。
+
+**direnv（任意）**: `.envrc`（`use flake`）をコミット済み。`direnv allow` で `cd` 時に自動ロード。
 
 **使用**:
 ```bash
