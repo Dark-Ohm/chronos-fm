@@ -15,7 +15,7 @@
 | **Linux native** | `rustup` + apt/pacman で gpui 依存 |
 | **Linux + Nix** | `nix develop` (devshell) |
 | **Linux + Docker (対話開発)** | `docker compose -f docker/dev/docker-compose.yml up` (X11 forwarding) |
-| **Linux + Docker (headless / CI)** | `docker compose -f docker/ci/docker-compose.yml run nohrs <cmd>` (Xvfb) |
+| **Linux + Docker (headless / CI)** | `docker compose -f docker/ci/docker-compose.yml run --rm nohrs <cmd>` (Xvnc) |
 | **macOS host + Docker** | **非推奨**。XQuartz 経由は遅い。native 開発を |
 | **Windows** | **非推奨**。WSL2 + Linux native か WSL2 + Docker |
 
@@ -69,20 +69,32 @@ cargo run --features gui --bin nohrs
 
 ## 4. Docker (Linux host)
 
+### 前提条件
+
+- ユーザーを `docker` グループに追加済み: `sudo usermod -aG docker $USER`（変更後は再ログイン）
+- GPU パススルーを使用する場合は `nvidia-container-toolkit` がインストール済みであること
+
 ### 4.1 docker/dev/ — 対話開発用 (X11 forwarding)
 
 **前提**: Linux host (host の X server を流用)。macOS / Windows host は非推奨。
 
 ```text
 docker/dev/
-├── Dockerfile             # Rust toolchain + gpui 依存をプリインストール
-└── docker-compose.yml     # X11 mount, source mount
+├── Dockerfile                # Rust toolchain + gpui 依存をプリインストール
+├── docker-compose.yml        # X11 mount, source mount（llvmpipe ソフトウェア描画）
+└── docker-compose.gpu.yml    # NVIDIA GPU パススルー付き
 ```
 
 **起動**:
 ```bash
 xhost +local:docker        # host の X server 利用を許可
+
+# GPU あり（推奨）
+docker compose -f docker/dev/docker-compose.gpu.yml up
+
+# GPU なし（llvmpipe）※ ERROR_SURFACE_LOST_KHR でクラッシュする場合あり
 docker compose -f docker/dev/docker-compose.yml up
+
 # コンテナ内で:
 cargo run --features gui --bin nohrs
 ```
@@ -95,23 +107,33 @@ cargo run --features gui --bin nohrs
 | `~/.cargo/registry` | Cargo cache の永続化 |
 | 環境変数 `DISPLAY` | host の display を渡す |
 
-### 4.2 docker/ci/ — Xvfb headless
+> **注意**: GPU なし（llvmpipe）環境では `ERROR_SURFACE_LOST_KHR` でクラッシュすることがあります。GPU パススルーを推奨します。
 
-CI / AI agent / 自動スクリーンショット用。
+### 4.2 docker/ci/ — Xvnc headless
+
+CI / AI agent / 自動スクリーンショット用。Xvfb ではなく Xvnc（実フレームバッファ）を使用し、スクリーンショットの黒画面問題を回避します。
 
 ```text
 docker/ci/
-├── Dockerfile             # Xvfb + Rust toolchain + nohrs ビルド依存
-└── docker-compose.yml
+├── Dockerfile                # Xvnc + Rust toolchain + nohrs ビルド依存 + スクショツール
+├── docker-compose.yml        # Xvnc + llvmpipe（GPU なし）
+└── docker-compose.gpu.yml    # NVIDIA GPU パススルー付き
 ```
 
 **使用例**:
 ```bash
-docker compose -f docker/ci/docker-compose.yml run nohrs cargo test
-docker compose -f docker/ci/docker-compose.yml run nohrs bash script/ui-run.sh shot
+# GPU あり（cargo test）
+docker compose -f docker/ci/docker-compose.gpu.yml run --rm nohrs cargo test
+
+# GPU なし（cargo test）
+docker compose -f docker/ci/docker-compose.yml run --rm nohrs cargo test
+
+# スクリーンショット
+docker compose -f docker/ci/docker-compose.gpu.yml run --rm \
+  nohrs bash -c "cargo build -p nohrs && script/ui-run.sh shot /nohrs/screenshot.png"
 ```
 
-GitHub Actions では Ubuntu runner で同 image を使用。
+GitHub Actions では Ubuntu runner で同 image を使用（#50 と連携）。
 
 ---
 
