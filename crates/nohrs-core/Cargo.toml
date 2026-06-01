@@ -22,7 +22,7 @@ serde.workspace              = true
 serde_json.workspace         = true
 toml                         = "0.8"
 schemars                     = "1"
-notify                       = "6"
+notify                       = "7"
 dirs                         = "5"
 
 [dev-dependencies]
