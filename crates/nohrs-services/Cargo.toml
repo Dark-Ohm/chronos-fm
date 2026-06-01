@@ -28,7 +28,7 @@ time.workspace    = true
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
 tantivy = "0.22"
 ignore = "0.4"
-grep = "0.3"
+grep = "0.4"
 dirs = "5.0"
 notify = "6"
 notify-debouncer-mini = "0.4"

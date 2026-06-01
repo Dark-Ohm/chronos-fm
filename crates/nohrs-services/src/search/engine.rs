@@ -2,9 +2,70 @@ use super::indexer::IndexManager;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
 use anyhow::{Context, Result};
-use std::sync::Arc;
+use nohrs_core::telemetry::LogErr;
+use std::sync::{Arc, Mutex};
 use tokio::sync::mpsc;
 use tokio::task::JoinHandle;
+
+/// Deferred initial-indexing work handed to the caller so it can run on GPUI's
+/// background executor (`cx.background_spawn`) instead of a `tokio::task::
+/// spawn_blocking` owned by the service (async-runtime.md §2). It carries only
+/// `Send` handles so the GUI can move it onto a worker thread.
+pub struct InitialIndexingJob {
+    index_manager: Arc<IndexManager>,
+    progress_tx: tokio::sync::watch::Sender<f32>,
+}
+
+impl InitialIndexingJob {
+    /// Runs initial indexing if the index is empty or its schema is outdated.
+    /// Synchronous and blocking — intended to be driven by `cx.background_spawn`.
+    pub fn run(self) {
+        let InitialIndexingJob {
+            index_manager,
+            progress_tx,
+        } = self;
+
+        // Check if schema has required fields (detects schema changes)
+        let schema = index_manager.index().schema();
+        let has_filename_field = schema.get_field("filename").is_ok();
+
+        if !has_filename_field {
+            tracing::info!("Schema outdated (missing filename field), forcing full indexing...");
+            progress_tx.send(0.0).log_err();
+            if let Err(e) = index_manager.index_home(Some(progress_tx)) {
+                tracing::error!("Initial indexing failed: {}", e);
+            }
+            return;
+        }
+
+        // Check if index already has documents
+        match index_manager.index().reader() {
+            Ok(reader) => {
+                let doc_count = reader.searcher().num_docs();
+                if doc_count == 0 {
+                    tracing::info!("Index is empty, starting full indexing...");
+                    progress_tx.send(0.0).log_err(); // Reset to 0 for indexing
+                    if let Err(e) = index_manager.index_home(Some(progress_tx)) {
+                        tracing::error!("Initial indexing failed: {}", e);
+                    }
+                } else {
+                    tracing::info!(
+                        "Index already has {} documents, skipping initial indexing",
+                        doc_count
+                    );
+                    // Progress stays at 1.0 (done)
+                }
+            }
+            Err(e) => {
+                tracing::warn!("Failed to read index, running full indexing: {}", e);
+                progress_tx.send(0.0).log_err();
+                if let Err(e) = index_manager.index_home(Some(progress_tx)) {
+                    tracing::error!("Initial indexing failed: {}", e);
+                }
+            }
+        }
+    }
+}
 
 pub struct SearchEngine {
     index_manager: Arc<IndexManager>,
@@ -12,10 +73,12 @@ pub struct SearchEngine {
     _watcher: FileWatcher, // Keep alive
     _watcher_task: JoinHandle<()>,
     progress_rx: tokio::sync::watch::Receiver<f32>,
+    // Taken once by `take_initial_indexing_job`; `None` afterwards.
+    initial_indexing_job: Mutex<Option<InitialIndexingJob>>,
 }
 
 impl SearchEngine {
-    pub async fn new() -> Result<Self> {
+    pub fn new() -> Result<Self> {
         let index_manager = Arc::new(IndexManager::new()?);
 
         #[cfg(target_os = "macos")]
@@ -27,14 +90,18 @@ impl SearchEngine {
             std::path::PathBuf::from("/"),
         ));
 
-        // Channel for watcher events
+        // Channel for watcher events.
+        // P2 (#56 follow-up): replace tokio::sync::mpsc with async-channel and
+        // the tokio::spawn consumer below with cx.background_spawn (async-runtime.md §2).
         let (tx, mut rx) = mpsc::channel(100);
 
         let home_dir = dirs::home_dir().context("Home directory not found")?;
         use std::time::Duration;
         let watcher = FileWatcher::new(home_dir, tx, Duration::from_secs(2))?;
 
-        // Spawn event handler task
+        // Spawn event handler task.
+        // P2: this tokio::spawn + rx.recv().await keeps the residual tokio runtime
+        // alive; move to cx.background_spawn over an async-channel receiver.
         let manager_clone = index_manager.clone();
         let watcher_task = tokio::spawn(async move {
             while let Some(paths) = rx.recv().await {
@@ -44,52 +111,16 @@ impl SearchEngine {
             }
         });
 
-        // Trigger initial indexing in background (only if index is empty or schema changed)
-        let (progress_tx, progress_rx) = tokio::sync::watch::channel(1.0); // Start at 1.0 (done)
-        let initial_manager = index_manager.clone();
-        tokio::task::spawn_blocking(move || {
-            // Check if schema has required fields (detects schema changes)
-            let schema = initial_manager.index().schema();
-            let has_filename_field = schema.get_field("filename").is_ok();
+        // Progress channel for initial indexing (starts at 1.0 == done).
+        // P2: replace tokio::sync::watch with postage::watch (async-runtime.md §2).
+        let (progress_tx, progress_rx) = tokio::sync::watch::channel(1.0);
 
-            if !has_filename_field {
-                tracing::info!(
-                    "Schema outdated (missing filename field), forcing full indexing..."
-                );
-                let _ = progress_tx.send(0.0);
-                if let Err(e) = initial_manager.index_home(Some(progress_tx)) {
-                    tracing::error!("Initial indexing failed: {}", e);
-                }
-                return;
-            }
-
-            // Check if index already has documents
-            match initial_manager.index().reader() {
-                Ok(reader) => {
-                    let doc_count = reader.searcher().num_docs();
-                    if doc_count == 0 {
-                        tracing::info!("Index is empty, starting full indexing...");
-                        let _ = progress_tx.send(0.0); // Reset to 0 for indexing
-                        if let Err(e) = initial_manager.index_home(Some(progress_tx)) {
-                            tracing::error!("Initial indexing failed: {}", e);
-                        }
-                    } else {
-                        tracing::info!(
-                            "Index already has {} documents, skipping initial indexing",
-                            doc_count
-                        );
-                        // Progress stays at 1.0 (done)
-                    }
-                }
-                Err(e) => {
-                    tracing::warn!("Failed to read index, running full indexing: {}", e);
-                    let _ = progress_tx.send(0.0);
-                    if let Err(e) = initial_manager.index_home(Some(progress_tx)) {
-                        tracing::error!("Initial indexing failed: {}", e);
-                    }
-                }
-            }
-        });
+        // The actual indexing is deferred to the caller (the GUI) so it runs on
+        // GPUI's background executor instead of a service-owned spawn_blocking.
+        let initial_indexing_job = InitialIndexingJob {
+            index_manager: index_manager.clone(),
+            progress_tx,
+        };
 
         Ok(Self {
             index_manager,
@@ -97,6 +128,7 @@ impl SearchEngine {
             _watcher: watcher,
             _watcher_task: watcher_task,
             progress_rx,
+            initial_indexing_job: Mutex::new(Some(initial_indexing_job)),
         })
     }
 
@@ -108,18 +140,25 @@ impl SearchEngine {
         self.index_manager.clone()
     }
 
-    pub async fn search(&self, query: String, scope: SearchScope) -> Result<Vec<SearchResult>> {
-        // Dispatches search to appropriate backend.
-        // Doing this async to not block UI (though underlying backend is sync mostly, we can spawn_blocking if needed).
-        // Since both backends have synchronous search methods currently, we should wrap in spawn_blocking.
+    /// Hands off the one-shot initial-indexing job. Returns `None` if it has
+    /// already been taken. The caller runs `job.run()` on a background executor.
+    pub fn take_initial_indexing_job(&self) -> Option<InitialIndexingJob> {
+        match self.initial_indexing_job.lock() {
+            Ok(mut guard) => guard.take(),
+            Err(poisoned) => {
+                tracing::error!("initial indexing job lock poisoned: {poisoned}");
+                None
+            }
+        }
+    }
 
-        let index_manager = self.index_manager.clone();
-        let root_backend = self.root_backend.clone();
-
-        tokio::task::spawn_blocking(move || match scope {
-            SearchScope::Home => index_manager.as_ref().search(&query),
-            SearchScope::Root => root_backend.as_ref().search(&query),
-        })
-        .await?
+    /// Dispatches a search to the appropriate backend. Both backends are
+    /// synchronous, so callers should invoke this from `cx.background_spawn` to
+    /// keep the UI thread responsive (replaces the former spawn_blocking).
+    pub fn search(&self, query: String, scope: SearchScope) -> Result<Vec<SearchResult>> {
+        match scope {
+            SearchScope::Home => self.index_manager.search(&query),
+            SearchScope::Root => self.root_backend.search(&query),
+        }
     }
 }

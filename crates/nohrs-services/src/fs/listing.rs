@@ -3,7 +3,6 @@ use std::ffi::OsStr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
-use tokio::task;
 
 // `FileEntryDto` is a pure data type and lives in `nohrs-models`. It is
 // re-exported here so existing `nohrs_services::fs::listing::FileEntryDto`
@@ -21,20 +20,9 @@ pub struct ListResult {
     pub next_cursor: Option<String>,
 }
 
-pub async fn list_dir(params: ListParams<'_>) -> Result<ListResult> {
-    // Use a blocking task for filesystem IO to avoid blocking async executors.
-    let path = params.path.to_string();
-    let limit = params.limit;
-    let cursor = params.cursor.map(|s| s.to_string());
-
-    task::spawn_blocking(move || list_dir_impl(&path, limit, cursor.as_deref()))
-        .await
-        .map_err(|join_error| {
-            nohrs_core::errors::Error::Other(format!("list_dir task failed: {join_error}"))
-        })?
-}
-
-/// Synchronous variant for UI contexts where an async runtime is not available.
+/// Lists a directory. The work is synchronous filesystem IO; callers that must
+/// keep the UI thread responsive should run it on GPUI's background executor via
+/// `cx.background_spawn` (async-runtime.md §2).
 pub fn list_dir_sync(params: ListParams<'_>) -> Result<ListResult> {
     list_dir_impl(params.path, params.limit, params.cursor)
 }

@@ -12,7 +12,8 @@
 
 # Logs & env
 *.log
-.env*
+.env
+.env.*
 
 # macOS
 .DS_Store
@@ -25,6 +26,11 @@ coverage/
 
 # personal
 /.specify
+
+# Nix
+result
+result-*
+.direnv/
 
 # Python bytecode
 __pycache__/

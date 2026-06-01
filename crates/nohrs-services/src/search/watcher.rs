@@ -3,6 +3,10 @@ use notify::RecursiveMode;
 use notify_debouncer_mini::{new_debouncer, DebounceEventResult, Debouncer};
 use std::path::PathBuf;
 use std::time::Duration;
+// `notify` / `notify-debouncer-mini` are runtime-agnostic (they drive their own
+// std::thread), so the watcher itself needs no change for the tokio removal.
+// P2 (#56 follow-up): swap this tokio::sync::mpsc sender for an async-channel
+// sender once the consumer task moves off tokio (async-runtime.md §2).
 use tokio::sync::mpsc;
 
 pub struct FileWatcher {

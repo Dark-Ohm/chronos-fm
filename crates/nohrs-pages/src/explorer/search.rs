@@ -45,21 +45,22 @@ impl ExplorerPage {
             move |this: gpui::WeakEntity<ExplorerPage>, cx: &mut AsyncApp| {
                 let mut cx = cx.clone();
                 async move {
-                    let search_result = service.search(query, scope).await;
-
-                    // Grouping and `results_to_entries` resolve per-file metadata
-                    // (stat calls), so run them on a background thread rather than
-                    // blocking the UI thread inside the entity update.
-                    let processed = match search_result {
-                        Ok(res) => Ok(cx
-                            .background_spawn(async move {
-                                let grouped = group_results(res);
-                                let entries = results_to_entries(&grouped);
-                                (grouped, entries)
-                            })
-                            .await),
-                        Err(error) => Err(error),
-                    };
+                    // `SearchService::search` is synchronous, and grouping plus
+                    // `results_to_entries` resolve per-file metadata (stat calls).
+                    // Run the whole chain on GPUI's background executor so the UI
+                    // thread stays responsive (replaces tokio::task::spawn_blocking).
+                    let processed = cx
+                        .background_spawn(async move {
+                            match service.search(query, scope) {
+                                Ok(res) => {
+                                    let grouped = group_results(res);
+                                    let entries = results_to_entries(&grouped);
+                                    Ok((grouped, entries))
+                                }
+                                Err(error) => Err(error),
+                            }
+                        })
+                        .await;
 
                     this.update(&mut cx, |this, cx| {
                         // Discard results if a newer search has since been issued.

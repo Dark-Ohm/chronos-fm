@@ -1,4 +1,5 @@
 use anyhow::{Context, Result};
+use nohrs_core::telemetry::LogErr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -114,7 +115,7 @@ impl IndexManager {
         // 1. Count files if progress tracking is enabled
         let mut total_files = 0;
         if let Some(tx) = &progress_tx {
-            let _ = tx.send(0.0);
+            tx.send(0.0).log_err();
             let walker = ignore::WalkBuilder::new(&self.content_root)
                 .hidden(false)
                 .git_ignore(true)
@@ -166,7 +167,7 @@ impl IndexManager {
                     processed += 1;
                     if let Some(tx) = &progress_tx {
                         if total_files > 0 && processed % 100 == 0 {
-                            let _ = tx.send(processed as f32 / total_files as f32);
+                            tx.send(processed as f32 / total_files as f32).log_err();
                         }
                     }
                 }
@@ -175,7 +176,7 @@ impl IndexManager {
         }
 
         if let Some(tx) = &progress_tx {
-            let _ = tx.send(1.0); // Done
+            tx.send(1.0).log_err(); // Done
         }
 
         writer_guard.commit()?;

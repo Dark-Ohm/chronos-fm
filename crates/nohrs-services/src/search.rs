@@ -21,6 +21,7 @@ pub struct SearchResult {
 }
 
 pub use backend::SearchBackend;
+pub use engine::InitialIndexingJob;
 
 use anyhow::Result;
 use std::sync::Arc;
@@ -30,13 +31,21 @@ pub struct SearchService {
 }
 
 impl SearchService {
-    pub async fn new() -> Result<Self> {
-        let engine = Arc::new(engine::SearchEngine::new().await?);
+    pub fn new() -> Result<Self> {
+        let engine = Arc::new(engine::SearchEngine::new()?);
         Ok(Self { engine })
     }
 
-    pub async fn search(&self, query: String, scope: SearchScope) -> Result<Vec<SearchResult>> {
-        self.engine.search(query, scope).await
+    /// Search is synchronous; run it on GPUI's background executor
+    /// (`cx.background_spawn`) so the UI thread is not blocked.
+    pub fn search(&self, query: String, scope: SearchScope) -> Result<Vec<SearchResult>> {
+        self.engine.search(query, scope)
+    }
+
+    /// Hands off the one-shot initial-indexing job for the caller to run on a
+    /// background executor. Returns `None` once it has been taken.
+    pub fn take_initial_indexing_job(&self) -> Option<InitialIndexingJob> {
+        self.engine.take_initial_indexing_job()
     }
 
     pub fn progress_subscription(&self) -> tokio::sync::watch::Receiver<f32> {
