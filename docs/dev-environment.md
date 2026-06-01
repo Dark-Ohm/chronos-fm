@@ -78,7 +78,8 @@ cargo run --features gui --bin nohrs
 
 | 環境 | GPU (NVIDIA PT) | CPU (llvmpipe) |
 |------|-----------------|----------------|
-| **dev** | ✅ X11 forwarding | ✅ VNC 接続 (port 5999) |
+| **dev X11 forwarding** | ✅ `docker-compose.gpu.yml` | ❌ UI描画されず |
+| **dev VNC 接続** | ✅ `docker-compose.vnc.yml` | ✅ `docker-compose.vnc.yml` |
 | **ci (test)** | ✅ | ✅ |
 | **ci (screenshot)** | ✅ | ✅ |
 
