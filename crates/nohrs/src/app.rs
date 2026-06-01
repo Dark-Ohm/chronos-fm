@@ -18,8 +18,6 @@ use nohrs_ui::assets::Assets;
 use nohrs_ui::components::layout::unified_toolbar::UNIFIED_TOOLBAR_HEIGHT;
 use nohrs_ui::window::{self, traffic_lights::TrafficLightsHook};
 use std::sync::Arc;
-use tokio::runtime::Handle;
-use tokio::task;
 
 pub struct NohrsApp;
 
@@ -42,6 +40,23 @@ impl NohrsApp {
         }
         let config_error = config::report_diagnostics(&diagnostics);
 
+        // GPUI drives the app (replacing `#[tokio::main]`; ADR 0004, async-runtime.md
+        // §7 P1). A small residual tokio runtime is kept and entered on this thread
+        // only so the watcher task (`tokio::spawn`) and channels (`tokio::sync::*`)
+        // inside `SearchService::new` still resolve a runtime. P2 removes those last
+        // tokio users and this runtime with them.
+        let runtime = match tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+        {
+            Ok(runtime) => runtime,
+            Err(error) => {
+                tracing::error!("failed to start async runtime: {error}");
+                return;
+            }
+        };
+        let _runtime_guard = runtime.enter();
+
         Application::new().with_assets(Assets).run(move |app: &mut App| {
             gpui_component::init(app);
             let resizable = ResizableState::new(app);
@@ -61,18 +76,25 @@ impl NohrsApp {
                 move |window, cx| {
                     // Initialize SearchService. Failure is non-fatal: the app starts
                     // with full-text search disabled rather than crashing.
-                    let handle = Handle::current();
-                    let search_service: Option<Arc<SearchService>> =
-                        task::block_in_place(move || match handle.block_on(SearchService::new()) {
-                            Ok(service) => Some(Arc::new(service)),
-                            Err(e) => {
-                                tracing::error!(
-                                    "Failed to initialize search service; starting with search disabled: {}",
-                                    e
-                                );
-                                None
-                            }
-                        });
+                    let search_service: Option<Arc<SearchService>> = match SearchService::new() {
+                        Ok(service) => Some(Arc::new(service)),
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to initialize search service; starting with search disabled: {}",
+                                e
+                            );
+                            None
+                        }
+                    };
+
+                    // Kick off initial indexing on GPUI's background executor, which
+                    // is a thread pool (replacing tokio::task::spawn_blocking;
+                    // async-runtime.md §2).
+                    if let Some(service) = &search_service {
+                        if let Some(job) = service.take_initial_indexing_job() {
+                            cx.background_spawn(async move { job.run() }).detach();
+                        }
+                    }
 
                     let view = cx.new(|cx| {
                         RootView::new(
