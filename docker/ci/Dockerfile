@@ -2,7 +2,7 @@ FROM debian:trixie
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential pkg-config curl ca-certificates \
-    tigervnc-standalone-server xdotool x11-apps python3 procps \
+    tigervnc-standalone-server xdotool x11-apps python3 procps fvwm \
     libxkbcommon-dev libxkbcommon-x11-dev libwayland-dev \
     libxcb-shape0-dev libxcb-xfixes0-dev libxcb1-dev libx11-dev \
     libfontconfig1-dev libfreetype6-dev \
