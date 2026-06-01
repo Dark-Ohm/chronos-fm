@@ -10,3 +10,4 @@ services:
       - ${XAUTHORITY:-/dev/null}:/root/.Xauthority:ro
       - ../..:/nohrs
       - ${HOME}/.cargo/registry:/root/.cargo/registry
+    entrypoint: ["/bin/bash", "-lc", "cargo build -p nohrs && exec cargo run -p nohrs"]
