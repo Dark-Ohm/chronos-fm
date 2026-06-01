@@ -3,8 +3,7 @@ mod cli;
 
 use clap::Parser;
 
-#[tokio::main]
-async fn main() {
+fn main() {
     let cli = cli::Cli::parse();
 
     // `config` subcommands run headless and exit without opening a window.
