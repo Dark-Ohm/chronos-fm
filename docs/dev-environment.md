@@ -14,7 +14,7 @@
 | **macOS native** | `rustup` + Xcode + Metal toolchain |
 | **Linux native** | `rustup` + apt/pacman で gpui 依存 |
 | **Linux + Nix** | `nix develop` (devshell) |
-| **Linux + Docker (対話開発)** | `docker compose -f docker/dev/docker-compose.yml up` (X11 forwarding) |
+| **Linux + Docker (対話開発)** | `docker compose -f docker/dev/docker-compose.gpu.yml up` (GPU) / `docker-compose.vnc.yml up` (CPU) |
 | **Linux + Docker (headless / CI)** | `docker compose -f docker/ci/docker-compose.yml run --rm nohrs <cmd>` (Xvnc) |
 | **macOS host + Docker** | **非推奨**。XQuartz 経由は遅い。native 開発を |
 | **Windows** | **非推奨**。WSL2 + Linux native か WSL2 + Docker |
@@ -74,49 +74,47 @@ cargo run --features gui --bin nohrs
 - ユーザーを `docker` グループに追加済み: `sudo usermod -aG docker $USER`（変更後は再ログイン）
 - GPU パススルーを使用する場合は `nvidia-container-toolkit` がインストール済みであること
 
-### 4.1 docker/dev/ — 対話開発用 (X11 forwarding)
+### 動作対応表
 
-**前提**: Linux host (host の X server を流用)。macOS / Windows host は非推奨。
+| 環境 | GPU (NVIDIA PT) | CPU (llvmpipe) |
+|------|-----------------|----------------|
+| **dev** | ✅ X11 forwarding | ✅ VNC 接続 (port 5999) |
+| **ci (test)** | ✅ | ✅ |
+| **ci (screenshot)** | ✅ | ✅ |
+
+### 4.1 docker/dev/ — 対話開発用
+
+**前提**: Linux host。macOS / Windows host は非推奨。
 
 ```text
 docker/dev/
 ├── Dockerfile                # Rust toolchain + gpui 依存をプリインストール
-├── docker-compose.yml        # X11 mount, source mount（llvmpipe ソフトウェア描画）
-└── docker-compose.gpu.yml    # NVIDIA GPU パススルー付き
+├── docker-compose.gpu.yml    # NVIDIA GPU パススルー（X11 forwarding）
+├── docker-compose.vnc.yml    # TigerVNC + fvwm（GPU なし / llvmpipe 用）
+└── docker-compose.yml        # X11 forwarding（llvmpipe ⚠ UI 描画されず）
 ```
 
 **起動**:
 ```bash
-xhost +local:docker        # host の X server 利用を許可
-
-# GPU あり（推奨）
+# GPU あり（X11 forwarding、推奨）
+xhost +local:docker
 docker compose -f docker/dev/docker-compose.gpu.yml up
 
-# GPU なし（llvmpipe）※ ERROR_SURFACE_LOST_KHR でクラッシュする場合あり
-docker compose -f docker/dev/docker-compose.yml up
-
-# コンテナ内で:
-cargo run --features gui --bin nohrs
+# GPU なし（VNC 接続）
+docker compose -f docker/dev/docker-compose.vnc.yml up
+# → VNC クライアントで localhost:5999 に接続
 ```
 
-| マウント | 用途 |
-|---------|------|
-| `/tmp/.X11-unix:/tmp/.X11-unix:rw` | X11 socket |
-| `$XAUTHORITY:/root/.Xauthority:ro` | X11 認証 |
-| プロジェクトルート | source code |
-| `~/.cargo/registry` | Cargo cache の永続化 |
-| 環境変数 `DISPLAY` | host の display を渡す |
-
-> **注意**: GPU なし（llvmpipe）環境では `ERROR_SURFACE_LOST_KHR` でクラッシュすることがあります。GPU パススルーを推奨します。
+> **注意**: `docker-compose.yml`（X11 forwarding + llvmpipe）は GPUI の Vulkan WSI present がホスト X11 で正しく動作しないため、GPU なし環境では `docker-compose.vnc.yml` を使用してください。
 
 ### 4.2 docker/ci/ — Xvnc headless
 
-CI / AI agent / 自動スクリーンショット用。Xvfb ではなく Xvnc（実フレームバッファ）を使用し、スクリーンショットの黒画面問題を回避します。
+CI / AI agent / 自動スクリーンショット用。TigerVNC + fvwm を使用し、Xvfb の黒画面問題を回避します。
 
 ```text
 docker/ci/
-├── Dockerfile                # Xvnc + Rust toolchain + nohrs ビルド依存 + スクショツール
-├── docker-compose.yml        # Xvnc + llvmpipe（GPU なし）
+├── Dockerfile                # TigerVNC + fvwm + Rust toolchain + スクショツール
+├── docker-compose.yml        # TigerVNC + fvwm + llvmpipe（GPU なし）
 └── docker-compose.gpu.yml    # NVIDIA GPU パススルー付き
 ```
 
