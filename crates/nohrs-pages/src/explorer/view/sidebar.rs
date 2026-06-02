@@ -4,6 +4,7 @@ use gpui::*;
 use gpui_component::{Icon, IconName, ListItem};
 use nohrs_ui::theme::theme; // Assuming theme is accessible
 
+/// Renders the explorer sidebar listing quick-access locations.
 pub fn render(
     page: &mut ExplorerPage,
     _window: &mut Window,

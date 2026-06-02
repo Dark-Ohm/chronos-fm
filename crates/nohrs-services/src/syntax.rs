@@ -5,9 +5,12 @@ use syntect::highlighting::ThemeSet;
 use syntect::parsing::SyntaxSet;
 use syntect::util::LinesWithEndings;
 
+/// Syntax highlighter that maps `syntect` styles onto GPUI colors.
 #[derive(Clone)]
 pub struct SyntaxService {
+    /// The loaded set of syntax definitions used to pick a grammar.
     pub syntax_set: Arc<SyntaxSet>,
+    /// The loaded set of color themes used for highlighting.
     pub theme_set: Arc<ThemeSet>,
 }
 
@@ -18,6 +21,7 @@ impl Default for SyntaxService {
 }
 
 impl SyntaxService {
+    /// Creates a service loaded with `syntect`'s default syntaxes and themes.
     pub fn new() -> Self {
         Self {
             syntax_set: Arc::new(SyntaxSet::load_defaults_newlines()),
@@ -25,6 +29,8 @@ impl SyntaxService {
         }
     }
 
+    /// Highlights `text`, returning contiguous byte ranges paired with their
+    /// color; `extension` selects the grammar, falling back to plain text.
     pub fn highlight(
         &self,
         text: &str,

@@ -144,31 +144,12 @@ reorder_imports = true
 
 ### `deny.toml`
 
-```toml
-[licenses]
-allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "BSD-2-Clause", "BSD-3-Clause", "Unicode-DFS-2016", "ISC", "Zlib"]
-confidence-threshold = 0.93
+実ファイル（リポジトリ root の [`deny.toml`](../deny.toml)）は当初案から次の点でずれている。理由はファイル内コメントに記載:
 
-[advisories]
-db-path = "~/.cargo/advisory-db"
-db-urls = ["https://github.com/RustSec/advisory-db"]
-vulnerability = "deny"
-unmaintained = "warn"
-yanked = "deny"
-
-[bans]
-multiple-versions = "warn"
-deny = [
-  # アプリコアでは禁止。WASI プラグイン実行層 (nohrs-plugin-host, P4 以降) のみ許可
-  { name = "tokio", wrappers = ["nohrs-plugin-host"] },
-  { name = "openssl-sys" },        # rustls 統一
-]
-
-[sources]
-unknown-registry = "deny"
-unknown-git = "deny"
-allow-git = []
-```
+- **`[licenses]`** — 実際の依存ツリーが要求するため許可リストを拡張（`0BSD` / `Unicode-3.0` / `MPL-2.0` / `CC0-1.0` / `NCSA`）。`Unicode-DFS-2016` は今の依存が `Unicode-3.0` を使うため不要。`confidence-threshold = 0.93` は同じ。
+- **`[advisories]`** — 現行 cargo-deny は per-severity の `vulnerability` / `notice` キーを廃止し、これらは常に error 扱い。よって `vulnerability = "deny"` は書かない（書くと unknown field で弾かれる）。`unmaintained = "workspace"`（直接依存のみ警告）、`yanked = "deny"`。CI では `advisories` のみ informational（`continue-on-error`）。
+- **`[bans]`** — `multiple-versions = "warn"` / `openssl-sys` を deny。`tokio` の ban は**まだ設置できない**: ① `nohrs-services` が直接依存（ADR 0004 / P2 で撤去予定）、② gpui が `zed-reqwest → hyper → h2 → tokio-util → tokio` を transitively 引き、`wrappers` で表現できない。両方が解消するまで hard ban は CI を即落とすため保留（deny.toml にコメントで明記）。
+- **`[sources]`** — `unknown-registry` / `unknown-git` を deny、`allow-git = []`。
 
 ---
 

@@ -6,6 +6,8 @@ use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::{Icon, IconName, ListItem};
 use nohrs_ui::theme::theme;
 
+/// Renders the explorer header with navigation buttons, the breadcrumb path
+/// bar, and view-mode controls.
 pub fn render(
     page: &mut ExplorerPage,
     _window: &mut Window,

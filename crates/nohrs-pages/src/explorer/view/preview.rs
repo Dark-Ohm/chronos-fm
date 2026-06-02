@@ -4,6 +4,8 @@ use gpui::*;
 use nohrs_ui::theme::theme;
 
 // Calculate the maximum line width in characters for horizontal scroll sizing
+/// Renders the preview pane for the selected file, showing a text editor,
+/// image, status message, or an empty placeholder.
 pub fn render(page: &mut ExplorerPage, _window: &mut Window) -> impl IntoElement {
     let title = page
         .preview_path
@@ -77,4 +79,5 @@ fn path_name(p: &str) -> String {
         .unwrap_or_else(|| p.to_string())
 }
 
+/// The text editor used to render file previews.
 pub mod editor;

@@ -11,12 +11,16 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::fmt;
 
+/// Fixed height of the unified toolbar.
 pub const UNIFIED_TOOLBAR_HEIGHT: Pixels = px(36.0);
 const ACCOUNT_BUTTON_ID: &str = "unified-toolbar-account-button";
 
+/// Properties for the unified toolbar's account button and menu.
 #[derive(Clone)]
 pub struct UnifiedToolbarProps {
+    /// Display name shown in the account menu header.
     pub account_name: String,
+    /// Account plan label shown beneath the name; hidden when empty.
     pub account_plan: String,
 }
 
@@ -29,6 +33,7 @@ impl Default for UnifiedToolbarProps {
     }
 }
 
+/// Build the unified toolbar element: a draggable window region plus an account button with menu.
 pub fn unified_toolbar<V: Render>(
     props: UnifiedToolbarProps,
     _cx: &mut Context<V>,
@@ -141,15 +146,23 @@ pub fn unified_toolbar<V: Render>(
         .child(account_button)
 }
 
+/// Commands dispatched from the account menu in the unified toolbar.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum AccountMenuCommand {
+    /// The disabled header entry showing the account summary.
     ProfileSummary,
+    /// Open the settings page.
     Settings,
+    /// Open the keymap editor.
     Keymap,
+    /// Open the theme picker.
     Themes,
+    /// Open the icon theme picker.
     IconThemes,
+    /// Open the extensions view.
     Extensions,
+    /// Sign out of the current account.
     SignOut,
 }
 
@@ -178,16 +191,20 @@ impl AccountMenuCommand {
     }
 }
 
+/// GPUI action wrapping an [`AccountMenuCommand`] dispatched from the account menu.
 #[derive(Clone)]
 pub struct AccountMenuAction {
+    /// The command this action carries.
     pub command: AccountMenuCommand,
 }
 
 impl AccountMenuAction {
+    /// Create an action for the given command.
     pub fn new(command: AccountMenuCommand) -> Self {
         Self { command }
     }
 
+    /// Create a boxed action for the given command, ready to dispatch.
     pub fn boxed(command: AccountMenuCommand) -> Box<dyn Action> {
         Box::new(Self::new(command))
     }

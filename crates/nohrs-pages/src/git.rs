@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, px, rgb, AnyElement, Context, Render, Window};
 use nohrs_ui::theme::theme;
 
+/// The git page, a placeholder for future version-control functionality.
 pub struct GitPage;
 
 impl Default for GitPage {
@@ -10,6 +11,7 @@ impl Default for GitPage {
 }
 
 impl GitPage {
+    /// Creates a new git page.
     pub fn new() -> Self {
         Self
     }

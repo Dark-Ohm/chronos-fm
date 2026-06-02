@@ -1,13 +1,29 @@
 {
   "$defs": {
     "SortOrder": {
-      "enum": [
-        "name",
-        "modified",
-        "size",
-        "kind"
-      ],
-      "type": "string"
+      "description": "Column a directory listing is sorted by.",
+      "oneOf": [
+        {
+          "const": "name",
+          "description": "Sort alphabetically by entry name.",
+          "type": "string"
+        },
+        {
+          "const": "modified",
+          "description": "Sort by last-modified time.",
+          "type": "string"
+        },
+        {
+          "const": "size",
+          "description": "Sort by file size.",
+          "type": "string"
+        },
+        {
+          "const": "kind",
+          "description": "Sort by entry kind (file/directory/...).",
+          "type": "string"
+        }
+      ]
     },
     "Theme": {
       "description": "Appearance settings.",
@@ -28,12 +44,24 @@
       "type": "object"
     },
     "ThemeMode": {
-      "enum": [
-        "system",
-        "light",
-        "dark"
-      ],
-      "type": "string"
+      "description": "Light/dark appearance selection.",
+      "oneOf": [
+        {
+          "const": "system",
+          "description": "Follow the operating system's light/dark preference.",
+          "type": "string"
+        },
+        {
+          "const": "light",
+          "description": "Always use the light appearance.",
+          "type": "string"
+        },
+        {
+          "const": "dark",
+          "description": "Always use the dark appearance.",
+          "type": "string"
+        }
+      ]
     },
     "Ui": {
       "description": "Explorer / view settings.",
@@ -68,10 +96,12 @@
       "type": "integer"
     },
     "theme": {
-      "$ref": "#/$defs/Theme"
+      "$ref": "#/$defs/Theme",
+      "description": "Appearance settings."
     },
     "ui": {
-      "$ref": "#/$defs/Ui"
+      "$ref": "#/$defs/Ui",
+      "description": "Explorer / view settings."
     }
   },
   "required": [

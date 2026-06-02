@@ -6,6 +6,7 @@ use gpui_component::{Icon, IconName};
 use nohrs_services::fs::listing::FileEntryDto;
 use nohrs_ui::theme::theme;
 
+/// Renders the file listing as a grid of icon tiles.
 pub fn render(
     page: &mut ExplorerPage,
     window: &mut Window,

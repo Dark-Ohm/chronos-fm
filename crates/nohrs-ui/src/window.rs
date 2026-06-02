@@ -1,3 +1,4 @@
+/// Platform traffic-light (window control button) configuration and hooks.
 pub mod traffic_lights;
 
 use gpui::{Bounds, Pixels, WindowBounds, WindowOptions};

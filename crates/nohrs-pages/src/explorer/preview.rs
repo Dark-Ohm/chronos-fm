@@ -67,6 +67,9 @@ fn is_binary_image_path(path: &str) -> bool {
 
 /// Reads `path` and classifies it for preview. Runs on a background thread, so
 /// it must not touch any GPUI state.
+// Always invoked from `cx.background_spawn` (see `open_preview`), so its
+// blocking reads run off the GPUI foreground thread.
+#[allow(clippy::disallowed_methods)]
 fn read_preview(path: &str) -> PreviewOutcome {
     let metadata = match std::fs::metadata(path) {
         Ok(metadata) => metadata,
@@ -248,6 +251,7 @@ impl ExplorerPage {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::*;
 

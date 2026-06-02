@@ -67,6 +67,7 @@ impl InitialIndexingJob {
     }
 }
 
+/// Coordinates the home-directory index, its file watcher, and the root-scope backend.
 pub struct SearchEngine {
     index_manager: Arc<IndexManager>,
     root_backend: Arc<dyn SearchBackend>,
@@ -78,6 +79,7 @@ pub struct SearchEngine {
 }
 
 impl SearchEngine {
+    /// Builds the engine, opening the index and starting the file watcher.
     pub fn new() -> Result<Self> {
         let index_manager = Arc::new(IndexManager::new()?);
 
@@ -132,10 +134,12 @@ impl SearchEngine {
         })
     }
 
+    /// Returns a receiver for initial-indexing progress in the range `0.0..=1.0`.
     pub fn progress_subscription(&self) -> tokio::sync::watch::Receiver<f32> {
         self.progress_rx.clone()
     }
 
+    /// Returns a shared handle to the underlying index manager.
     pub fn index_manager(&self) -> Arc<IndexManager> {
         self.index_manager.clone()
     }

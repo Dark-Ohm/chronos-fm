@@ -2,11 +2,17 @@ use super::super::types::ViewMode;
 use crate::explorer::ExplorerPage;
 use gpui::*;
 
+/// Grid-mode rendering of the listing.
 pub mod grid;
+/// List-mode rendering of the listing.
 pub mod list;
+/// Rendering of a single listing row.
 pub mod row;
+/// The full-text search bar shown above the listing.
 pub mod search_bar;
 
+/// Renders the file listing in the active view mode, with the search bar when
+/// search is visible.
 pub fn render(
     page: &mut ExplorerPage,
     window: &mut Window,
@@ -32,6 +38,8 @@ pub fn render(
     }
 }
 
+/// Truncates `text` to at most `max_len` characters by eliding the middle,
+/// preserving the file extension where possible.
 pub fn truncate_middle(text: &str, max_len: usize) -> String {
     let char_count = text.chars().count();
 

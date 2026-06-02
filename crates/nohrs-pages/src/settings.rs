@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, px, rgb, AnyElement, Context, Render, Window};
 use nohrs_ui::theme::theme;
 
+/// The settings page, a placeholder for future application configuration.
 pub struct SettingsPage;
 
 impl Default for SettingsPage {
@@ -10,6 +11,7 @@ impl Default for SettingsPage {
 }
 
 impl SettingsPage {
+    /// Creates a new settings page.
     pub fn new() -> Self {
         Self
     }

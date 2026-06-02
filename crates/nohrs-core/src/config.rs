@@ -23,15 +23,20 @@ pub use settings::{
 };
 pub use watcher::ConfigWatcher;
 
-/// Default window dimensions on first launch (logical pixels).
+/// Default window width on first launch (logical pixels).
 pub const WINDOW_WIDTH: f32 = 1280.0;
+/// Default window height on first launch (logical pixels).
 pub const WINDOW_HEIGHT: f32 = 780.0;
 
-/// Initial widths of the explorer table columns (logical pixels).
+/// Initial width of the name column in the explorer table (logical pixels).
 pub const COL_NAME_WIDTH: f32 = 400.0;
+/// Initial width of the type column in the explorer table (logical pixels).
 pub const COL_TYPE_WIDTH: f32 = 120.0;
+/// Initial width of the size column in the explorer table (logical pixels).
 pub const COL_SIZE_WIDTH: f32 = 120.0;
+/// Initial width of the modified column in the explorer table (logical pixels).
 pub const COL_MODIFIED_WIDTH: f32 = 180.0;
+/// Initial width of the action column in the explorer table (logical pixels).
 pub const COL_ACTION_WIDTH: f32 = 60.0;
 
 /// Smallest width a column may be resized to (logical pixels).
@@ -41,9 +46,11 @@ pub const MIN_COLUMN_WIDTH: f32 = 80.0;
 /// total table width (left + right row padding).
 pub const TABLE_HORIZONTAL_PADDING: f32 = 48.0;
 
-/// Heights of the rows rendered in the explorer table (logical pixels).
+/// Height of the header row in the explorer table (logical pixels).
 pub const HEADER_ROW_HEIGHT: f32 = 48.0;
+/// Height of a regular entry row in the explorer table (logical pixels).
 pub const BASE_ROW_HEIGHT: f32 = 32.0;
+/// Height of a match snippet row under an expanded result (logical pixels).
 pub const SNIPPET_ROW_HEIGHT: f32 = 24.0;
 
 /// Maximum number of match snippets shown under an expanded search result.

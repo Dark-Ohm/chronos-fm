@@ -1,6 +1,7 @@
 use gpui::{div, prelude::*, px, rgb, AnyElement, Context, Render, Window};
 use nohrs_ui::theme::theme;
 
+/// The S3 page, a placeholder for future object-storage browsing.
 pub struct S3Page;
 
 impl Default for S3Page {
@@ -10,6 +11,7 @@ impl Default for S3Page {
 }
 
 impl S3Page {
+    /// Creates a new S3 page.
     pub fn new() -> Self {
         Self
     }

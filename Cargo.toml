@@ -46,10 +46,9 @@ time               = { version = "0.3", features = ["formatting", "macros"] }
 
 [workspace.lints.rust]
 unsafe_code  = "deny"
-missing_docs = "allow"   # TODO(#48): raise to "warn" (P1 target) once public APIs are
-                         # documented, then to "deny" (P7). Kept at "allow" for now so the
-                         # CI gate `cargo clippy -- -D warnings` stays green through the
-                         # workspace split, which does not add docs to the ~5k LOC surface.
+# Every public item must carry a doc comment (testing.md §3). Promoted to an
+# error in CI by `-D warnings`; to be raised to "deny" in P7 (#48).
+missing_docs = "warn"
 
 [workspace.lints.clippy]
 unwrap_used = "warn"

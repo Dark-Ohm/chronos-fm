@@ -1,3 +1,6 @@
+//! The `nohrs` binary: parses CLI arguments, runs headless `config` subcommands
+//! when requested, and otherwise launches the gpui desktop application.
+
 mod app;
 mod cli;
 

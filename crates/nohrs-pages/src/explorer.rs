@@ -5,6 +5,7 @@ mod preview;
 mod search;
 mod state;
 mod types;
+/// Rendering of the explorer page: header, sidebar, listing, and preview.
 pub mod view;
 
 #[cfg(test)]

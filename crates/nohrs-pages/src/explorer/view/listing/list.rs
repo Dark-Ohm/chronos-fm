@@ -7,6 +7,7 @@ use gpui_component::{v_virtual_list, ListItem};
 use nohrs_ui::theme::theme;
 use std::rc::Rc;
 
+/// Renders the file listing as a virtualized multi-column table.
 pub fn render(page: &mut ExplorerPage, cx: &mut Context<ExplorerPage>) -> AnyElement {
     let table_width = page.total_table_width();
     let col_name = page.col_name_width;
