@@ -48,3 +48,47 @@ fn is_relevant(event: &Event) -> bool {
         EventKind::Create(_) | EventKind::Modify(_) | EventKind::Remove(_)
     )
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use notify::event::{AccessKind, CreateKind, ModifyKind};
+    use std::sync::mpsc;
+    use std::time::Duration;
+    use tempfile::tempdir;
+
+    #[test]
+    fn is_relevant_matches_only_mutating_events() {
+        assert!(is_relevant(&Event::new(EventKind::Create(CreateKind::Any))));
+        assert!(is_relevant(&Event::new(EventKind::Modify(ModifyKind::Any))));
+        assert!(is_relevant(&Event::new(EventKind::Remove(
+            notify::event::RemoveKind::Any
+        ))));
+        assert!(!is_relevant(&Event::new(EventKind::Access(
+            AccessKind::Any
+        ))));
+    }
+
+    #[test]
+    fn new_invokes_callback_on_config_change() {
+        let dir = tempdir().unwrap();
+        let config = dir.path().join("config.toml");
+        std::fs::write(&config, "schema_version = 1").unwrap();
+
+        let (sender, receiver) = mpsc::channel();
+        let _watcher = ConfigWatcher::new(&config, move || {
+            sender.send(()).ok();
+        })
+        .unwrap();
+
+        // A write to the watched file should fire `on_change`. notify is
+        // OS-driven, so allow a generous timeout (std mpsc, not a GPUI timer —
+        // this is a plain `#[test]`, not `#[gpui::test]`).
+        std::fs::write(&config, "schema_version = 1\n# edited").unwrap();
+        assert!(
+            receiver.recv_timeout(Duration::from_secs(10)).is_ok(),
+            "watcher did not report the config change"
+        );
+    }
+}

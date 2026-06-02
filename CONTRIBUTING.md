@@ -143,12 +143,20 @@ crates). Each tier feeds GitHub's native code coverage (inline PR diff) and
 uploads its HTML report as a downloadable artifact (`coverage-html-core` /
 `coverage-html-overall`); a single PR comment reports both against their targets.
 
-Coverage is an **enforced gate**: the build fails if `nohrs-core` drops below
-**80%** line coverage or the overall workspace drops below **50%**
-(`cargo llvm-cov ... --fail-under-lines`). Check locally before pushing:
+Coverage is an **enforced gate** with two layers, so a high aggregate cannot hide
+an untested file. The build fails if:
+
+- `nohrs-core` drops below **80%** lines (aggregate *and* per file), or
+- the overall workspace drops below **50%** lines, or
+- any individually testable file drops below **70%** lines.
+
+The per-file floor excludes code that is not unit-testable in-process (the gpui
+binary entrypoint, pure rendering/view and window-chrome code, the external
+search backends, and app-only glue) via `--ignore-filename-regex` — see the
+`coverage-*` jobs in `ci.yml` for the exact list. Check locally before pushing:
 
 ```sh
-cargo llvm-cov -p nohrs-core --fail-under-lines 80
+cargo llvm-cov -p nohrs-core --fail-under-lines 80 --fail-under-file-lines 80
 cargo llvm-cov --workspace --all-features --fail-under-lines 50
 ```
 
