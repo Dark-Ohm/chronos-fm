@@ -49,6 +49,14 @@ pub fn truncate_middle(text: &str, max_len: usize) -> String {
         return text.to_string();
     }
 
+    // Too little room for the "..." marker plus any content: just take the
+    // leading characters so the result never exceeds `max_len` (the contract
+    // above). Callers pass `max_len >= 20`, so this only guards pathological
+    // inputs, but keeping the function self-consistent avoids surprises.
+    if max_len <= ELLIPSIS {
+        return chars[..max_len].iter().collect();
+    }
+
     // Prefer eliding the middle of the *name* so the extension stays visible.
     // `checked_sub` guards the case where the extension alone (plus the marker)
     // already exceeds `max_len`: in debug builds the previous `max_len - ext - 3`
@@ -109,5 +117,18 @@ mod truncate_middle_tests {
         let _ = truncate_middle("x.0123456789012345678901234567890", 20);
         let _ = truncate_middle("no-dot-but-extremely-long-name-here", 8);
         let _ = truncate_middle(".gitignore", 5);
+    }
+
+    #[test]
+    fn never_exceeds_max_len_even_below_ellipsis_width() {
+        // The result must honor the "at most `max_len` characters" contract for
+        // every budget, including ones too small to fit the "..." marker.
+        for max_len in 0..=6 {
+            let out = truncate_middle("really-long-filename.rs", max_len);
+            assert!(
+                out.chars().count() <= max_len,
+                "max_len={max_len} produced {out:?}"
+            );
+        }
     }
 }
