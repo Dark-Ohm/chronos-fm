@@ -14,7 +14,7 @@
 | **モデル** | 別ウィンドウ (フローティング)。explorer とは独立した window |
 | **表示位置 (初回)** | 画面中央寄り上 (画面上端から 25%) |
 | **表示位置 (2 回目以降)** | 最後にユーザーが置いた位置を記憶し、その位置で起動 |
-| **位置の記憶** | SQLite `key_value` テーブル (`launcher.window_position`) に保存。高頻度更新のため config.toml ではない |
+| **位置の記憶** | redb ホスト KV (`state.redb`、key `launcher.window_position`) に保存。高頻度更新のため config.toml ではない (詳細は [`persistence.md`](./persistence.md)) |
 | **移動** | 検索バー上部の数十 px (drag handle) をマウスでドラッグして移動可能 |
 | **位置リセット** | `Cmd+0` でデフォルト位置に戻す |
 | **マルチディスプレイ** | ドラッグで別ディスプレイへ移動可、移動先で位置記憶 |
@@ -219,7 +219,7 @@ struct Action {
 - window: GPUI で borderless + blur 化、`window.set_window_level(.floating)`
 - global hotkey: `global-hotkey` crate
 - ranking: `nucleo`
-- 位置記憶: `nohrs-store::KvStore` (SQLite `key_value`) 経由
+- 位置記憶: `nohrs-store::KvStore` (redb `state.redb`) 経由
 
 ---
 

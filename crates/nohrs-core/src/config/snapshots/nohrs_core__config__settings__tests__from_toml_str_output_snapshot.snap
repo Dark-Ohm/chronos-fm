@@ -14,6 +14,13 @@ expression: parsed
             show_hidden: true,
             icon_pack: "default",
         },
+        diagnostics: Diagnostics {
+            store: DiagnosticsStore {
+                log_all_queries: false,
+                slow_query_ms: 0,
+                log_redb_ops: false,
+            },
+        },
     },
     [
         Diagnostic {

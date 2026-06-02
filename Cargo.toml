@@ -5,11 +5,11 @@ members = [
   "crates/nohrs-core",
   "crates/nohrs-models",
   "crates/nohrs-services",
+  "crates/nohrs-store",
   "crates/nohrs-ui",
   "crates/nohrs-pages",
 ]
 # P2 以降に追加:
-#   "crates/nohrs-store",
 #   "crates/nohrs-launcher",
 #   "crates/nohrs-plugin-host",
 #   "crates/plugins/*"
@@ -24,6 +24,7 @@ default-members = [
   "crates/nohrs-core",
   "crates/nohrs-models",
   "crates/nohrs-services",
+  "crates/nohrs-store",
 ]
 
 [workspace.package]

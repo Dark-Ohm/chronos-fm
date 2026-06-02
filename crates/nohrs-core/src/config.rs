@@ -19,7 +19,8 @@ pub mod watcher;
 pub use loader::{backup, ensure_exists, needs_migration, reset, write_default};
 pub use settings::{
     json_schema_string, load_from_path, report_diagnostics, Config, ConfigOverride, Diagnostic,
-    DiagnosticLevel, SortOrder, Theme, ThemeMode, Ui, CURRENT_SCHEMA_VERSION, SCHEMA_URL,
+    DiagnosticLevel, Diagnostics, DiagnosticsStore, SortOrder, Theme, ThemeMode, Ui,
+    CURRENT_SCHEMA_VERSION, SCHEMA_URL,
 };
 pub use watcher::ConfigWatcher;
 

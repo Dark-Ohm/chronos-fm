@@ -57,7 +57,7 @@ ROADMAP 本体には判断の要点のみを記し、詳細は次の設計ドキ
 | [`docs/testing.md`](./testing.md) | P1 | GPUI `TestAppContext`・llvm-cov→R2/GitHub native パイプライン・静的解析 |
 | [`docs/dev-environment.md`](./dev-environment.md) | P1 | docker dev/ci 二系統・nix devshell |
 | [`docs/config.md`](./config.md) | P1→P2 | `~/.config/nohrs/config.toml` スキーマ・hot reload タイミング・JSON Schema |
-| [`docs/persistence.md`](./persistence.md) | P2 | rusqlite + WAL・redb (plugin KV)・`MetadataStore`/`KvStore` trait・マイグレーション |
+| [`docs/persistence.md`](./persistence.md) | P2 | rusqlite + WAL (メタデータ/履歴)・redb (ホスト KV, plugin KV は P4)・使い分け基準・`MetadataStore`/`KvStore` trait・マイグレーション・診断ログ |
 | [`docs/async-runtime.md`](./async-runtime.md) | P2 | GPUI executor 統一・`postage`/`async-channel`/`ureq` への置換 |
 | [`docs/explorer-essentials.md`](./explorer-essentials.md) | P1骨子→P2 | DnD・ファイル操作・スプリットビュー・タブ |
 | [`docs/launcher.md`](./launcher.md) | P3 | フローティング window・グローバルホットキー・アクションフレームワーク |
@@ -126,11 +126,11 @@ ROADMAP 本体には判断の要点のみを記し、詳細は次の設計ドキ
 - **DnD**: 内部 pane 間・外部アプリ間 (drop in / drop out)・複数選択ドラッグ。Cmd で copy / 通常は move (cross-volume は自動で copy)。詳細は [`docs/explorer-essentials.md`](./explorer-essentials.md)
 - **ファイル操作**: copy / cut / paste / rename / delete (trash デフォルト・Shift で permanent) / new folder / undo (window 単位 stack)。conflict は Rename/Overwrite/Skip + "Apply to all"
 - **スプリットビュー**: 2-way (水平/垂直)、ペイン独立ナビゲーション、ペイン単位 tab
-- **タブ**: 復元 (再起動時)、close、reorder。ピン留めは P3
+- **タブ**: 復元 (再起動時)、close、reorder。ピン留めは P3。復元状態の永続化先は redb (`state.redb`)、詳細は [`docs/persistence.md`](./persistence.md)
 - **OS 統合 (Finder 代替)**: `public.folder` 登録・`NSFileViewer`・Apple Event (`odoc`/`GURL`)・LaunchServices (`lsregister`)・Quick Look を実装し、Finder を起動せず完結できる状態にする。Linux は XDG MIME / `.desktop` 等価。アプリバンドル (`.app`) を前提とするため最小バンドル生成を本フェーズに前倒し (本格パッケージング/`dmg` は P6)。詳細は [`docs/os-integration.md`](./os-integration.md)
-- **SQLite + MetadataStore trait**: `nohrs-store` crate 新設、rusqlite + bundled + WAL モード。`MetadataStore` / `KvStore` / `HistoryStore` 等の interface segregated trait。詳細は [`docs/persistence.md`](./persistence.md)
+- **nohrs-store crate (SQLite + redb)**: `nohrs-store` crate 新設。SQLite (rusqlite + bundled + WAL) がメタデータ・履歴、redb がホスト KV (タブ/セッション復元・window 位置)。「キー完全一致以外で問い合わせるか」で使い分け。`MetadataStore` / `KvStore` / `HistoryStore` 等の interface segregated trait。詳細は [`docs/persistence.md`](./persistence.md)
 - **アプリコアの tokio 撤去**: `tokio::sync::*` を `postage` / `async-channel` / `futures::channel::oneshot` に、`tokio::spawn` を `cx.background_spawn` に、`tokio::time::*` を GPUI timer に置換。HTTP は `ureq` 採用。`cargo-deny` でアプリコアの tokio を ban (プラグイン実行層は P4 で `wrappers` 許可)。詳細は [`docs/async-runtime.md`](./async-runtime.md)
-- **config 拡張**: keybindings セクション草案 (P3 で本格化)、`schemars` で JSON Schema 自動生成
+- **config 拡張**: keybindings セクション草案 (P3 で本格化)、パフォーマンス解析用のストアログ設定 (`[diagnostics.store]`)、`schemars` で JSON Schema 自動生成
 
 ### Web
 
@@ -159,7 +159,7 @@ ROADMAP 本体には判断の要点のみを記し、詳細は次の設計ドキ
 ### Core
 
 - **Launcher 本体** (`crates/nohrs-launcher`):
-  - 別 window、フローティング、画面中央寄り上、マウスドラッグで移動可能 (位置記憶は SQLite `key_value`)、リサイズ不可
+  - 別 window、フローティング、画面中央寄り上、マウスドラッグで移動可能 (位置記憶は redb `state.redb`)、リサイズ不可
   - グローバルホットキー `Cmd+Shift+Space` (`global-hotkey` crate)、アプリ内 `Cmd+K`
   - 入力前は空欄 + placeholder ヒント
   - 結果リスト: icon / title / subtitle / kind badge / shortcut accessory

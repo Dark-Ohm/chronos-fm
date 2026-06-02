@@ -22,10 +22,10 @@ pub const SCHEMA_URL: &str = "https://nohrs.app/schema/config.schema.json";
 
 /// The fully merged, validated configuration.
 ///
-/// Only the P1 surface (`theme` / `ui`) is modelled here. `[keybindings]` and
-/// `[plugins]` are recognised as reserved sections (see [`is_reserved_section`])
-/// but intentionally not deserialized yet, so their future shapes can be added
-/// without breaking older files.
+/// Models the P1 surface (`theme` / `ui`) plus the P2 `[diagnostics]` section.
+/// `[keybindings]` and `[plugins]` are recognised as reserved sections (see
+/// [`is_reserved_section`]) but intentionally not deserialized yet, so their
+/// future shapes can be added without breaking older files.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct Config {
     /// On-disk schema version. Must be [`CURRENT_SCHEMA_VERSION`] for this build.
@@ -34,6 +34,8 @@ pub struct Config {
     pub theme: Theme,
     /// Explorer / view settings.
     pub ui: Ui,
+    /// Diagnostics / performance-logging settings.
+    pub diagnostics: Diagnostics,
 }
 
 impl Default for Config {
@@ -42,6 +44,7 @@ impl Default for Config {
             schema_version: CURRENT_SCHEMA_VERSION,
             theme: Theme::default(),
             ui: Ui::default(),
+            diagnostics: Diagnostics::default(),
         }
     }
 }
@@ -84,6 +87,27 @@ impl Default for Ui {
             icon_pack: "default".to_string(),
         }
     }
+}
+
+/// Diagnostics / performance-logging settings (see `docs/persistence.md` §5).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct Diagnostics {
+    /// Performance logging for the persistence layer (`nohrs-store`).
+    pub store: DiagnosticsStore,
+}
+
+/// Performance logging for the SQLite / redb store. All off by default, so a
+/// default config adds no overhead. Output goes through `tracing` (targets
+/// `nohrs_store::sql` / `nohrs_store::redb`) and is filterable with `RUST_LOG`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct DiagnosticsStore {
+    /// Log every SQL query at `debug` (verbose).
+    pub log_all_queries: bool,
+    /// Log SQL queries slower than this many milliseconds at `warn`. Zero (the
+    /// default) disables slow-query logging.
+    pub slow_query_ms: u64,
+    /// Log redb `get`/`put`/`delete`/`batch` operations and their durations.
+    pub log_redb_ops: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
@@ -309,10 +333,25 @@ impl Config {
                 None => diagnostics.push(Diagnostic::warn("[ui] is not a table; ignoring")),
             }
         }
+        if let Some(value) = table.get("diagnostics") {
+            match value.as_table() {
+                Some(diag) => read_diagnostics(diag, &mut config.diagnostics, &mut diagnostics),
+                None => {
+                    diagnostics.push(Diagnostic::warn("[diagnostics] is not a table; ignoring"))
+                }
+            }
+        }
 
         warn_unknown_keys(
             table,
-            &["schema_version", "theme", "ui", "keybindings", "plugins"],
+            &[
+                "schema_version",
+                "theme",
+                "ui",
+                "diagnostics",
+                "keybindings",
+                "plugins",
+            ],
             "",
             &mut diagnostics,
         );
@@ -340,6 +379,13 @@ impl Config {
              default_sort = \"name\"   # \"name\" | \"modified\" | \"size\" | \"kind\"\n\
              show_hidden = false\n\
              icon_pack = \"default\"\n\
+             \n\
+             # Store performance logging for analysis; all off by default.\n\
+             # Output via tracing (RUST_LOG), see docs/persistence.md §5.\n\
+             [diagnostics.store]\n\
+             log_all_queries = false   # log every SQL query at debug\n\
+             slow_query_ms = 0         # warn on SQL slower than this (0 = off)\n\
+             log_redb_ops = false      # log redb get/put/delete/batch timings\n\
              \n\
              # Reserved for future use; left empty in P1.\n\
              [keybindings]\n\
@@ -409,6 +455,62 @@ fn read_ui(table: &toml::Table, ui: &mut Ui, diagnostics: &mut Vec<Diagnostic>) 
         table,
         &["default_sort", "show_hidden", "icon_pack"],
         "ui.",
+        diagnostics,
+    );
+}
+
+fn read_diagnostics(
+    table: &toml::Table,
+    diag: &mut Diagnostics,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if let Some(value) = table.get("store") {
+        match value.as_table() {
+            Some(store) => read_diagnostics_store(store, &mut diag.store, diagnostics),
+            None => diagnostics.push(Diagnostic::warn(
+                "[diagnostics.store] is not a table; ignoring",
+            )),
+        }
+    }
+    warn_unknown_keys(table, &["store"], "diagnostics.", diagnostics);
+}
+
+fn read_diagnostics_store(
+    table: &toml::Table,
+    store: &mut DiagnosticsStore,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if let Some(value) = table.get("log_all_queries") {
+        match value.as_bool() {
+            Some(flag) => store.log_all_queries = flag,
+            None => diagnostics.push(Diagnostic::warn(format!(
+                "invalid diagnostics.store.log_all_queries {value}; using {}",
+                store.log_all_queries
+            ))),
+        }
+    }
+    if let Some(value) = table.get("slow_query_ms") {
+        match value.as_integer() {
+            Some(ms) if ms >= 0 => store.slow_query_ms = ms as u64,
+            _ => diagnostics.push(Diagnostic::warn(format!(
+                "invalid diagnostics.store.slow_query_ms {value}; using {}",
+                store.slow_query_ms
+            ))),
+        }
+    }
+    if let Some(value) = table.get("log_redb_ops") {
+        match value.as_bool() {
+            Some(flag) => store.log_redb_ops = flag,
+            None => diagnostics.push(Diagnostic::warn(format!(
+                "invalid diagnostics.store.log_redb_ops {value}; using {}",
+                store.log_redb_ops
+            ))),
+        }
+    }
+    warn_unknown_keys(
+        table,
+        &["log_all_queries", "slow_query_ms", "log_redb_ops"],
+        "diagnostics.store.",
         diagnostics,
     );
 }
@@ -566,6 +668,36 @@ mod tests {
         assert_eq!(config.ui.default_sort, SortOrder::Modified);
         assert!(config.ui.show_hidden);
         assert_eq!(config.ui.icon_pack, "nerd");
+    }
+
+    #[test]
+    fn parses_diagnostics_store() {
+        let toml = r#"
+            [diagnostics.store]
+            log_all_queries = true
+            slow_query_ms = 50
+            log_redb_ops = true
+        "#;
+        let (config, diagnostics) = Config::from_toml_str(toml);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        assert!(config.diagnostics.store.log_all_queries);
+        assert_eq!(config.diagnostics.store.slow_query_ms, 50);
+        assert!(config.diagnostics.store.log_redb_ops);
+    }
+
+    #[test]
+    fn diagnostics_store_rejects_bad_values_leniently() {
+        let toml = r#"
+            [diagnostics.store]
+            slow_query_ms = -5
+            log_all_queries = "yes"
+        "#;
+        let (config, diagnostics) = Config::from_toml_str(toml);
+        assert!(errors(&diagnostics).is_empty());
+        // Bad values fall back to defaults.
+        assert_eq!(config.diagnostics.store.slow_query_ms, 0);
+        assert!(!config.diagnostics.store.log_all_queries);
+        assert_eq!(diagnostics.len(), 2);
     }
 
     #[test]
