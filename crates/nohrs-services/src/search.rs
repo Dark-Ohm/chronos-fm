@@ -67,7 +67,7 @@ impl SearchService {
     }
 
     /// Returns a receiver for initial-indexing progress in the range `0.0..=1.0`.
-    pub fn progress_subscription(&self) -> tokio::sync::watch::Receiver<f32> {
+    pub fn progress_subscription(&self) -> postage::watch::Receiver<f32> {
         self.engine.progress_subscription()
     }
 }

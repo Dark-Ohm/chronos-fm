@@ -2,10 +2,7 @@ use super::indexer::IndexManager;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
 use anyhow::{Context, Result};
-use nohrs_core::telemetry::LogErr;
 use std::sync::{Arc, Mutex};
-use tokio::sync::mpsc;
-use tokio::task::JoinHandle;
 
 /// Deferred initial-indexing work handed to the caller so it can run on GPUI's
 /// background executor (`cx.background_spawn`) instead of a `tokio::task::
@@ -13,7 +10,7 @@ use tokio::task::JoinHandle;
 /// `Send` handles so the GUI can move it onto a worker thread.
 pub struct InitialIndexingJob {
     index_manager: Arc<IndexManager>,
-    progress_tx: tokio::sync::watch::Sender<f32>,
+    progress_tx: postage::watch::Sender<f32>,
 }
 
 impl InitialIndexingJob {
@@ -22,7 +19,7 @@ impl InitialIndexingJob {
     pub fn run(self) {
         let InitialIndexingJob {
             index_manager,
-            progress_tx,
+            mut progress_tx,
         } = self;
 
         // Check if schema has required fields (detects schema changes)
@@ -31,7 +28,7 @@ impl InitialIndexingJob {
 
         if !has_filename_field {
             tracing::info!("Schema outdated (missing filename field), forcing full indexing...");
-            progress_tx.send(0.0).log_err();
+            *progress_tx.borrow_mut() = 0.0;
             if let Err(e) = index_manager.index_home(Some(progress_tx)) {
                 tracing::error!("Initial indexing failed: {}", e);
             }
@@ -44,7 +41,7 @@ impl InitialIndexingJob {
                 let doc_count = reader.searcher().num_docs();
                 if doc_count == 0 {
                     tracing::info!("Index is empty, starting full indexing...");
-                    progress_tx.send(0.0).log_err(); // Reset to 0 for indexing
+                    *progress_tx.borrow_mut() = 0.0; // Reset to 0 for indexing
                     if let Err(e) = index_manager.index_home(Some(progress_tx)) {
                         tracing::error!("Initial indexing failed: {}", e);
                     }
@@ -58,7 +55,7 @@ impl InitialIndexingJob {
             }
             Err(e) => {
                 tracing::warn!("Failed to read index, running full indexing: {}", e);
-                progress_tx.send(0.0).log_err();
+                *progress_tx.borrow_mut() = 0.0;
                 if let Err(e) = index_manager.index_home(Some(progress_tx)) {
                     tracing::error!("Initial indexing failed: {}", e);
                 }
@@ -72,8 +69,10 @@ pub struct SearchEngine {
     index_manager: Arc<IndexManager>,
     root_backend: Arc<dyn SearchBackend>,
     _watcher: FileWatcher, // Keep alive
-    _watcher_task: JoinHandle<()>,
-    progress_rx: tokio::sync::watch::Receiver<f32>,
+    // The consumer thread exits on its own once `_watcher` drops and closes the
+    // channel; declared after `_watcher` so that drop order makes that happen.
+    _watcher_task: std::thread::JoinHandle<()>,
+    progress_rx: postage::watch::Receiver<f32>,
     // Taken once by `take_initial_indexing_job`; `None` afterwards.
     initial_indexing_job: Mutex<Option<InitialIndexingJob>>,
 }
@@ -92,21 +91,20 @@ impl SearchEngine {
             std::path::PathBuf::from("/"),
         ));
 
-        // Channel for watcher events.
-        // P2 (#56 follow-up): replace tokio::sync::mpsc with async-channel and
-        // the tokio::spawn consumer below with cx.background_spawn (async-runtime.md §2).
-        let (tx, mut rx) = mpsc::channel(100);
+        // Bounded channel for watcher events (async-channel; runtime-agnostic).
+        let (tx, rx) = async_channel::bounded(100);
 
         let home_dir = dirs::home_dir().context("Home directory not found")?;
         use std::time::Duration;
         let watcher = FileWatcher::new(home_dir, tx, Duration::from_secs(2))?;
 
-        // Spawn event handler task.
-        // P2: this tokio::spawn + rx.recv().await keeps the residual tokio runtime
-        // alive; move to cx.background_spawn over an async-channel receiver.
+        // The watcher consumer does blocking index updates, so it runs on a
+        // dedicated std::thread rather than an async task (async-runtime.md §4).
+        // `recv_blocking` returns `Err` once every sender drops (i.e. when the
+        // watcher above is dropped), which lets the thread exit cleanly.
         let manager_clone = index_manager.clone();
-        let watcher_task = tokio::spawn(async move {
-            while let Some(paths) = rx.recv().await {
+        let watcher_task = std::thread::spawn(move || {
+            while let Ok(paths) = rx.recv_blocking() {
                 if let Err(e) = manager_clone.process_changes(&paths) {
                     tracing::warn!("Failed to process batch changes: {}", e);
                 }
@@ -114,8 +112,7 @@ impl SearchEngine {
         });
 
         // Progress channel for initial indexing (starts at 1.0 == done).
-        // P2: replace tokio::sync::watch with postage::watch (async-runtime.md §2).
-        let (progress_tx, progress_rx) = tokio::sync::watch::channel(1.0);
+        let (progress_tx, progress_rx) = postage::watch::channel_with(1.0);
 
         // The actual indexing is deferred to the caller (the GUI) so it runs on
         // GPUI's background executor instead of a service-owned spawn_blocking.
@@ -135,7 +132,7 @@ impl SearchEngine {
     }
 
     /// Returns a receiver for initial-indexing progress in the range `0.0..=1.0`.
-    pub fn progress_subscription(&self) -> tokio::sync::watch::Receiver<f32> {
+    pub fn progress_subscription(&self) -> postage::watch::Receiver<f32> {
         self.progress_rx.clone()
     }
 

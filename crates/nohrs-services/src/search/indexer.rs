@@ -1,5 +1,4 @@
 use anyhow::{Context, Result};
-use nohrs_core::telemetry::LogErr;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
@@ -96,7 +95,7 @@ impl IndexManager {
     // writer() helper removed as we use shared writer
 
     /// Indexes the content root from scratch, reporting progress through `progress_tx` if given.
-    pub fn index_home(&self, progress_tx: Option<tokio::sync::watch::Sender<f32>>) -> Result<()> {
+    pub fn index_home(&self, mut progress_tx: Option<postage::watch::Sender<f32>>) -> Result<()> {
         let mut writer_guard = self
             .writer
             .lock()
@@ -117,8 +116,8 @@ impl IndexManager {
 
         // 1. Count files if progress tracking is enabled
         let mut total_files = 0;
-        if let Some(tx) = &progress_tx {
-            tx.send(0.0).log_err();
+        if let Some(tx) = &mut progress_tx {
+            *tx.borrow_mut() = 0.0;
             let walker = ignore::WalkBuilder::new(&self.content_root)
                 .hidden(false)
                 .git_ignore(true)
@@ -168,9 +167,9 @@ impl IndexManager {
 
                     // Update progress
                     processed += 1;
-                    if let Some(tx) = &progress_tx {
+                    if let Some(tx) = &mut progress_tx {
                         if total_files > 0 && processed % 100 == 0 {
-                            tx.send(processed as f32 / total_files as f32).log_err();
+                            *tx.borrow_mut() = processed as f32 / total_files as f32;
                         }
                     }
                 }
@@ -178,8 +177,8 @@ impl IndexManager {
             }
         }
 
-        if let Some(tx) = &progress_tx {
-            tx.send(1.0).log_err(); // Done
+        if let Some(tx) = &mut progress_tx {
+            *tx.borrow_mut() = 1.0; // Done
         }
 
         writer_guard.commit()?;
