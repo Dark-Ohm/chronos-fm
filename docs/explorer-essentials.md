@@ -29,6 +29,29 @@
 | **Skip** | このファイルだけスキップ、他は継続 |
 | **Apply to all** | 残りの全ファイルに同じ判断を適用 (大量操作時の認知負荷軽減) |
 
+#### モック (P2 実装の前提)
+
+```text
+┌──────────────────────────────────────────────────────────┐
+│  ⚠  "report.pdf" already exists in "Documents"            │
+│                                                          │
+│  ┌────────────┐                                          │
+│  │  [ICON]    │   Replacing it will overwrite its        │
+│  │  report.pdf│   current contents.                      │
+│  └────────────┘                                          │
+│     2.4 MB · Modified 2026-05-30 14:02                   │
+│                                                          │
+│  [✓] Apply to all remaining conflicts (3 more)           │
+│                                                          │
+│              [ Skip ]  [ Rename ]  [ Cancel ]  [ Overwrite ]│
+└──────────────────────────────────────────────────────────┘
+```
+
+- 既定フォーカスは破壊的でない **Rename**。`Enter` は既定ボタン、`Esc` は `Cancel`。
+- `Overwrite` は右端・強調色 (誤クリック防止のため Rename と離す)。
+- `Apply to all` ON 時、以降の同種コンフリクトに同じ判断を無確認適用。残件数を併記。
+- 進捗中 (§1.4) に発生したコンフリクトはキュー化し、1 件ずつ本ダイアログを表示。
+
 ### 1.3 Undo Stack
 
 | 観点 | 仕様 |
@@ -56,6 +79,8 @@
 ---
 
 ## 2. DnD (P2 必須セット)
+
+> 外部アプリとの drag-out / drop-in は、より広い「Finder 代替のための OS 統合」(`public.folder` 登録 / `NSFileViewer` / Apple Event / Quick Look / LaunchServices) の一部でもある。本書はファイラー UI に閉じた DnD のみを扱い、OS レベルの登録・連携は [`docs/os-integration.md`](./os-integration.md) (P2) で追跡する。
 
 | 操作 | P2 必須 | 備考 |
 |------|---------|------|
