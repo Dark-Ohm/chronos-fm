@@ -49,6 +49,12 @@ impl SqliteStore {
         connection.query_row("PRAGMA journal_mode=WAL;", [], |row| {
             row.get::<_, String>(0)
         })?;
+        // `synchronous=NORMAL` is the recommended pairing with WAL: it fsyncs at
+        // checkpoints rather than every commit, so a power loss may drop the last
+        // few transactions but never corrupts the database. Our data (metadata /
+        // history) is a rebuildable cache, so trading that durability for far
+        // fewer fsyncs is the right call.
+        connection.pragma_update(None, "synchronous", "NORMAL")?;
         configure_query_logging(&mut connection, log);
         migrate(&mut connection)?;
         Ok(Self {
@@ -147,19 +153,19 @@ fn path_str(path: &Path) -> String {
 impl MetadataQuery for SqliteStore {
     fn get_file(&self, path: &Path) -> Result<Option<FileRecord>> {
         let connection = self.connection();
-        let record = connection
-            .query_row(
-                &format!("SELECT {FILE_COLUMNS} FROM files WHERE path = ?1"),
-                [path_str(path)],
-                row_to_file,
-            )
+        // `prepare_cached` reuses the compiled statement across calls (these are
+        // hot paths once the P3 indexer runs); the SQL text is the cache key.
+        let mut statement = connection
+            .prepare_cached(&format!("SELECT {FILE_COLUMNS} FROM files WHERE path = ?1"))?;
+        let record = statement
+            .query_row([path_str(path)], row_to_file)
             .optional()?;
         Ok(record)
     }
 
     fn list_children(&self, parent: &Path) -> Result<Vec<FileRecord>> {
         let connection = self.connection();
-        let mut statement = connection.prepare(&format!(
+        let mut statement = connection.prepare_cached(&format!(
             "SELECT {FILE_COLUMNS} FROM files WHERE parent_path = ?1 ORDER BY path"
         ))?;
         let rows = statement.query_map([path_str(parent)], row_to_file)?;
@@ -168,7 +174,7 @@ impl MetadataQuery for SqliteStore {
 
     fn list_changed_since(&self, ts_ns: i64) -> Result<Vec<FileRecord>> {
         let connection = self.connection();
-        let mut statement = connection.prepare(&format!(
+        let mut statement = connection.prepare_cached(&format!(
             "SELECT {FILE_COLUMNS} FROM files \
              WHERE mtime_ns > ?1 OR (deleted_at IS NOT NULL AND deleted_at > ?1) \
              ORDER BY mtime_ns"
@@ -179,12 +185,11 @@ impl MetadataQuery for SqliteStore {
 
     fn find_by_inode(&self, inode: u64) -> Result<Option<FileRecord>> {
         let connection = self.connection();
-        let record = connection
-            .query_row(
-                &format!("SELECT {FILE_COLUMNS} FROM files WHERE inode = ?1 LIMIT 1"),
-                [inode as i64],
-                row_to_file,
-            )
+        let mut statement = connection.prepare_cached(&format!(
+            "SELECT {FILE_COLUMNS} FROM files WHERE inode = ?1 LIMIT 1"
+        ))?;
+        let record = statement
+            .query_row([inode as i64], row_to_file)
             .optional()?;
         Ok(record)
     }
@@ -196,7 +201,7 @@ impl MetadataStore for SqliteStore {
         // `excluded` refers to the row that would have been inserted; on a path
         // conflict we refresh the changeable columns but leave indexed_at /
         // deleted_at to the dedicated methods.
-        let id = connection.query_row(
+        let mut statement = connection.prepare_cached(
             "INSERT INTO files (path, parent_path, inode, size, mtime_ns, content_hash) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6) \
              ON CONFLICT(path) DO UPDATE SET \
@@ -206,6 +211,8 @@ impl MetadataStore for SqliteStore {
                  mtime_ns = excluded.mtime_ns, \
                  content_hash = excluded.content_hash \
              RETURNING id",
+        )?;
+        let id = statement.query_row(
             params![
                 path_str(&entry.path),
                 path_str(&entry.parent_path),
@@ -221,16 +228,17 @@ impl MetadataStore for SqliteStore {
 
     fn delete_file(&self, path: &Path) -> Result<()> {
         let connection = self.connection();
-        connection.execute("DELETE FROM files WHERE path = ?1", [path_str(path)])?;
+        connection
+            .prepare_cached("DELETE FROM files WHERE path = ?1")?
+            .execute([path_str(path)])?;
         Ok(())
     }
 
     fn mark_indexed(&self, id: FileId, indexed_at_ns: i64) -> Result<()> {
         let connection = self.connection();
-        connection.execute(
-            "UPDATE files SET indexed_at = ?2 WHERE id = ?1",
-            params![id, indexed_at_ns],
-        )?;
+        connection
+            .prepare_cached("UPDATE files SET indexed_at = ?2 WHERE id = ?1")?
+            .execute(params![id, indexed_at_ns])?;
         Ok(())
     }
 }
@@ -238,20 +246,26 @@ impl MetadataStore for SqliteStore {
 impl HistoryStore for SqliteStore {
     fn record(&self, entry: HistoryEntry) -> Result<()> {
         let connection = self.connection();
-        connection.execute(
-            "INSERT INTO history (kind, payload, occurred_at) VALUES (?1, ?2, ?3)",
-            params![entry.kind.as_str(), entry.payload, entry.occurred_at],
-        )?;
+        connection
+            .prepare_cached("INSERT INTO history (kind, payload, occurred_at) VALUES (?1, ?2, ?3)")?
+            .execute(params![
+                entry.kind.as_str(),
+                entry.payload,
+                entry.occurred_at
+            ])?;
         Ok(())
     }
 
     fn list(&self, kind: HistoryKind, limit: usize) -> Result<Vec<HistoryEntry>> {
         let connection = self.connection();
-        let mut statement = connection.prepare(
+        let mut statement = connection.prepare_cached(
             "SELECT kind, payload, occurred_at FROM history \
              WHERE kind = ?1 ORDER BY occurred_at DESC LIMIT ?2",
         )?;
-        let rows = statement.query_map(params![kind.as_str(), limit as i64], |row| {
+        // Saturate rather than wrap: a `usize` past `i64::MAX` would otherwise
+        // become a negative LIMIT, which SQLite treats as "no limit".
+        let limit = i64::try_from(limit).unwrap_or(i64::MAX);
+        let rows = statement.query_map(params![kind.as_str(), limit], |row| {
             let kind_text: String = row.get(0)?;
             Ok(HistoryEntry {
                 // The kind came straight from our own enum, so it always parses.

@@ -168,6 +168,8 @@ const HOST_KV: TableDefinition<'static, &str, &[u8]> = TableDefinition::new("kv"
 - `KvStore::batch(ops)` は 1 つの write transaction にまとめて atomic commit
 - value は JSON or MessagePack で serialize した blob (タブ群のスナップショット等)
 
+> **書き込み頻度に関する注意**: redb の commit はデフォルトで durable (fsync) なので、window ドラッグ等の高頻度更新を 1 操作ずつ `put` すると fsync が多発する。呼び出し側 (UI 層) で **debounce してから書く**、複数キーは `batch` でまとめる、を原則とする。
+
 ### プラグイン KV テーブル設計 (P4)
 
 `plugin-kv.redb` に plugin_id ごとの隔離テーブルを置く (本 Issue #63 では対象外、P4 で実装)。
