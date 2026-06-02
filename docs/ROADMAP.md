@@ -67,6 +67,7 @@ ROADMAP 本体には判断の要点のみを記し、詳細は次の設計ドキ
 | [`docs/plugin-permissions.md`](./plugin-permissions.md) | P4 | 権限マニフェスト・同意フロー・2 層サンドボックス |
 | [`docs/plugin-distribution.md`](./plugin-distribution.md) | P4→P5 | インストール (user/repo, URL, local)・更新・Plugin Store 連携 |
 | [`docs/plugin-templates.md`](./plugin-templates.md) | P4 | Rust/TS/Python テンプレ・`nohrs plugin` CLI・AI agent skills/MCP |
+| [`docs/os-integration.md`](./os-integration.md) | P6 | Finder 代替の OS 統合 (`public.folder`/`NSFileViewer`/Apple Event/Quick Look/LaunchServices)・Linux 等価 |
 
 加えて [`docs/adr/`](./adr/) に短文の Architecture Decision Records を蓄積します。
 
@@ -112,7 +113,7 @@ ROADMAP 本体には判断の要点のみを記し、詳細は次の設計ドキ
 - `cargo fmt --check && cargo clippy -- -D warnings -W clippy::unwrap_used -W clippy::expect_used && cargo test --all-features` が CI で green
 - `cargo publish --dry-run` がメタ情報エラーを出さない
 - `nohrs.app` が GA、`noh.rs` リダイレクト稼働
-- 全 spec doc 15 本の骨子が `docs/` 配下に存在
+- 全 spec doc 16 本の骨子が `docs/` 配下に存在
 
 ---
 
@@ -270,6 +271,7 @@ ROADMAP 本体には判断の要点のみを記し、詳細は次の設計ドキ
 - **多 OS 戦略決定**: Linux 完全対応 / Windows 対応 / macOS 専用継続のいずれを取るかを ADR で記録 (この時点で gpui の OS サポート状況が判断材料)
 - **performance ゲート**: launcher 起動時間 <100ms、search latency 中央値 <500ms、indexing バックグラウンド時 CPU <10% を CI で測定
 - **`#![warn(missing_docs)]` → `deny`**: pub API 全てに rustdoc
+- **OS 統合 (Finder 代替)**: `.app`/`dmg` バンドルに `public.folder` 登録・`NSFileViewer`・Apple Event (`odoc`/`GURL`)・LaunchServices (`lsregister`)・Quick Look を実装し、Finder を起動せず完結できる状態にする。Linux は XDG MIME / `.desktop` 等価。詳細は [`docs/os-integration.md`](./os-integration.md)
 - **`nohrs-gpui-wasmtime` 再評価**: プラグイン実行層の専用 tokio runtime のボトルネック実測 → 必要なら GPUI executor 上で wasmtime async を駆動する `noh-rs/gpui-wasmtime` を別 lifecycle で立ち上げ、専用 tokio runtime を置き換える。詳細は [§Future Work](#future-work)
 
 ### Web
