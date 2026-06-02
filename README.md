@@ -21,10 +21,8 @@ Nohrs combines a Raycast-style launcher and a modern, keyboard-driven file explo
 ## Demo
 
 <div align="center">
-  <img src="assets/doc/screen-shot.jpeg" alt="Nohrs in action" width="760">
+  <img src="assets/doc/demo.gif" alt="Nohrs in action — browsing files, previewing them, and filtering by name" width="760">
 </div>
-
-> A demo GIF is on the way. Until then, build from source (see [Quick Start](#quick-start)) to try it locally.
 
 ## Why Nohrs?
 

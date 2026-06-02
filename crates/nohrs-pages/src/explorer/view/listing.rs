@@ -41,37 +41,73 @@ pub fn render(
 /// Truncates `text` to at most `max_len` characters by eliding the middle,
 /// preserving the file extension where possible.
 pub fn truncate_middle(text: &str, max_len: usize) -> String {
-    let char_count = text.chars().count();
+    // Width reserved for the "..." elision marker.
+    const ELLIPSIS: usize = 3;
 
-    if char_count <= max_len {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_len {
         return text.to_string();
     }
 
+    // Prefer eliding the middle of the *name* so the extension stays visible.
+    // `checked_sub` guards the case where the extension alone (plus the marker)
+    // already exceeds `max_len`: in debug builds the previous `max_len - ext - 3`
+    // panicked on overflow, in release it would have wrapped to a huge budget.
     if let Some(dot_pos) = text.rfind('.') {
-        let name_part = &text[..dot_pos];
+        let name_chars: Vec<char> = text[..dot_pos].chars().collect();
         let ext_part = &text[dot_pos..];
-        let name_chars: Vec<char> = name_part.chars().collect();
         let ext_chars = ext_part.chars().count();
 
-        if name_chars.len() > max_len - ext_chars - 3 {
-            let keep_start = (max_len - ext_chars - 3) / 2;
-            let keep_end = (max_len - ext_chars - 3) - keep_start;
+        if let Some(budget) = max_len.checked_sub(ext_chars + ELLIPSIS) {
+            if name_chars.len() > budget {
+                let keep_start = budget / 2;
+                let keep_end = budget - keep_start;
 
-            let start_part: String = name_chars[..keep_start].iter().collect();
-            let end_part: String = name_chars[name_chars.len() - keep_end..].iter().collect();
+                let start_part: String = name_chars[..keep_start].iter().collect();
+                let end_part: String = name_chars[name_chars.len() - keep_end..].iter().collect();
 
-            format!("{}...{}{}", start_part, end_part, ext_part)
-        } else {
-            text.to_string()
+                return format!("{}...{}{}", start_part, end_part, ext_part);
+            }
+            return text.to_string();
         }
-    } else {
-        let chars: Vec<char> = text.chars().collect();
-        let keep_start = (max_len - 3) / 2;
-        let keep_end = (max_len - 3) - keep_start;
+    }
 
-        let start_part: String = chars[..keep_start].iter().collect();
-        let end_part: String = chars[chars.len() - keep_end..].iter().collect();
+    // No usable extension, or one too long to preserve: hard-truncate the whole
+    // string, keeping the head and tail around the marker.
+    let budget = max_len.saturating_sub(ELLIPSIS);
+    let keep_start = budget / 2;
+    let keep_end = budget - keep_start;
 
-        format!("{}...{}", start_part, end_part)
+    let start_part: String = chars[..keep_start].iter().collect();
+    let end_part: String = chars[chars.len() - keep_end..].iter().collect();
+
+    format!("{}...{}", start_part, end_part)
+}
+
+#[cfg(test)]
+mod truncate_middle_tests {
+    use super::truncate_middle;
+
+    #[test]
+    fn keeps_short_names_unchanged() {
+        assert_eq!(truncate_middle("Cargo.toml", 20), "Cargo.toml");
+    }
+
+    #[test]
+    fn elides_middle_preserving_extension() {
+        let out = truncate_middle("a-very-long-file-name.rs", 16);
+        assert!(out.contains("..."));
+        assert!(out.ends_with(".rs"));
+        assert!(out.chars().count() <= 16);
+    }
+
+    #[test]
+    fn does_not_panic_when_extension_exceeds_budget() {
+        // Regression: an extension longer than `max_len - 3` previously
+        // underflowed `max_len - ext - 3` and panicked in debug builds. Such
+        // names reach this code path via search results.
+        let _ = truncate_middle("x.0123456789012345678901234567890", 20);
+        let _ = truncate_middle("no-dot-but-extremely-long-name-here", 8);
+        let _ = truncate_middle(".gitignore", 5);
     }
 }
