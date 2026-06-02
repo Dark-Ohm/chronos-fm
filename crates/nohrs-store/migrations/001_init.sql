@@ -18,7 +18,7 @@ CREATE INDEX idx_files_inode  ON files(inode);
 
 CREATE TABLE history (
     id          INTEGER PRIMARY KEY,
-    kind        TEXT NOT NULL,            -- "open" | "search" | "command"
+    kind        TEXT NOT NULL CHECK (kind IN ('open', 'search', 'command')),
     payload     TEXT NOT NULL,
     occurred_at INTEGER NOT NULL
 );

@@ -50,7 +50,7 @@ impl SqliteStore {
             row.get::<_, String>(0)
         })?;
         configure_query_logging(&mut connection, log);
-        migrate(&connection)?;
+        migrate(&mut connection)?;
         Ok(Self {
             connection: Arc::new(Mutex::new(connection)),
         })
@@ -88,7 +88,7 @@ fn profile_callback(sql: &str, duration: Duration) {
     }
 }
 
-fn migrate(connection: &Connection) -> Result<()> {
+fn migrate(connection: &mut Connection) -> Result<()> {
     connection.execute_batch(
         "CREATE TABLE IF NOT EXISTS _migrations (\
              version INTEGER PRIMARY KEY, \
@@ -102,11 +102,17 @@ fn migrate(connection: &Connection) -> Result<()> {
             |row| row.get(0),
         )?;
         if !already_applied {
-            connection.execute_batch(sql)?;
-            connection.execute(
+            // Apply the migration and record its version in one transaction:
+            // SQLite DDL is transactional, so a crash mid-migration rolls back
+            // cleanly. Otherwise a half-applied migration with no bookkeeping
+            // would re-run the (non-idempotent) DDL on next startup and fail.
+            let transaction = connection.transaction()?;
+            transaction.execute_batch(sql)?;
+            transaction.execute(
                 "INSERT INTO _migrations (version, applied_at) VALUES (?1, ?2)",
                 params![version, now_ns()],
             )?;
+            transaction.commit()?;
         }
     }
     Ok(())

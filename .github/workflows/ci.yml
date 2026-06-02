@@ -229,7 +229,7 @@ jobs:
         id: rate
         shell: bash
         run: |
-          rate=$(grep -o 'line-rate="[0-9.]*"' cobertura-core.xml | head -1 | grep -o '[0-9.]*' | head -1)
+          rate=$(grep -o -m1 'line-rate="[0-9.]*"' cobertura-core.xml | grep -o -m1 '[0-9.]*')
           pct=$(awk "BEGIN { printf \"%.2f\", ${rate:-0} * 100 }")
           echo "rate=${pct}" >> "$GITHUB_OUTPUT"
       # GitHub native code coverage (PR diff inline). Skipped for PRs from forks,
@@ -292,7 +292,7 @@ jobs:
         id: rate
         shell: bash
         run: |
-          rate=$(grep -o 'line-rate="[0-9.]*"' cobertura-overall.xml | head -1 | grep -o '[0-9.]*' | head -1)
+          rate=$(grep -o -m1 'line-rate="[0-9.]*"' cobertura-overall.xml | grep -o -m1 '[0-9.]*')
           pct=$(awk "BEGIN { printf \"%.2f\", ${rate:-0} * 100 }")
           echo "rate=${pct}" >> "$GITHUB_OUTPUT"
       - name: Upload coverage to GitHub
