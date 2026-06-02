@@ -73,7 +73,11 @@ mod tests {
     #[test]
     fn new_invokes_callback_on_config_change() {
         let dir = tempdir().unwrap();
-        let config = dir.path().join("config.toml");
+        // Canonicalize so the watched path matches the (canonical) paths the OS
+        // backend reports — on macOS FSEvents resolves `/tmp` → `/private/tmp`,
+        // which would otherwise never match the watcher's exact-path filter.
+        let root = std::fs::canonicalize(dir.path()).unwrap();
+        let config = root.join("config.toml");
         std::fs::write(&config, "schema_version = 1").unwrap();
 
         let (sender, receiver) = mpsc::channel();
@@ -82,9 +86,10 @@ mod tests {
         })
         .unwrap();
 
-        // A write to the watched file should fire `on_change`. notify is
-        // OS-driven, so allow a generous timeout (std mpsc, not a GPUI timer —
-        // this is a plain `#[test]`, not `#[gpui::test]`).
+        // Give the OS watch a moment to start (FSEvents has a startup latency)
+        // before mutating, then wait generously for the event. std mpsc + sleep
+        // are fine here — this is a plain `#[test]`, not a `#[gpui::test]`.
+        std::thread::sleep(Duration::from_millis(300));
         std::fs::write(&config, "schema_version = 1\n# edited").unwrap();
         assert!(
             receiver.recv_timeout(Duration::from_secs(10)).is_ok(),
