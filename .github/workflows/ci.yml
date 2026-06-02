@@ -254,15 +254,17 @@ jobs:
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const core = process.env.CORE_RATE || 'n/a';
-            const overall = process.env.OVERALL_RATE || 'n/a';
+            // `core`, `github`, `context` are injected by github-script; avoid
+            // shadowing them (a `const core` redeclaration is a SyntaxError).
+            const corePct = process.env.CORE_RATE || 'n/a';
+            const overallPct = process.env.OVERALL_RATE || 'n/a';
             const marker = '<!-- coverage-report -->';
             const body = `${marker}\n`
               + `📊 **Coverage**\n\n`
               + `| Tier | Line coverage | Target |\n`
               + `| --- | --- | --- |\n`
-              + `| Core (headless \`default-members\`) | ${core}% | 80% |\n`
-              + `| Overall incl. GUI (\`--all-features\`) | ${overall}% | 50% |\n\n`
+              + `| Core (headless \`default-members\`) | ${corePct}% | 80% |\n`
+              + `| Overall incl. GUI (\`--all-features\`) | ${overallPct}% | 50% |\n\n`
               + `[⬇️ HTML reports](${process.env.RUN_URL}) — download the `
               + `\`coverage-html-core\` / \`coverage-html-overall\` artifacts and open \`index.html\`.\n\n`
               + `> Informational during P1–P5. Does not block merge.`;
