@@ -80,7 +80,7 @@
 
 ## 2. DnD (P2 必須セット)
 
-> 外部アプリとの drag-out / drop-in は、より広い「Finder 代替のための OS 統合」(`public.folder` 登録 / `NSFileViewer` / Apple Event / Quick Look / LaunchServices) の一部でもある。本書はファイラー UI に閉じた DnD のみを扱い、OS レベルの登録・連携は [`docs/os-integration.md`](./os-integration.md) (P6) で追跡する。
+> 外部アプリとの drag-out / drop-in は、より広い「Finder 代替のための OS 統合」(`public.folder` 登録 / `NSFileViewer` / Apple Event / Quick Look / LaunchServices) の一部でもある。本書はファイラー UI に閉じた DnD のみを扱い、OS レベルの登録・連携は [`docs/os-integration.md`](./os-integration.md) (P2) で追跡する。
 
 | 操作 | P2 必須 | 備考 |
 |------|---------|------|
