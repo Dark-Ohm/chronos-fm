@@ -9,12 +9,15 @@ use std::time::Duration;
 // sender once the consumer task moves off tokio (async-runtime.md §2).
 use tokio::sync::mpsc;
 
+/// Watches a directory tree and forwards debounced batches of changed paths.
 pub struct FileWatcher {
     // Keep debouncer alive
     _debouncer: Debouncer<notify::RecommendedWatcher>,
 }
 
 impl FileWatcher {
+    /// Starts watching `root` recursively, sending debounced change batches on `tx`
+    /// with the given debounce `timeout`.
     pub fn new(root: PathBuf, tx: mpsc::Sender<Vec<PathBuf>>, timeout: Duration) -> Result<Self> {
         // Create debouncer with specified timeout
         let mut debouncer = new_debouncer(timeout, move |res: DebounceEventResult| {

@@ -1,13 +1,17 @@
 # cargo-deny configuration — licenses, advisories, dependency bans, sources.
 # Mirrors docs/testing.md §3. The CI `deny` job runs `cargo deny check`.
-# Detailed tuning of this file is tracked in #54.
 
 [advisories]
 # In CI, `bans`/`licenses`/`sources` are the required gate; `advisories` runs as
 # an informational (non-blocking) step — see .github/workflows/ci.yml. The gpui
 # async stack pulls several crates with open advisories that we cannot fix until
 # upstream bumps; surfacing them without blocking matches testing.md's
-# "informational early" stance. Tracked in #54.
+# "informational early" stance.
+#
+# testing.md §3 lists `vulnerability = "deny"`, but this cargo-deny version
+# removed the per-severity `vulnerability`/`notice` lint-level keys: advisories
+# of those kinds are always errors now, so the setting is implied (and would be
+# rejected as an unknown field if written out).
 db-urls = ["https://github.com/RustSec/advisory-db"]
 # Only flag unmaintained crates we depend on directly; transitive ones from the
 # gpui stack are out of our control.
@@ -43,10 +47,14 @@ deny = [
   # rustls unification — no OpenSSL in the tree.
   { name = "openssl-sys" },
   # NOTE: testing.md §3 also bans tokio outside the WASI plugin-execution layer
-  # (nohrs-plugin-host, P4+). It cannot be enforced yet: gpui pulls a full async
-  # reqwest stack (h2/hyper/tokio-util/...) that transitively depends on tokio,
-  # which the `wrappers` mechanism cannot express. App-core tokio removal (ADR
-  # 0004) and re-introducing this ban are tracked in #54.
+  # (nohrs-plugin-host, P4+). It cannot be enforced yet — two independent sources
+  # put tokio in the tree today:
+  #   1. nohrs-services depends on it directly (Cargo.toml), pending the app-core
+  #      tokio removal in ADR 0004 (P2).
+  #   2. gpui pulls a full async reqwest stack (zed-reqwest → hyper → h2 →
+  #      tokio-util → tokio) whose chain the `wrappers` allowlist cannot express.
+  # A hard `{ name = "tokio" }` deny would therefore fail CI immediately. Add it
+  # once (1) lands and (2) is shown to be expressible via `wrappers`.
 ]
 
 [sources]

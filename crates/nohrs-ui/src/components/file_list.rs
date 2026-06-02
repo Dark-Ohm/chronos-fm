@@ -5,12 +5,17 @@ use gpui_component::{Icon, IconName, IndexPath};
 use nohrs_models::file_entry::FileEntryDto;
 use std::sync::Arc;
 
+/// Callback invoked when a file list entry is confirmed (clicked or activated).
 pub type ConfirmCallback = Arc<dyn Fn(&FileEntryDto) + 'static>;
 
+/// List delegate that renders file entries and tracks selection for the file list view.
 pub struct FileListDelegate {
+    /// File entries currently displayed in the list.
     pub items: Vec<FileEntryDto>,
+    /// Index path of the currently selected row, if any.
     pub selected: Option<IndexPath>,
     // Callback hooks
+    /// Callback invoked when an entry is confirmed.
     pub on_confirm: Option<ConfirmCallback>,
 }
 
@@ -21,6 +26,7 @@ impl Default for FileListDelegate {
 }
 
 impl FileListDelegate {
+    /// Create an empty delegate with no items, selection, or callbacks.
     pub fn new() -> Self {
         Self {
             items: Vec::new(),
@@ -29,11 +35,13 @@ impl FileListDelegate {
         }
     }
 
+    /// Replace the displayed entries and clear the current selection.
     pub fn set_items(&mut self, items: Vec<FileEntryDto>) {
         self.items = items;
         self.selected = None;
     }
 
+    /// Return the currently selected entry, if any.
     pub fn get_selected(&self) -> Option<&FileEntryDto> {
         self.selected.and_then(|ix| self.items.get(ix.row))
     }
@@ -193,6 +201,7 @@ impl ListDelegate for FileListDelegate {
     }
 }
 
+/// Format a byte count as a human-readable size string (B, KB, MB, or GB).
 pub fn human_bytes(size: u64) -> String {
     const KB: f64 = 1024.0;
     const MB: f64 = 1024.0 * KB;
@@ -209,6 +218,7 @@ pub fn human_bytes(size: u64) -> String {
     }
 }
 
+/// Format a Unix timestamp (seconds) as a `year/month/day` date, or `-` if invalid.
 pub fn format_date(timestamp: &u64) -> String {
     use time::macros::format_description;
     use time::OffsetDateTime;
@@ -220,6 +230,7 @@ pub fn format_date(timestamp: &u64) -> String {
     }
 }
 
+/// Derive a human-readable type label from an entry's name and kind (e.g. `Folder`, `PNG`, `Link`).
 pub fn get_file_type(name: &str, kind: &str) -> String {
     match kind {
         "dir" => "Folder".to_string(),

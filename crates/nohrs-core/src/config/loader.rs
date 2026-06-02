@@ -25,6 +25,9 @@ fn ensure_parent_dir(path: &Path) -> io::Result<()> {
 /// must preserve the old contents should [`backup`] first.
 pub fn write_default(path: &Path) -> io::Result<()> {
     ensure_parent_dir(path)?;
+    // Config is loaded/written synchronously at startup, before the GPUI
+    // foreground loop runs, so blocking I/O here cannot stall rendering.
+    #[allow(clippy::disallowed_methods)]
     std::fs::write(path, Config::default_toml_template())
 }
 
@@ -74,7 +77,7 @@ pub fn needs_migration(version: u64) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use tempfile::tempdir;

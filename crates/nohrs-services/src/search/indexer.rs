@@ -7,6 +7,7 @@ use tantivy::schema::{Field, Schema, Term, Value, FAST, STORED, STRING, TEXT};
 use tantivy::TantivyDocument;
 use tantivy::{Index, IndexWriter}; // Import trait for add_text etc? No, TantivyDocument implements it.
 
+/// Owns the tantivy index and its writer, and performs full and incremental indexing.
 pub struct IndexManager {
     index: Index,
     _index_path: PathBuf,
@@ -15,6 +16,7 @@ pub struct IndexManager {
 }
 
 impl IndexManager {
+    /// Opens (or creates) the default index under `~/.nohrs/index` rooted at `~/Documents`.
     pub fn new() -> Result<Self> {
         let home_dir = dirs::home_dir().context("Could not determine home directory")?;
         let nohrs_dir = home_dir.join(".nohrs");
@@ -93,6 +95,7 @@ impl IndexManager {
 
     // writer() helper removed as we use shared writer
 
+    /// Indexes the content root from scratch, reporting progress through `progress_tx` if given.
     pub fn index_home(&self, progress_tx: Option<tokio::sync::watch::Sender<f32>>) -> Result<()> {
         let mut writer_guard = self
             .writer
@@ -223,6 +226,9 @@ impl IndexManager {
         }
 
         // Try reading as string. If it fails (binary), we skip.
+        // Indexing runs on the search backend's own threads, never the GPUI
+        // foreground loop, so the blocking read is fine here.
+        #[allow(clippy::disallowed_methods)]
         match fs::read_to_string(path) {
             Ok(content) => {
                 // Check if it looks like binary (contains null byte) - crude check
@@ -255,6 +261,7 @@ impl IndexManager {
         Ok(())
     }
 
+    /// Removes the document for `path` from the index and commits.
     pub fn remove_file(&self, path: &Path) -> Result<()> {
         let mut writer_guard = self
             .writer
@@ -271,10 +278,12 @@ impl IndexManager {
         Ok(())
     }
 
+    /// Returns a reference to the underlying tantivy index.
     pub fn index(&self) -> &Index {
         &self.index
     }
 
+    /// Re-indexes or removes each of `paths` (depending on existence) and commits once.
     pub fn process_changes(&self, paths: &[PathBuf]) -> Result<()> {
         let mut writer_guard = self
             .writer
@@ -311,6 +320,7 @@ impl IndexManager {
         Ok(())
     }
 
+    /// Re-indexes (or removes if missing) the single file at `path`.
     pub fn update_file(&self, path: &Path) -> Result<()> {
         self.process_changes(&[path.to_path_buf()])
     }
@@ -400,6 +410,9 @@ impl super::backend::SearchBackend for IndexManager {
 }
 
 /// Find ALL lines in a file that match the query (case-insensitive)
+// Runs as part of the search backend, off the GPUI foreground loop, so the
+// blocking read does not stall rendering.
+#[allow(clippy::disallowed_methods)]
 fn find_all_match_lines(path: &Path, query: &str) -> Vec<(usize, String)> {
     let mut matches = Vec::new();
     if let Ok(content) = fs::read_to_string(path) {

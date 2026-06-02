@@ -7,6 +7,8 @@ use std::io::{BufRead, BufReader};
 use std::path::PathBuf;
 use std::process::Command;
 
+/// Search backend that uses macOS Spotlight (`mdfind`) to find candidate files,
+/// then greps their contents.
 pub struct SpotlightBackend;
 
 impl Default for SpotlightBackend {
@@ -16,6 +18,7 @@ impl Default for SpotlightBackend {
 }
 
 impl SpotlightBackend {
+    /// Creates a new Spotlight-backed search backend.
     pub fn new() -> Self {
         Self
     }

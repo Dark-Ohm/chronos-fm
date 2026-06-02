@@ -2,11 +2,16 @@ use crate::explorer::ExplorerPage;
 use gpui::*;
 use nohrs_ui::theme::theme;
 
+/// The explorer header with navigation controls and the path bar.
 pub mod header;
+/// The main file listing, in list or grid mode, with the search bar.
 pub mod listing;
+/// The file preview pane.
 pub mod preview;
+/// The explorer sidebar with quick-access locations.
 pub mod sidebar;
 
+/// Renders the explorer page: header, sidebar, listing, and preview panes.
 pub fn render(
     page: &mut ExplorerPage,
     window: &mut Window,
@@ -100,6 +105,8 @@ pub fn render(
         )
 }
 
+/// Returns highlight ranges for every case-insensitive occurrence of `query`
+/// within `text`, for emphasizing search matches.
 pub fn find_query_highlights(
     text: &str,
     query: &str,

@@ -9,14 +9,21 @@ use std::time::UNIX_EPOCH;
 // references keep resolving without forcing callers through `nohrs-models`.
 pub use nohrs_models::file_entry::FileEntryDto;
 
+/// Parameters for a single directory-listing request.
 pub struct ListParams<'a> {
+    /// Absolute or relative path of the directory to list.
     pub path: &'a str,
+    /// Maximum number of entries to return for this page.
     pub limit: usize,
+    /// Opaque cursor (a decimal offset) from a previous `next_cursor`, or `None` for the first page.
     pub cursor: Option<&'a str>,
 }
 
+/// One page of directory entries plus a cursor for the next page.
 pub struct ListResult {
+    /// The entries in this page, sorted case-insensitively by name.
     pub entries: Vec<FileEntryDto>,
+    /// Cursor to fetch the following page, or `None` when the directory is exhausted.
     pub next_cursor: Option<String>,
 }
 
@@ -98,7 +105,7 @@ fn os_str_to_string(s: impl AsRef<OsStr>) -> String {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use tempfile::tempdir;

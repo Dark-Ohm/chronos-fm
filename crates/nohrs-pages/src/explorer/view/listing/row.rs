@@ -7,6 +7,7 @@ use gpui_component::{Icon, IconName, ListItem};
 use nohrs_services::fs::listing::FileEntryDto;
 use nohrs_ui::theme::theme;
 
+/// Renders a single listing row for the given entry at row index `ix`.
 pub fn render(
     page: &ExplorerPage,
     item: &FileEntryDto,

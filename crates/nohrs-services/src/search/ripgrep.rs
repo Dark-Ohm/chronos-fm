@@ -7,11 +7,13 @@ use ignore::WalkBuilder;
 use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 
+/// Search backend that walks the filesystem from `root` and matches lines with a regex.
 pub struct RipgrepBackend {
     root: PathBuf,
 }
 
 impl RipgrepBackend {
+    /// Creates a backend that searches recursively under `root`.
     pub fn new(root: PathBuf) -> Self {
         Self { root }
     }

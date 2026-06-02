@@ -1,6 +1,8 @@
 use super::LogErr;
 use tracing_subscriber::{fmt, EnvFilter};
 
+/// Install the global `tracing` subscriber, writing logs to stderr and honoring
+/// `RUST_LOG` (defaulting to `info`). A no-op if a subscriber is already set.
 pub fn init_logging() {
     let env_filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
     // Logs go to stderr so machine-readable command output (e.g.

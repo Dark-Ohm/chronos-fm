@@ -3,15 +3,23 @@ use gpui::*;
 use gpui_component::input::{InputState, RopeExt, TextInput};
 use std::sync::Once;
 
-actions!(preview, [SafeSearch]);
+actions!(
+    preview,
+    [
+        /// Opens the editor's built-in search panel without triggering a double-borrow panic.
+        SafeSearch
+    ]
+);
 
 static BIND_SEARCH_ONCE: Once = Once::new();
 
+/// A read-only code editor view used to render textual file previews.
 pub struct PreviewEditor {
     editor_state: Entity<InputState>,
 }
 
 impl PreviewEditor {
+    /// Creates a new preview editor, binding a panic-safe search keybinding once.
     pub fn new(window: &mut Window, cx: &mut Context<Self>) -> Self {
         BIND_SEARCH_ONCE.call_once(|| {
             // Override the default search keybinding to prevent panic in gpui-component
@@ -33,18 +41,21 @@ impl PreviewEditor {
         Self { editor_state }
     }
 
+    /// Replaces the editor's contents with `text`.
     pub fn set_text(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         self.editor_state.update(cx, |state, cx| {
             state.set_value(text, window, cx);
         });
     }
 
+    /// Sets the syntax-highlighting language for the editor.
     pub fn set_language(&mut self, language: String, _window: &mut Window, cx: &mut Context<Self>) {
         self.editor_state.update(cx, |state, cx| {
             state.set_highlighter(language, cx);
         });
     }
 
+    /// Applies custom highlight ranges to the editor (currently a no-op).
     pub fn set_highlights(
         &mut self,
         _highlights: Vec<(std::ops::Range<usize>, HighlightStyle)>,
@@ -56,6 +67,7 @@ impl PreviewEditor {
         // For search results, we might need a different approach or see if `search` functionality covers it.
     }
 
+    /// Scrolls the editor so the byte `offset` is brought into view.
     pub fn scroll_to(&mut self, offset: usize, window: &mut Window, cx: &mut Context<Self>) {
         // `InputState::scroll_to` is private; moving the cursor to the offset triggers the
         // same scroll-into-view logic through the public `set_cursor_position` API.
@@ -65,6 +77,7 @@ impl PreviewEditor {
         });
     }
 
+    /// Syncs the explorer's search query into the editor (currently a no-op).
     pub fn set_search_query(
         &mut self,
         _query: String,

@@ -50,7 +50,7 @@ fn is_relevant(event: &Event) -> bool {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
     use super::*;
     use notify::event::{AccessKind, CreateKind, ModifyKind};

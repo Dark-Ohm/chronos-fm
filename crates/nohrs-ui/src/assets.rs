@@ -3,6 +3,7 @@ use rust_embed::RustEmbed;
 // Crate-local assets so `nohrs-ui` stays self-contained and publishable: the
 // folder is resolved relative to this crate's manifest dir and is included in
 // the packaged crate. Workspace-root `assets/doc/` (README images) is separate.
+/// GPUI `AssetSource` backed by the crate-local `assets/` directory embedded at compile time.
 #[derive(RustEmbed)]
 #[folder = "assets/"]
 pub struct Assets;

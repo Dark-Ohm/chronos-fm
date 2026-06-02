@@ -30,7 +30,9 @@ pub const SCHEMA_URL: &str = "https://nohrs.app/schema/config.schema.json";
 pub struct Config {
     /// On-disk schema version. Must be [`CURRENT_SCHEMA_VERSION`] for this build.
     pub schema_version: u64,
+    /// Appearance settings.
     pub theme: Theme,
+    /// Explorer / view settings.
     pub ui: Ui,
 }
 
@@ -86,10 +88,14 @@ impl Default for Ui {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+/// Light/dark appearance selection.
 pub enum ThemeMode {
+    /// Follow the operating system's light/dark preference.
     #[default]
     System,
+    /// Always use the light appearance.
     Light,
+    /// Always use the dark appearance.
     Dark,
 }
 
@@ -107,11 +113,16 @@ impl ThemeMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
+/// The column a directory listing is ordered by.
 pub enum SortOrder {
+    /// Sort alphabetically by entry name.
     #[default]
     Name,
+    /// Sort by last-modified time.
     Modified,
+    /// Sort by file size.
     Size,
+    /// Sort by entry kind (file/directory/...).
     Kind,
 }
 
@@ -142,7 +153,9 @@ pub enum DiagnosticLevel {
 /// A single message produced while loading configuration.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Diagnostic {
+    /// Severity of the message.
     pub level: DiagnosticLevel,
+    /// Human-readable description of the problem.
     pub message: String,
 }
 
@@ -167,10 +180,15 @@ impl Diagnostic {
 /// actually provided should take effect.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct ConfigOverride {
+    /// Override for [`Theme::mode`].
     pub theme_mode: Option<ThemeMode>,
+    /// Override for [`Theme::accent`].
     pub theme_accent: Option<String>,
+    /// Override for [`Ui::default_sort`].
     pub ui_default_sort: Option<SortOrder>,
+    /// Override for [`Ui::show_hidden`].
     pub ui_show_hidden: Option<bool>,
+    /// Override for [`Ui::icon_pack`].
     pub ui_icon_pack: Option<String>,
 }
 
@@ -469,6 +487,9 @@ fn normalize_schema(value: serde_json::Value) -> serde_json::Value {
 /// Read `path` and parse it, returning [`Config::default`] with no diagnostics
 /// when the file does not exist (a missing config is normal, not an error).
 pub fn load_from_path(path: &Path) -> (Config, Vec<Diagnostic>) {
+    // Config is read synchronously at startup, before the GPUI foreground loop
+    // runs, so blocking I/O here cannot stall rendering.
+    #[allow(clippy::disallowed_methods)]
     match std::fs::read_to_string(path) {
         Ok(contents) => Config::from_toml_str(&contents),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -503,7 +524,7 @@ pub fn report_diagnostics(diagnostics: &[Diagnostic]) -> Option<String> {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
     use super::*;
 

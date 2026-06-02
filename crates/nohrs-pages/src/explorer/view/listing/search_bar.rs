@@ -7,6 +7,7 @@ use gpui_component::{Icon, IconName, ListItem};
 use nohrs_services::search::SearchScope;
 use nohrs_ui::theme::theme;
 
+/// Renders the search bar with the query input and search option toggles.
 pub fn render(page: &mut ExplorerPage, cx: &mut Context<ExplorerPage>) -> impl IntoElement {
     let current_text = page.search_input.read(cx).text().to_string();
     if current_text != page.search_query {

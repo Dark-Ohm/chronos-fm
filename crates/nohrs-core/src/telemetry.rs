@@ -1,3 +1,4 @@
+/// Logging subscriber setup.
 pub mod logging;
 
 use std::fmt::Display;

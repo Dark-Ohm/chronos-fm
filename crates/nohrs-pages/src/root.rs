@@ -32,6 +32,8 @@ use std::sync::Arc;
 use std::time::Duration;
 use tracing::info;
 
+/// The application root view that hosts the page sidebar, the active page, and
+/// the shared configuration and search state.
 pub struct RootView {
     current_page: PageKind,
     focus_handle: FocusHandle,
@@ -212,6 +214,7 @@ impl RootView {
         .detach();
     }
 
+    /// Switches the active page, notifying for a redraw only if it changed.
     pub fn set_page(&mut self, page: PageKind, cx: &mut Context<Self>) {
         if self.current_page != page {
             self.current_page = page;

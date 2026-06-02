@@ -6,6 +6,9 @@
 //! timer + `run_until_parked`, and assert state with `window.read_with` — never
 //! `smol::Timer` / `tokio` sleeps, which the GPUI scheduler does not track.
 
+// Test fixtures write files directly; the synchronous-fs ban targets app code.
+#![allow(clippy::disallowed_methods)]
+
 use std::time::Duration;
 
 use gpui::{point, px, AppContext, TestAppContext, WindowHandle};

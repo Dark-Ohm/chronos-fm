@@ -15,66 +15,114 @@ use super::entries;
 use super::types::*;
 use super::view::preview::editor::PreviewEditor;
 
+/// State for the file explorer page: the current directory listing, navigation
+/// history, sorting and filtering, search, preview, and view layout.
 pub struct ExplorerPage {
+    /// Absolute path of the currently displayed directory.
     pub cwd: String,
+    /// Navigation history of visited directories for back/forward.
     pub history: Vec<String>,
+    /// Index of the current position within `history`.
     pub history_index: usize,
+    /// All entries read from `cwd`, before filtering.
     pub entries: Vec<FileEntryDto>,
+    /// Entries currently shown after applying hidden/search filters and sorting.
     pub filtered_entries: Vec<FileEntryDto>,
     // Whether the current directory has been loaded. Tracked explicitly rather
     // than via `entries.is_empty()` so an empty (or failed-to-read) directory is
     // not reloaded on every render.
+    /// Whether `cwd` has been loaded into `entries` at least once.
     pub loaded: bool,
+    /// Column the listing is sorted by.
     pub sort_key: SortKey,
+    /// Whether the sort is ascending.
     pub sort_asc: bool,
     // Whether dotfiles are listed; driven by `ui.show_hidden` (config.md §5).
+    /// Whether dotfiles are listed; driven by `ui.show_hidden`.
     pub show_hidden: bool,
     // Identifier of the active icon pack; driven by `ui.icon_pack`.
+    /// Identifier of the active icon pack; driven by `ui.icon_pack`.
     pub icon_pack: String,
+    /// Current name-filter query for the in-directory listing.
     pub search_query: String,
+    /// Whether the search bar is visible.
     pub search_visible: bool,
+    /// Input state backing the search field.
     pub search_input: Entity<InputState>,
+    /// State of the resizable split between listing and preview.
     pub resizable: Entity<ResizableState>,
+    /// The listing's virtualized list entity, once initialized.
     pub list: Option<Entity<List<FileListDelegate>>>,
+    /// GPUI subscriptions kept alive for the lifetime of the page.
     pub subs: Vec<gpui::Subscription>,
+    /// Path of the file currently shown in the preview pane.
     pub preview_path: Option<String>,
+    /// Text content of the previewed file, when it is textual.
     pub preview_text: Option<String>,
+    /// Index of the selected row within `filtered_entries`.
     pub selected_index: Option<usize>,
+    /// Scroll handle for the virtualized listing.
     pub virtual_scroll_handle: VirtualListScrollHandle,
+    /// Per-row sizes for the virtualized listing.
     pub item_sizes: Rc<Vec<gpui::Size<gpui::Pixels>>>,
     // Column widths (resizable)
+    /// Width of the name column.
     pub col_name_width: f32,
+    /// Width of the type column.
     pub col_type_width: f32,
+    /// Width of the size column.
     pub col_size_width: f32,
+    /// Width of the modified-time column.
     pub col_modified_width: f32,
+    /// Width of the action column.
     pub col_action_width: f32,
     // Resize state
+    /// The column currently being resized by a drag, if any.
     pub resizing_column: Option<ResizingColumn>,
+    /// Focus handle for the explorer page.
     pub focus_handle: FocusHandle,
+    /// Whether focus should be requested on the next render.
     pub focus_requested: bool,
+    /// Information about the most recent row click, used for double-click detection.
     pub last_click_info: Option<LastClickInfo>,
+    /// Whether the listing is shown as a list or a grid.
     pub view_mode: ViewMode,
 
     // Search
+    /// The full-text search service, when available.
     pub search_service: Option<Arc<SearchService>>,
+    /// The directory scope for full-text search.
     pub search_scope: SearchScope,
+    /// The kind of items full-text search targets.
     pub search_type: SearchType,
+    /// Whether full-text search is case-sensitive.
     pub match_case: bool,
+    /// Whether full-text search matches whole words only.
     pub match_whole_word: bool,
+    /// Whether the full-text search query is treated as a regular expression.
     pub use_regex: bool,
+    /// Results of the active full-text search, when one is displayed.
     pub search_results: Option<Vec<SearchFileResult>>,
+    /// Whether a full-text search is currently running.
     pub is_performing_search: bool,
     // Monotonic counter incremented on every search request; used to discard
     // results from a stale in-flight search that completes after a newer one.
+    /// Monotonic counter used to discard results from stale in-flight searches.
     pub search_generation: u64,
+    /// Paths of search-result files whose match snippets are expanded.
     pub expanded_search_files: std::collections::HashSet<String>,
     // Syntax
+    /// Service providing syntax highlighting for previews.
     pub syntax_service: Arc<SyntaxService>,
     // Preview State
+    /// Path of the image currently shown in the preview pane.
     pub preview_image_path: Option<String>,
+    /// Message shown in the preview pane when a file cannot be previewed.
     pub preview_message: Option<String>,
+    /// The editor entity backing a text preview.
     pub preview_editor: Option<Entity<PreviewEditor>>,
     // Transient message shown in the footer status bar.
+    /// Transient message shown in the footer status bar.
     pub status_message: Option<StatusMessage>,
 }
 
@@ -85,6 +133,8 @@ impl Focusable for ExplorerPage {
 }
 
 impl ExplorerPage {
+    /// Creates a new explorer page rooted at the current working directory,
+    /// wired to the given resizable, search input, and optional search service.
     pub fn new(
         resizable: Entity<ResizableState>,
         search_input: Entity<InputState>,

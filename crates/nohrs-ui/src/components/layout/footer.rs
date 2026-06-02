@@ -2,18 +2,27 @@ use crate::theme::theme;
 use gpui::{div, prelude::*, px, rgb, Context, IntoElement};
 use gpui_component::{Icon, IconName};
 
+/// Properties controlling the contents of the footer status bar.
 #[derive(Clone)]
 pub struct FooterProps {
+    /// Number of currently selected items; shows a "N selected" indicator when greater than zero.
     pub selected_count: usize,
+    /// Total number of items in the current view.
     pub total_count: usize,
+    /// Pre-formatted total size of the items.
     pub total_size: String,
+    /// Current path, displayed (truncated) on the right side of the footer.
     pub current_path: String,
+    /// Active Git branch name, shown when present.
     pub git_branch: Option<String>,
+    /// Storage backend status (e.g. S3 connection), shown when present.
     pub storage_status: Option<String>,
+    /// Indexing progress in the range 0.0..=1.0; the indicator is hidden once it reaches 1.0.
     pub indexing_progress: Option<f32>,
     /// Transient message (e.g. an error) surfaced to the user. When
     /// `status_is_error` is set it is rendered in the error color.
     pub status_message: Option<String>,
+    /// Whether `status_message` should be rendered using the error color.
     pub status_is_error: bool,
 }
 
