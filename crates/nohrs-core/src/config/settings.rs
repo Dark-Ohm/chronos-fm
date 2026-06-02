@@ -762,12 +762,20 @@ mod tests {
     }
 
     // `NOHRS_*` env tests mutate process-global state; serialize them so parallel
-    // test threads do not observe each other's vars.
+    // test threads do not observe each other's vars. Recover from a poisoned
+    // lock so a panicking env test surfaces its own assertion rather than an
+    // opaque poison panic in every later env test.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[test]
     fn from_env_reads_valid_vars() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("NOHRS_THEME", "dark");
         std::env::set_var("NOHRS_ACCENT", "violet");
         std::env::set_var("NOHRS_DEFAULT_SORT", "size");
@@ -792,7 +800,7 @@ mod tests {
 
     #[test]
     fn from_env_skips_invalid_values() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("NOHRS_THEME", "neon");
         std::env::set_var("NOHRS_SHOW_HIDDEN", "maybe");
         let over = ConfigOverride::from_env();

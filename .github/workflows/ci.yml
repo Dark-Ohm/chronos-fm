@@ -238,7 +238,6 @@ jobs:
   coverage-overall:
     name: coverage (overall)
     runs-on: macos-latest
-    continue-on-error: true
     permissions:
       contents: read
       code-quality: write

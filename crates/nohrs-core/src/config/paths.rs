@@ -70,18 +70,28 @@ mod tests {
     use super::*;
 
     // `XDG_*` env tests mutate process-global state; serialize them so parallel
-    // test threads do not observe each other's vars.
+    // test threads do not observe each other's vars. Recover from a poisoned
+    // lock (a panic in another env test) so the offending test's own assertion
+    // surfaces instead of an opaque poison panic in every later env test.
     static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn env_lock() -> std::sync::MutexGuard<'static, ()> {
+        ENV_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
 
     #[test]
     fn config_file_lives_under_config_home() {
+        // Reads `XDG_CONFIG_HOME`, so it must serialize with the mutating tests.
+        let _guard = env_lock();
         let file = config_file();
         assert!(file.ends_with("nohrs/config.toml"));
     }
 
     #[test]
     fn absolute_xdg_var_is_honoured() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("XDG_CONFIG_HOME", "/tmp/xdg-test-abs");
         let dir = config_dir();
         std::env::remove_var("XDG_CONFIG_HOME");
@@ -90,7 +100,7 @@ mod tests {
 
     #[test]
     fn relative_xdg_var_is_ignored() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("XDG_CONFIG_HOME", "relative/path");
         let home = config_home();
         std::env::remove_var("XDG_CONFIG_HOME");
@@ -101,7 +111,7 @@ mod tests {
 
     #[test]
     fn each_home_honours_its_own_xdg_var() {
-        let _guard = ENV_LOCK.lock().unwrap();
+        let _guard = env_lock();
         std::env::set_var("XDG_CONFIG_HOME", "/tmp/cfg");
         std::env::set_var("XDG_DATA_HOME", "/tmp/data");
         std::env::set_var("XDG_CACHE_HOME", "/tmp/cache");
@@ -116,6 +126,8 @@ mod tests {
 
     #[test]
     fn app_dirs_append_app_name_and_config_file_is_under_config_dir() {
+        // Reads the XDG-derived dirs, so serialize with the mutating tests.
+        let _guard = env_lock();
         assert!(config_dir().ends_with("nohrs"));
         assert!(data_dir().ends_with("nohrs"));
         assert!(cache_dir().ends_with("nohrs"));
