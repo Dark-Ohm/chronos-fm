@@ -90,10 +90,41 @@ documented in [`.rules`](.rules) / `CLAUDE.md`. Highlights:
 ## Testing
 
 - Unit tests live in each module under `#[cfg(test)] mod tests`.
-- GPUI view/state tests use `TestAppContext`. Drive async work with the GPUI
-  executor timer (`cx.background_executor.timer(...).await`) and
-  `run_until_parked()` — **not** `smol::Timer` / `tokio::time::sleep`, which the
-  GPUI scheduler doesn't track. See [`docs/testing.md`](docs/testing.md).
+- Snapshot tests use [`insta`](https://insta.rs) (e.g. the config parser in
+  `nohrs-core`); refresh intentional changes with `cargo insta review`. Reach for
+  `proptest` only for genuinely property-shaped logic (kept deliberately rare).
+
+### Writing GPUI tests
+
+GPUI view/state tests use `TestAppContext` and run headlessly (no display). The
+gpui-backed crates (`nohrs-ui`, `nohrs-pages`) enable gpui's `test-support`
+feature as a **dev-dependency** to make `TestAppContext` and the `#[gpui::test]`
+macro available:
+
+```toml
+[dev-dependencies]
+gpui = { version = "0.2", features = ["test-support"] }
+```
+
+Build the view inside a test window so its window-bound sub-entities can be
+constructed, mutate it through `window.update`, and assert with
+`window.read_with`. Drive async work with the GPUI executor timer
+(`cx.background_executor.timer(...).await`) followed by `run_until_parked()` —
+**never** `smol::Timer` / `tokio::time::sleep`, which the GPUI scheduler does not
+track (so `run_until_parked()` would return early). See the worked examples in
+[`crates/nohrs-pages/src/explorer/tests.rs`](crates/nohrs-pages/src/explorer/tests.rs)
+and the patterns in [`docs/testing.md`](docs/testing.md).
+
+```rust
+#[gpui::test]
+async fn loads_preview(cx: &mut TestAppContext) {
+    let window = cx.add_window(|window, cx| MyView::new(window, cx));
+    window.update(cx, |view, window, cx| view.start_async_work(window, cx)).unwrap();
+    cx.background_executor.timer(Duration::from_millis(50)).await;
+    cx.run_until_parked();
+    window.read_with(cx, |view, _cx| assert!(view.is_ready())).unwrap();
+}
+```
 
 ### Coverage
 
@@ -106,11 +137,28 @@ cargo llvm-cov --all-features --html
 open target/llvm-cov/html/index.html   # xdg-open on Linux
 ```
 
-CI feeds a Cobertura XML report into GitHub's native code coverage (inline PR
-diff coverage) and uploads the HTML report as a downloadable `coverage-html`
-artifact, linked from a PR comment alongside the overall line coverage. Coverage
-is informational during P1–P5 (target: core 80% / overall 50%) and does not
-block merge.
+CI measures coverage on two tiers: a Linux **core** tier (`-p nohrs-core`) and a
+macOS **overall** tier (`--workspace --all-features`, which instruments the gpui
+crates). Each tier feeds GitHub's native code coverage (inline PR diff) and
+uploads its HTML report as a downloadable artifact (`coverage-html-core` /
+`coverage-html-overall`); a single PR comment reports both against their targets.
+
+Coverage is an **enforced gate** with two layers, so a high aggregate cannot hide
+an untested file. The build fails if:
+
+- `nohrs-core` drops below **80%** lines (aggregate *and* per file), or
+- the overall workspace drops below **50%** lines, or
+- any individually testable file drops below **70%** lines.
+
+The per-file floor excludes code that is not unit-testable in-process (the gpui
+binary entrypoint, pure rendering/view and window-chrome code, the external
+search backends, and app-only glue) via `--ignore-filename-regex` — see the
+`coverage-*` jobs in `ci.yml` for the exact list. Check locally before pushing:
+
+```sh
+cargo llvm-cov -p nohrs-core --fail-under-lines 80 --fail-under-file-lines 80
+cargo llvm-cov --workspace --all-features --fail-under-lines 50
+```
 
 ## License
 

@@ -1,0 +1,28 @@
+---
+source: crates/nohrs-core/src/config/settings.rs
+expression: parsed
+---
+(
+    Config {
+        schema_version: 1,
+        theme: Theme {
+            mode: System,
+            accent: "teal",
+        },
+        ui: Ui {
+            default_sort: Name,
+            show_hidden: true,
+            icon_pack: "default",
+        },
+    },
+    [
+        Diagnostic {
+            level: Warning,
+            message: "invalid theme.mode \"neon\"; using System",
+        },
+        Diagnostic {
+            level: Warning,
+            message: "unknown config key ui.unknown_key; ignoring",
+        },
+    ],
+)

@@ -96,3 +96,91 @@ fn list_dir_impl(path: &str, limit: usize, cursor: Option<&str>) -> Result<ListR
 fn os_str_to_string(s: impl AsRef<OsStr>) -> String {
     s.as_ref().to_string_lossy().into_owned()
 }
+
+#[cfg(test)]
+#[allow(clippy::unwrap_used)]
+mod tests {
+    use super::*;
+    use tempfile::tempdir;
+
+    fn list(path: &str, limit: usize, cursor: Option<&str>) -> ListResult {
+        list_dir_sync(ListParams {
+            path,
+            limit,
+            cursor,
+        })
+        .unwrap()
+    }
+
+    #[test]
+    fn empty_directory_yields_no_entries() {
+        let dir = tempdir().unwrap();
+        let res = list(&dir.path().to_string_lossy(), 100, None);
+        assert!(res.entries.is_empty());
+        assert!(res.next_cursor.is_none());
+    }
+
+    #[test]
+    fn lists_files_and_dirs_sorted_case_insensitively() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join("Banana"), "yellow").unwrap();
+        std::fs::write(dir.path().join("apple"), "x").unwrap();
+        std::fs::create_dir(dir.path().join("Cherry")).unwrap();
+
+        let res = list(&dir.path().to_string_lossy(), 100, None);
+        let names: Vec<_> = res.entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["apple", "Banana", "Cherry"]);
+
+        let banana = res.entries.iter().find(|e| e.name == "Banana").unwrap();
+        assert_eq!(banana.kind, "file");
+        assert_eq!(banana.size, 6);
+        let cherry = res.entries.iter().find(|e| e.name == "Cherry").unwrap();
+        assert_eq!(cherry.kind, "dir");
+        assert_eq!(cherry.size, 0);
+    }
+
+    #[test]
+    fn hidden_files_are_included() {
+        let dir = tempdir().unwrap();
+        std::fs::write(dir.path().join(".secret"), "x").unwrap();
+        let res = list(&dir.path().to_string_lossy(), 100, None);
+        assert!(res.entries.iter().any(|e| e.name == ".secret"));
+    }
+
+    #[test]
+    fn paging_uses_limit_and_cursor() {
+        let dir = tempdir().unwrap();
+        for n in 0..5 {
+            std::fs::write(dir.path().join(format!("f{n}")), "x").unwrap();
+        }
+        let path = dir.path().to_string_lossy().to_string();
+
+        let first = list(&path, 2, None);
+        assert_eq!(first.entries.len(), 2);
+        assert_eq!(first.next_cursor.as_deref(), Some("2"));
+
+        let second = list(&path, 2, first.next_cursor.as_deref());
+        assert_eq!(second.entries.len(), 2);
+        assert_eq!(second.next_cursor.as_deref(), Some("4"));
+
+        // A cursor past the end clamps to the total: an empty final page.
+        let beyond = list(&path, 2, Some("99"));
+        assert!(beyond.entries.is_empty());
+        assert!(beyond.next_cursor.is_none());
+    }
+
+    #[test]
+    fn nonexistent_path_is_an_error() {
+        assert!(list_dir_sync(ListParams {
+            path: "/no/such/dir/here",
+            limit: 10,
+            cursor: None,
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn os_str_to_string_round_trips_utf8() {
+        assert_eq!(os_str_to_string("hello.txt"), "hello.txt");
+    }
+}

@@ -13,3 +13,16 @@ pub fn init_logging() {
         .try_init()
         .log_err();
 }
+
+#[cfg(test)]
+mod tests {
+    use super::init_logging;
+
+    #[test]
+    fn init_logging_is_idempotent() {
+        // Installs a global subscriber (or no-ops via `try_init` if one already
+        // exists); calling it repeatedly must not panic.
+        init_logging();
+        init_logging();
+    }
+}

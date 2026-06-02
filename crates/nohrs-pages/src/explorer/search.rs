@@ -210,3 +210,72 @@ pub fn results_to_entries(results: &[SearchFileResult]) -> Vec<FileEntryDto> {
         })
         .collect()
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::PathBuf;
+
+    fn result(path: &str, line: usize, content: &str) -> SearchResult {
+        SearchResult {
+            path: PathBuf::from(path),
+            line_number: line,
+            line_content: content.to_string(),
+        }
+    }
+
+    #[test]
+    fn group_results_aggregates_matches_per_file_and_sorts() {
+        let grouped = group_results(vec![
+            result("/b/two.txt", 5, "x"),
+            result("/a/one.txt", 1, "a"),
+            result("/a/one.txt", 9, "b"),
+        ]);
+        // Sorted by path: /a/one.txt before /b/two.txt.
+        assert_eq!(grouped.len(), 2);
+        assert_eq!(grouped[0].path, "/a/one.txt");
+        assert_eq!(grouped[0].filename, "one.txt");
+        assert_eq!(grouped[0].folder, "/a");
+        assert_eq!(grouped[0].matches.len(), 2);
+        assert_eq!(grouped[1].filename, "two.txt");
+    }
+
+    #[test]
+    fn group_results_skips_zero_line_markers_and_empty_input() {
+        assert!(group_results(Vec::new()).is_empty());
+        // A line_number of 0 is a file-only hit; no SearchMatch is recorded.
+        let grouped = group_results(vec![result("/a/file.txt", 0, "")]);
+        assert_eq!(grouped.len(), 1);
+        assert!(grouped[0].matches.is_empty());
+    }
+
+    #[test]
+    fn results_to_entries_reads_metadata_and_builds_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let file_path = dir.path().join("real.txt");
+        std::fs::write(&file_path, "12345").unwrap();
+
+        let entries = results_to_entries(&[
+            SearchFileResult {
+                path: file_path.to_string_lossy().to_string(),
+                folder: dir.path().to_string_lossy().to_string(),
+                filename: "real.txt".to_string(),
+                matches: Vec::new(),
+            },
+            SearchFileResult {
+                path: "/missing/ghost.txt".to_string(),
+                folder: String::new(),
+                filename: "ghost.txt".to_string(),
+                matches: Vec::new(),
+            },
+        ]);
+
+        assert_eq!(entries[0].kind, "file");
+        assert_eq!(entries[0].size, 5);
+        assert!(entries[0].name.ends_with("real.txt"));
+
+        // Missing file: defaults, and empty folder means the name is just the filename.
+        assert_eq!(entries[1].size, 0);
+        assert_eq!(entries[1].name, "ghost.txt");
+    }
+}

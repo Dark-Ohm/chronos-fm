@@ -319,3 +319,24 @@ fn sort_key_from_config(order: config::SortOrder) -> SortKey {
 fn is_hidden(name: &str) -> bool {
     name.starts_with('.')
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn is_hidden_matches_dotfiles_only() {
+        assert!(is_hidden(".gitignore"));
+        assert!(is_hidden("..git"));
+        assert!(!is_hidden("visible.txt"));
+        assert!(!is_hidden(""));
+    }
+
+    #[test]
+    fn sort_key_from_config_maps_every_order() {
+        assert!(sort_key_from_config(config::SortOrder::Name) == SortKey::Name);
+        assert!(sort_key_from_config(config::SortOrder::Modified) == SortKey::Modified);
+        assert!(sort_key_from_config(config::SortOrder::Size) == SortKey::Size);
+        assert!(sort_key_from_config(config::SortOrder::Kind) == SortKey::Type);
+    }
+}

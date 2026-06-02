@@ -152,19 +152,34 @@ jobs:
         continue-on-error: true
         run: cargo deny check advisories
 
-  # Coverage is informational during P1–P5 (target: core 80% / overall 50%); it
-  # never blocks merge. The Cobertura XML report feeds GitHub's native code
-  # coverage (PR diff inline; requires Code Quality enabled in repo settings);
-  # the browsable HTML report is uploaded as a downloadable CI artifact (no
-  # external hosting).
-  coverage:
-    name: coverage
+  # Coverage is an enforced gate with two layers, so a high aggregate cannot hide
+  # an untested file: `coverage-core` requires ≥80% lines of `nohrs-core` (both
+  # the crate aggregate and each file), and `coverage-overall` requires ≥50%
+  # across the whole workspace PLUS ≥70% on each individually testable file (pure
+  # rendering / binary entrypoint / external search backends are excluded by
+  # regex — see the per-file step). Any threshold failing fails CI.
+  # `coverage-core` runs on Linux (headless, `-p nohrs-core` — the foundational
+  # crate the 80% target refers to); `coverage-overall` runs on macOS with
+  # `--workspace --all-features` so gpui (Metal backend, no system libs needed) is
+  # instrumented too. The `#[gpui::test]` suite runs headlessly via
+  # `TestAppContext` on both. Each job feeds GitHub's native code coverage (PR
+  # diff inline; requires Code Quality enabled in repo settings) and uploads its
+  # browsable HTML report as a downloadable CI artifact.
+  #
+  # These are two explicit jobs rather than one matrix: matrix legs share a
+  # single set of `outputs`, and GitHub keeps only the last leg's values
+  # (last-writer-wins, not merged), so a matrix could not reliably surface both
+  # tier rates to `coverage-report`. Separate jobs each expose a stable `rate`.
+  # The threshold is enforced in a final step (after the rate-extraction and
+  # uploads) so the PR comment and HTML artifacts still post when the gate trips.
+  coverage-core:
+    name: coverage (core)
     runs-on: ubuntu-latest
-    continue-on-error: true
     permissions:
       contents: read
       code-quality: write
-      pull-requests: write
+    outputs:
+      rate: ${{ steps.rate.outputs.rate }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -173,68 +188,163 @@ jobs:
           # Check out the PR head (not the synthetic merge commit) so coverage
           # line mapping matches GitHub's native diff annotations.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: llvm-tools-preview
-
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@e49978b799e49ff429d162b7a30601a569ab6538 # v2.81.1
         with:
           tool: cargo-llvm-cov
-
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-
-      # Headless libraries only (default-members); `--all-features` is omitted so
-      # the Linux runner does not pull in gpui. GUI coverage is a future macOS
-      # extension. The HTML report reuses the profile data collected here, so it
-      # does not re-run the tests.
+      # `-p nohrs-core` scopes the "core" tier to the foundational crate the 80%
+      # target refers to (models/services are covered by the overall tier). Runs
+      # the tests under instrumentation; the HTML report and threshold check below
+      # reuse this profile data, so they do not re-run the tests.
       - name: Generate Cobertura XML
-        run: cargo llvm-cov --locked --cobertura --output-path cobertura.xml
-
+        run: cargo llvm-cov -p nohrs-core --locked --cobertura --output-path cobertura-core.xml
       - name: Generate HTML report
         run: cargo llvm-cov report --html --output-dir target/llvm-cov
-
+      - name: Extract line rate
+        id: rate
+        shell: bash
+        run: |
+          rate=$(grep -o 'line-rate="[0-9.]*"' cobertura-core.xml | head -1 | grep -o '[0-9.]*' | head -1)
+          pct=$(awk "BEGIN { printf \"%.2f\", ${rate:-0} * 100 }")
+          echo "rate=${pct}" >> "$GITHUB_OUTPUT"
       # GitHub native code coverage (PR diff inline). Skipped for PRs from forks,
       # which cannot write coverage data.
       - name: Upload coverage to GitHub
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1
         with:
-          file: cobertura.xml
+          file: cobertura-core.xml
           language: Rust
-          label: code-coverage/cargo-llvm-cov
-
+          label: code-coverage/core
       # Browsable line-by-line report. Download the artifact and open index.html.
       - name: Upload HTML report artifact
-        id: html
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-html
+          name: coverage-html-core
           path: target/llvm-cov/html
+      # Enforced gate, run last so the rate output and artifacts above still post
+      # when coverage is under target. Re-renders the profile data collected
+      # above. `--fail-under-lines` guards the crate aggregate; `--fail-under-file-lines`
+      # guards each file so a single near-0% file cannot hide behind the average.
+      - name: Enforce core coverage thresholds
+        run: cargo llvm-cov report --fail-under-lines 80 --fail-under-file-lines 80
 
-      # Post (or update) a PR comment with the line coverage and a link to
-      # download the HTML report artifact. Skipped for fork PRs (read-only token).
+  coverage-overall:
+    name: coverage (overall)
+    runs-on: macos-latest
+    permissions:
+      contents: read
+      code-quality: write
+    outputs:
+      rate: ${{ steps.rate.outputs.rate }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@e49978b799e49ff429d162b7a30601a569ab6538 # v2.81.1
+        with:
+          tool: cargo-llvm-cov
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # `--all-features` pulls in gpui (Metal backend on macOS); the GUI crates
+      # are instrumented and `#[gpui::test]` runs headlessly via `TestAppContext`.
+      - name: Generate Cobertura XML
+        run: cargo llvm-cov --workspace --all-features --locked --cobertura --output-path cobertura-overall.xml
+      # Bare `report` re-renders the data already collected above; its scope
+      # (`--workspace --all-features`, incl. the GUI crates) is fixed at
+      # collection time, so the HTML covers every workspace crate. `report` does
+      # not accept `--workspace` / `--all-features` (it does not rebuild).
+      - name: Generate HTML report
+        run: cargo llvm-cov report --html --output-dir target/llvm-cov
+      - name: Extract line rate
+        id: rate
+        shell: bash
+        run: |
+          rate=$(grep -o 'line-rate="[0-9.]*"' cobertura-overall.xml | head -1 | grep -o '[0-9.]*' | head -1)
+          pct=$(awk "BEGIN { printf \"%.2f\", ${rate:-0} * 100 }")
+          echo "rate=${pct}" >> "$GITHUB_OUTPUT"
+      - name: Upload coverage to GitHub
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1
+        with:
+          file: cobertura-overall.xml
+          language: Rust
+          label: code-coverage/overall
+      - name: Upload HTML report artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-html-overall
+          path: target/llvm-cov/html
+      # Enforced gate, run last so the rate output and artifacts above still post
+      # when coverage is under target. Re-renders the profile data collected above.
+      # Aggregate floor over the whole workspace (every file counts).
+      - name: Enforce overall coverage threshold
+        run: cargo llvm-cov report --fail-under-lines 50
+      # Per-file floor on the testable subset, so a near-0% testable file cannot
+      # hide behind the aggregate. The ignored set is code that is not testable
+      # in-process: the gpui binary entrypoint (`nohrs/src/{app,cli,main}.rs`),
+      # pure rendering/view and window-chrome code, the search backends (external
+      # processes / tantivy index), and the page/list glue exercised only through
+      # the running app. The reusable components (`file_list`, `footer`, `pane`)
+      # are now covered by `#[gpui::test]`s that build/draw them in a test window,
+      # so only `unified_toolbar` stays excluded (its popup-menu body only runs
+      # when the menu is opened, which a headless draw never triggers).
+      - name: Enforce per-file coverage floor (testable subset)
+        run: >
+          cargo llvm-cov report --fail-under-file-lines 70
+          --ignore-filename-regex 'nohrs/src/(app|cli|main)\.rs|/explorer/view|/explorer\.rs|/explorer/list_setup\.rs|nohrs-pages/src/(root|git|s3|settings|extensions|nohrs_pages)\.rs|/search/|nohrs-services/src/search\.rs|nohrs-ui/src/(assets|window)\.rs|/components/layout/unified_toolbar\.rs'
+
+  # Posts (or updates) a single PR comment reporting both tiers against their
+  # targets. A dedicated job (rather than the coverage jobs themselves) avoids a
+  # race on the shared comment. Reads each tier's line rate from its job output,
+  # so it needs no artifact download. Skipped for fork PRs (read-only token).
+  coverage-report:
+    name: coverage report
+    runs-on: ubuntu-latest
+    needs: [coverage-core, coverage-overall]
+    # `always()` so the summary posts even when a coverage job fails its gate
+    # (the `rate` outputs are set before the threshold step trips).
+    if: ${{ always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      pull-requests: write
+    steps:
       - name: Comment coverage summary on PR
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          ARTIFACT_URL: ${{ steps.html.outputs.artifact-url }}
+          CORE_RATE: ${{ needs.coverage-core.outputs.rate }}
+          OVERALL_RATE: ${{ needs.coverage-overall.outputs.rate }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const fs = require('fs');
-            const xml = fs.readFileSync('cobertura.xml', 'utf8');
-            const match = xml.match(/line-rate="([0-9.]+)"/);
-            const pct = match ? (parseFloat(match[1]) * 100).toFixed(2) : 'n/a';
+            // `core`, `github`, `context` are injected by github-script; avoid
+            // shadowing them (a `const core` redeclaration is a SyntaxError).
+            const mark = (pct, target) =>
+              pct === 'n/a' ? '⚠️' : (parseFloat(pct) >= target ? '✅' : '❌');
+            const corePct = process.env.CORE_RATE || 'n/a';
+            const overallPct = process.env.OVERALL_RATE || 'n/a';
             const marker = '<!-- coverage-report -->';
             const body = `${marker}\n`
-              + `📊 **Coverage: ${pct}%** (line-rate, headless library subset)\n\n`
-              + `[⬇️ Download the HTML report](${process.env.ARTIFACT_URL}) — `
-              + `unzip and open \`index.html\` for the line-by-line view.\n\n`
-              + `> Informational during P1–P5 (target: core 80% / overall 50%). `
-              + `Does not block merge.`;
+              + `📊 **Coverage**\n\n`
+              + `| Tier | Line coverage | Target | |\n`
+              + `| --- | --- | --- | --- |\n`
+              + `| Core (\`nohrs-core\`) | ${corePct}% | 80% | ${mark(corePct, 80)} |\n`
+              + `| Overall incl. GUI (\`--all-features\`) | ${overallPct}% | 50% | ${mark(overallPct, 50)} |\n\n`
+              + `[⬇️ HTML reports](${process.env.RUN_URL}) — download the `
+              + `\`coverage-html-core\` / \`coverage-html-overall\` artifacts and open \`index.html\`.\n\n`
+              + `> Enforced gate: a tier below its target fails CI.`;
             const { data: comments } = await github.rest.issues.listComments({
               ...context.repo,
               issue_number: context.issue.number,

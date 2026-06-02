@@ -75,3 +75,31 @@ impl TrafficLightsHook {
         px(offset)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn default_centers_within_the_toolbar() {
+        // Defaults: toolbar 34, button 16 → (34 - 16) / 2 = 9.
+        assert_eq!(TrafficLightsHook::new().vertical_offset(), px(9.0));
+    }
+
+    #[test]
+    fn vertical_offset_clamps_when_button_exceeds_toolbar() {
+        let centered = TrafficLightsHook::new().center_vertically(px(16.0));
+        assert_eq!(centered.vertical_offset(), px(0.0));
+        let clamped = TrafficLightsHook::new().center_vertically(px(8.0));
+        assert_eq!(clamped.vertical_offset(), px(0.0));
+    }
+
+    #[test]
+    fn builders_update_configuration() {
+        let hook = TrafficLightsHook::new()
+            .with_horizontal_offset(px(20.0))
+            .set_visibility(false);
+        assert_eq!(hook.horizontal_offset, px(20.0));
+        assert!(!hook.visible);
+    }
+}

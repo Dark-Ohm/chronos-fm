@@ -194,3 +194,84 @@ fn truncate_path(path: &str, max_len: usize) -> String {
     // Show first and last parts
     format!("{}/.../{}", parts[0], parts[parts.len() - 1])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{footer, truncate_path, FooterProps};
+    use gpui::{IntoElement, Render, TestAppContext, Window};
+
+    #[test]
+    fn short_paths_are_returned_unchanged() {
+        assert_eq!(truncate_path("/a/b", 10), "/a/b");
+    }
+
+    #[test]
+    fn long_multi_segment_paths_elide_the_middle() {
+        let path = "/usr/local/share/nohrs/config.toml";
+        assert_eq!(truncate_path(path, 10), "/.../config.toml");
+    }
+
+    #[test]
+    fn long_single_segment_paths_keep_the_tail() {
+        let truncated = truncate_path("averylongsinglefilename.txt", 8);
+        assert!(truncated.starts_with("..."));
+        assert!(truncated.ends_with("ame.txt"));
+    }
+
+    // Host view so `footer` (which needs `&mut Context<V: Render>`) can be built
+    // inside a test window. `render` records that it ran; building the element
+    // tree eagerly evaluates every `when`/`when_some` branch, so a single draw
+    // exercises whichever footer sections the props enable.
+    struct FooterHost {
+        props: FooterProps,
+        renders: usize,
+    }
+
+    impl Render for FooterHost {
+        fn render(
+            &mut self,
+            _window: &mut Window,
+            cx: &mut gpui::Context<Self>,
+        ) -> impl IntoElement {
+            self.renders += 1;
+            footer(self.props.clone(), cx)
+        }
+    }
+
+    #[gpui::test]
+    async fn footer_renders_every_status_section(cx: &mut TestAppContext) {
+        // The footer paints `Icon`s, which read the gpui-component `Theme` global.
+        cx.update(gpui_component::init);
+        let props = FooterProps {
+            selected_count: 2,
+            total_count: 5,
+            total_size: "1.0 KB".into(),
+            current_path: "/usr/local/share/nohrs/config.toml".into(),
+            git_branch: Some("main".into()),
+            storage_status: Some("S3: connected".into()),
+            indexing_progress: Some(0.5),
+            status_message: Some("scan failed".into()),
+            status_is_error: true,
+        };
+        let (host, cx) = cx.add_window_view(|_window, _cx| FooterHost { props, renders: 0 });
+        cx.run_until_parked();
+        host.read_with(cx, |host, _cx| assert!(host.renders > 0));
+    }
+
+    #[gpui::test]
+    async fn footer_renders_with_status_sections_absent(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        // The complementary branches: no git/storage, completed indexing
+        // (>= 1.0 hides the indicator), no selection, non-error status.
+        let props = FooterProps {
+            total_count: 0,
+            indexing_progress: Some(1.0),
+            status_message: Some("ready".into()),
+            status_is_error: false,
+            ..FooterProps::default()
+        };
+        let (host, cx) = cx.add_window_view(|_window, _cx| FooterHost { props, renders: 0 });
+        cx.run_until_parked();
+        host.read_with(cx, |host, _cx| assert!(host.renders > 0));
+    }
+}
