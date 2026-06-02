@@ -27,5 +27,11 @@ serde_json.workspace = true
 tracing.workspace    = true
 time.workspace       = true
 
+[dev-dependencies]
+# `test-support` gates `TestAppContext` and the `#[gpui::test]` macro. It is a
+# dev-dependency so the gpui test backend only links into the test build.
+gpui = { version = "0.2", features = ["test-support"] }
+tempfile = "3"
+
 [lints]
 workspace = true

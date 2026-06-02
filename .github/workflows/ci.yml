@@ -152,19 +152,31 @@ jobs:
         continue-on-error: true
         run: cargo deny check advisories
 
-  # Coverage is informational during P1–P5 (target: core 80% / overall 50%); it
-  # never blocks merge. The Cobertura XML report feeds GitHub's native code
-  # coverage (PR diff inline; requires Code Quality enabled in repo settings);
-  # the browsable HTML report is uploaded as a downloadable CI artifact (no
-  # external hosting).
+  # Coverage is informational during P1–P5 (targets: core 80% / overall 50%); it
+  # never blocks merge (continue-on-error). It mirrors the `test` job's matrix
+  # split: the Linux leg measures the headless `default-members` subset ("core"
+  # tier), and the macOS leg runs `--workspace --all-features` so gpui (Metal
+  # backend, no system libs needed) is instrumented too ("overall" tier incl. the
+  # GUI crates). The `#[gpui::test]` suite runs headlessly via `TestAppContext`
+  # on both. Each leg feeds GitHub's native code coverage (PR diff inline;
+  # requires Code Quality enabled in repo settings) and uploads its browsable
+  # HTML report as a downloadable CI artifact (no external hosting).
   coverage:
-    name: coverage
-    runs-on: ubuntu-latest
+    name: coverage (${{ matrix.tier }})
+    runs-on: ${{ matrix.os }}
     continue-on-error: true
     permissions:
       contents: read
       code-quality: write
-      pull-requests: write
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, tier: core,    args: "" }
+          - { os: macos-latest,  tier: overall, args: "--workspace --all-features" }
+    outputs:
+      core_rate: ${{ steps.rate.outputs.core_rate }}
+      overall_rate: ${{ steps.rate.outputs.overall_rate }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -187,15 +199,23 @@ jobs:
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
 
-      # Headless libraries only (default-members); `--all-features` is omitted so
-      # the Linux runner does not pull in gpui. GUI coverage is a future macOS
-      # extension. The HTML report reuses the profile data collected here, so it
-      # does not re-run the tests.
+      # Runs the tests under instrumentation. The HTML report reuses the profile
+      # data collected here, so it does not re-run the tests.
       - name: Generate Cobertura XML
-        run: cargo llvm-cov --locked --cobertura --output-path cobertura.xml
+        run: cargo llvm-cov ${{ matrix.args }} --locked --cobertura --output-path cobertura-${{ matrix.tier }}.xml
 
       - name: Generate HTML report
         run: cargo llvm-cov report --html --output-dir target/llvm-cov
+
+      # Expose this tier's line-rate as a job output (one key per tier, so the two
+      # matrix legs never collide) for the reporting job to compose a PR comment.
+      - name: Extract line rate
+        id: rate
+        shell: bash
+        run: |
+          rate=$(grep -o 'line-rate="[0-9.]*"' "cobertura-${{ matrix.tier }}.xml" | head -1 | grep -o '[0-9.]*' | head -1)
+          pct=$(awk "BEGIN { printf \"%.2f\", ${rate:-0} * 100 }")
+          echo "${{ matrix.tier }}_rate=${pct}" >> "$GITHUB_OUTPUT"
 
       # GitHub native code coverage (PR diff inline). Skipped for PRs from forks,
       # which cannot write coverage data.
@@ -203,38 +223,49 @@ jobs:
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1
         with:
-          file: cobertura.xml
+          file: cobertura-${{ matrix.tier }}.xml
           language: Rust
-          label: code-coverage/cargo-llvm-cov
+          label: code-coverage/${{ matrix.tier }}
 
       # Browsable line-by-line report. Download the artifact and open index.html.
       - name: Upload HTML report artifact
-        id: html
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-html
+          name: coverage-html-${{ matrix.tier }}
           path: target/llvm-cov/html
 
-      # Post (or update) a PR comment with the line coverage and a link to
-      # download the HTML report artifact. Skipped for fork PRs (read-only token).
+  # Posts (or updates) a single PR comment reporting both tiers against their
+  # targets. A dedicated job (rather than each matrix leg) avoids a race on the
+  # shared comment. Reads the per-tier line rates from the matrix job outputs, so
+  # it needs no artifact download. Skipped for fork PRs (read-only token).
+  coverage-report:
+    name: coverage report
+    runs-on: ubuntu-latest
+    needs: coverage
+    if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
+    permissions:
+      pull-requests: write
+    steps:
       - name: Comment coverage summary on PR
-        if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          ARTIFACT_URL: ${{ steps.html.outputs.artifact-url }}
+          CORE_RATE: ${{ needs.coverage.outputs.core_rate }}
+          OVERALL_RATE: ${{ needs.coverage.outputs.overall_rate }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |
-            const fs = require('fs');
-            const xml = fs.readFileSync('cobertura.xml', 'utf8');
-            const match = xml.match(/line-rate="([0-9.]+)"/);
-            const pct = match ? (parseFloat(match[1]) * 100).toFixed(2) : 'n/a';
+            const core = process.env.CORE_RATE || 'n/a';
+            const overall = process.env.OVERALL_RATE || 'n/a';
             const marker = '<!-- coverage-report -->';
             const body = `${marker}\n`
-              + `📊 **Coverage: ${pct}%** (line-rate, headless library subset)\n\n`
-              + `[⬇️ Download the HTML report](${process.env.ARTIFACT_URL}) — `
-              + `unzip and open \`index.html\` for the line-by-line view.\n\n`
-              + `> Informational during P1–P5 (target: core 80% / overall 50%). `
-              + `Does not block merge.`;
+              + `📊 **Coverage**\n\n`
+              + `| Tier | Line coverage | Target |\n`
+              + `| --- | --- | --- |\n`
+              + `| Core (headless \`default-members\`) | ${core}% | 80% |\n`
+              + `| Overall incl. GUI (\`--all-features\`) | ${overall}% | 50% |\n\n`
+              + `[⬇️ HTML reports](${process.env.RUN_URL}) — download the `
+              + `\`coverage-html-core\` / \`coverage-html-overall\` artifacts and open \`index.html\`.\n\n`
+              + `> Informational during P1–P5. Does not block merge.`;
             const { data: comments } = await github.rest.issues.listComments({
               ...context.repo,
               issue_number: context.issue.number,

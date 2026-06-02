@@ -25,15 +25,21 @@ CLAUDE.md のルール (重要):
 ```rust
 #[gpui::test]
 async fn test_my_view(cx: &mut TestAppContext) {
-    let entity = cx.new(|cx| MyView::new(cx));
+    // window-bound な sub-entity (InputState 等) を持つ view は test window 内で構築する。
+    let window = cx.add_window(|window, cx| MyView::new(window, cx));
+    window.update(cx, |view, window, cx| view.start_async_work(window, cx)).unwrap();
     // 必ず GPUI executor の timer を使う
     cx.background_executor.timer(Duration::from_millis(50)).await;
     cx.run_until_parked();
-    entity.read_with(cx, |this, _cx| {
-        assert_eq!(this.something, expected);
-    });
+    window.read_with(cx, |view, _cx| {
+        assert_eq!(view.something, expected);
+    }).unwrap();
 }
 ```
+
+gpui crate は dev-dependency で `gpui = { version = "0.2", features = ["test-support"] }` を
+有効にする (`TestAppContext` / `#[gpui::test]` マクロが利用可能になる)。実例は
+[`crates/nohrs-pages/src/explorer/tests.rs`](../crates/nohrs-pages/src/explorer/tests.rs)。
 
 **避けるべきパターン**: `smol::Timer::after` / `tokio::time::sleep`。これらは GPUI scheduler が tracking しないため `run_until_parked()` が早期に "nothing left" を返す。
 
@@ -49,49 +55,28 @@ async fn test_my_view(cx: &mut TestAppContext) {
 
 ## 2. カバレッジパイプライン
 
-GitHub の native PR coverage 機能 (2026-05 public preview) と R2 への HTML レポートを **併用**。
+`cargo-llvm-cov` で計測し、GitHub の native code coverage (PR diff inline) と、ダウンロード可能な
+HTML レポート artifact を **併用**。外部 SaaS (Codecov / Coveralls) は **採用しない**。
 
-### CI ワークフロー (擬似)
+### CI ワークフロー (`.github/workflows/ci.yml` の `coverage` ジョブ)
 
-```yaml
-- name: Run coverage
-  run: |
-    cargo llvm-cov --all-features \
-      --lcov --output-path lcov.info \
-      --html --output-dir target/llvm-cov
+`test` ジョブと同じ matrix split を踏襲し、2 つの tier を計測する:
 
-- name: Upload lcov to GitHub Coverage
-  uses: actions/upload-artifact@v4
-  with:
-    name: coverage-lcov
-    path: lcov.info
-  # → GitHub Native の PR diff coverage に inline 表示
+| tier | runner | コマンド | 範囲 |
+|------|--------|----------|------|
+| **core** | `ubuntu-latest` | `cargo llvm-cov --locked --cobertura ...` | headless な `default-members` (nohrs-core / models / services) |
+| **overall** | `macos-latest` | `cargo llvm-cov --workspace --all-features --locked --cobertura ...` | gpui を含む全 crate (GUI) |
 
-- name: Upload HTML to R2
-  run: |
-    wrangler r2 object put nohrs-coverage/pr/${{ github.event.number }}/ \
-      --file target/llvm-cov \
-      --recursive
-
-- name: Comment PR
-  uses: actions/github-script@v7
-  with:
-    script: |
-      const url = `https://coverage.nohrs.app/pr/${{ github.event.number }}/`;
-      github.rest.issues.createComment({
-        ...context.repo,
-        issue_number: context.issue.number,
-        body: `📊 Coverage HTML report: ${url}`,
-      });
-```
-
-### R2 上の HTML レポート 命名と寿命
-
-| パス | 寿命 |
-|------|------|
-| `coverage.nohrs.app/pr/<number>/` | PR open 中のみ。PR close で Worker が削除 |
-| `coverage.nohrs.app/main/<short-sha>/` | 最新 50 件保持。古いものは Worker で削除 |
-| `coverage.nohrs.app/main/latest/` | 常に最新の main を指す symlink (object copy) |
+- macOS leg は gpui を Metal バックエンドで build するため、Linux のような system library
+  (`libxcb` / `wayland` / `vulkan` 等) の導入は不要。`#[gpui::test]` は両 OS で `TestAppContext`
+  により headless に実行される。
+- 各 leg が生成する Cobertura XML を GitHub native code coverage に tier 別ラベル
+  (`code-coverage/core` / `code-coverage/overall`) で upload し、HTML レポートを
+  `coverage-html-core` / `coverage-html-overall` artifact として upload する。
+- 後続の `coverage-report` ジョブが両 leg の line-rate (matrix job output 経由) をまとめ、
+  PR に **1 つ**のコメントで core / overall を目標値と並べて表示する。
+- `coverage` ジョブは `continue-on-error: true`。テスト失敗は `test` ジョブ (required gate) が
+  検知するので、coverage 自体は merge を block しない。
 
 ### 閾値 (gate)
 
@@ -101,8 +86,6 @@ GitHub の native PR coverage 機能 (2026-05 public preview) と R2 への HTML
 | P6 | 閾値で fail (詳細は P6 時点で再検討) | CI required |
 
 理由: 初期に厳しい gate を設けるとコントリビュータが心折れる。baseline が固まるまで informational に留める。
-
-外部 SaaS (Codecov / Coveralls) は **採用しない**。GitHub Native + R2 HTML で十分かつエコシステム内で完結。
 
 ---
 

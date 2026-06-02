@@ -41,3 +41,50 @@ pub fn get_extension(name: &str, kind: &str) -> String {
         other => other.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn entry(name: &str, kind: &str, size: u64) -> FileEntryDto {
+        FileEntryDto {
+            name: name.to_string(),
+            path: format!("/{name}"),
+            kind: kind.to_string(),
+            size,
+            modified: 0,
+        }
+    }
+
+    #[test]
+    fn sort_entries_keeps_directories_before_files() {
+        let mut entries = vec![
+            entry("b.txt", "file", 1),
+            entry("alpha", "dir", 0),
+            entry("a.txt", "file", 2),
+        ];
+        sort_entries(&mut entries, SortKey::Name, true);
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["alpha", "a.txt", "b.txt"]);
+    }
+
+    #[test]
+    fn sort_entries_reverses_within_each_group_when_descending() {
+        let mut entries = vec![
+            entry("a.txt", "file", 1),
+            entry("b.txt", "file", 2),
+            entry("dir-a", "dir", 0),
+        ];
+        sort_entries(&mut entries, SortKey::Name, false);
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        // Directories still sort ahead of files; ordering within files reverses.
+        assert_eq!(names, ["dir-a", "b.txt", "a.txt"]);
+    }
+
+    #[test]
+    fn get_extension_classifies_kinds() {
+        assert_eq!(get_extension("anything", "dir"), "0_dir");
+        assert_eq!(get_extension("Main.RS", "file"), "rs");
+        assert_eq!(get_extension("README", "file"), "zzz_noext");
+    }
+}

@@ -7,6 +7,9 @@ mod state;
 mod types;
 pub mod view;
 
+#[cfg(test)]
+mod tests;
+
 pub use state::ExplorerPage;
 
 use gpui::{AnyElement, Context, IntoElement, Render, Window};

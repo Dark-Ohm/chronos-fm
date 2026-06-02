@@ -237,3 +237,41 @@ pub fn get_file_type(name: &str, kind: &str) -> String {
         other => other.to_string(),
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{format_date, get_file_type, human_bytes};
+    use proptest::prelude::*;
+
+    #[test]
+    fn human_bytes_picks_the_expected_unit() {
+        assert_eq!(human_bytes(0), "0 B");
+        assert_eq!(human_bytes(512), "512 B");
+        assert_eq!(human_bytes(1024), "1.0 KB");
+        assert_eq!(human_bytes(1024 * 1024), "1.0 MB");
+        assert_eq!(human_bytes(1024 * 1024 * 1024), "1.0 GB");
+    }
+
+    #[test]
+    fn get_file_type_maps_kinds_and_extensions() {
+        assert_eq!(get_file_type("photo.png", "file"), "PNG");
+        assert_eq!(get_file_type("Makefile", "file"), "File");
+        assert_eq!(get_file_type("src", "dir"), "Folder");
+        assert_eq!(get_file_type("link", "symlink"), "Link");
+    }
+
+    #[test]
+    fn format_date_is_stable_for_the_epoch() {
+        assert_eq!(format_date(&0), "1970/01/01");
+    }
+
+    proptest! {
+        // A representative property: the size formatter must never panic and
+        // must always emit a non-empty string for any `u64` input.
+        #[test]
+        fn human_bytes_never_panics(size in any::<u64>()) {
+            let rendered = human_bytes(size);
+            prop_assert!(!rendered.is_empty());
+        }
+    }
+}

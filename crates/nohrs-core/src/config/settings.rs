@@ -657,4 +657,22 @@ mod tests {
             "docs/config.schema.json is stale; regenerate with `nohrs config schema > docs/config.schema.json`"
         );
     }
+
+    // Snapshot of the field-by-field parser output, including the warning emitted
+    // for an invalid value. Review/refresh with `cargo insta review` when the
+    // parser's behavior intentionally changes.
+    #[test]
+    fn from_toml_str_output_snapshot() {
+        let toml = r#"
+            schema_version = 1
+            [theme]
+            mode = "neon"
+            accent = "teal"
+            [ui]
+            show_hidden = true
+            unknown_key = 1
+        "#;
+        let parsed = Config::from_toml_str(toml);
+        insta::assert_debug_snapshot!(parsed);
+    }
 }
