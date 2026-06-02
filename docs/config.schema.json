@@ -1,7 +1,7 @@
 {
   "$defs": {
     "SortOrder": {
-      "description": "Column a directory listing is sorted by.",
+      "description": "The column a directory listing is ordered by.",
       "oneOf": [
         {
           "const": "name",

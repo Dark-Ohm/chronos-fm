@@ -113,7 +113,7 @@ impl ThemeMode {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "lowercase")]
-/// Column a directory listing is sorted by.
+/// The column a directory listing is ordered by.
 pub enum SortOrder {
     /// Sort alphabetically by entry name.
     #[default]

@@ -11,7 +11,8 @@ pub struct FileEntryDto {
     pub name: String,
     /// Full path to the entry.
     pub path: String,
-    /// Entry kind as a string (e.g. `"file"`, `"dir"`, `"link"`).
+    /// Entry kind as a string (`"file"`, `"dir"`, or `"symlink"`), matching the
+    /// values emitted by the listing service.
     pub kind: String,
     /// Size in bytes.
     pub size: u64,

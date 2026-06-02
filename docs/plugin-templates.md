@@ -227,7 +227,7 @@ poethepoet build
 |------|------|
 | plugin が load されない | `nohrs --log-level=debug` で `plugin host` 関連ログを確認 |
 | permission denied | nohrs UI の設定 → Plugins → 該当 plugin → permission 一覧で要確認 |
-| WIT 型エラー | `nohrs plugin check` で statically catch |
+| WIT 型エラー | `nohrs plugin check` で statically catches |
 | trap で crash | `auto_disabled_until` に記録、次回起動時に "Plugin X was disabled due to crash" 通知 |
 
 ---
