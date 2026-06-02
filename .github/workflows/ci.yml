@@ -153,30 +153,28 @@ jobs:
         run: cargo deny check advisories
 
   # Coverage is informational during P1–P5 (targets: core 80% / overall 50%); it
-  # never blocks merge (continue-on-error). It mirrors the `test` job's matrix
-  # split: the Linux leg measures the headless `default-members` subset ("core"
-  # tier), and the macOS leg runs `--workspace --all-features` so gpui (Metal
-  # backend, no system libs needed) is instrumented too ("overall" tier incl. the
-  # GUI crates). The `#[gpui::test]` suite runs headlessly via `TestAppContext`
-  # on both. Each leg feeds GitHub's native code coverage (PR diff inline;
-  # requires Code Quality enabled in repo settings) and uploads its browsable
-  # HTML report as a downloadable CI artifact (no external hosting).
-  coverage:
-    name: coverage (${{ matrix.tier }})
-    runs-on: ${{ matrix.os }}
+  # never blocks merge (continue-on-error). Two jobs mirror the `test` matrix
+  # split: `coverage-core` measures the headless `default-members` subset on
+  # Linux ("core" tier), and `coverage-overall` runs `--workspace --all-features`
+  # on macOS so gpui (Metal backend, no system libs needed) is instrumented too
+  # ("overall" tier incl. the GUI crates). The `#[gpui::test]` suite runs
+  # headlessly via `TestAppContext` on both. Each job feeds GitHub's native code
+  # coverage (PR diff inline; requires Code Quality enabled in repo settings) and
+  # uploads its browsable HTML report as a downloadable CI artifact.
+  #
+  # These are two explicit jobs rather than one matrix: matrix legs share a
+  # single set of `outputs`, and GitHub keeps only the last leg's values
+  # (last-writer-wins, not merged), so a matrix could not reliably surface both
+  # tier rates to `coverage-report`. Separate jobs each expose a stable `rate`.
+  coverage-core:
+    name: coverage (core)
+    runs-on: ubuntu-latest
     continue-on-error: true
     permissions:
       contents: read
       code-quality: write
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - { os: ubuntu-latest, tier: core,    args: "" }
-          - { os: macos-latest,  tier: overall, args: "--workspace --all-features" }
     outputs:
-      core_rate: ${{ steps.rate.outputs.core_rate }}
-      overall_rate: ${{ steps.rate.outputs.overall_rate }}
+      rate: ${{ steps.rate.outputs.rate }}
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
         with:
@@ -185,63 +183,104 @@ jobs:
           # Check out the PR head (not the synthetic merge commit) so coverage
           # line mapping matches GitHub's native diff annotations.
           ref: ${{ github.event.pull_request.head.sha || github.sha }}
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
           components: llvm-tools-preview
-
       - name: Install cargo-llvm-cov
         uses: taiki-e/install-action@e49978b799e49ff429d162b7a30601a569ab6538 # v2.81.1
         with:
           tool: cargo-llvm-cov
-
       - name: Cache cargo artifacts
         uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
-
       # Runs the tests under instrumentation. The HTML report reuses the profile
       # data collected here, so it does not re-run the tests.
       - name: Generate Cobertura XML
-        run: cargo llvm-cov ${{ matrix.args }} --locked --cobertura --output-path cobertura-${{ matrix.tier }}.xml
-
+        run: cargo llvm-cov --locked --cobertura --output-path cobertura-core.xml
       - name: Generate HTML report
         run: cargo llvm-cov report --html --output-dir target/llvm-cov
-
-      # Expose this tier's line-rate as a job output (one key per tier, so the two
-      # matrix legs never collide) for the reporting job to compose a PR comment.
       - name: Extract line rate
         id: rate
         shell: bash
         run: |
-          rate=$(grep -o 'line-rate="[0-9.]*"' "cobertura-${{ matrix.tier }}.xml" | head -1 | grep -o '[0-9.]*' | head -1)
+          rate=$(grep -o 'line-rate="[0-9.]*"' cobertura-core.xml | head -1 | grep -o '[0-9.]*' | head -1)
           pct=$(awk "BEGIN { printf \"%.2f\", ${rate:-0} * 100 }")
-          echo "${{ matrix.tier }}_rate=${pct}" >> "$GITHUB_OUTPUT"
-
+          echo "rate=${pct}" >> "$GITHUB_OUTPUT"
       # GitHub native code coverage (PR diff inline). Skipped for PRs from forks,
       # which cannot write coverage data.
       - name: Upload coverage to GitHub
         if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
         uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1
         with:
-          file: cobertura-${{ matrix.tier }}.xml
+          file: cobertura-core.xml
           language: Rust
-          label: code-coverage/${{ matrix.tier }}
-
+          label: code-coverage/core
       # Browsable line-by-line report. Download the artifact and open index.html.
       - name: Upload HTML report artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: coverage-html-${{ matrix.tier }}
+          name: coverage-html-core
+          path: target/llvm-cov/html
+
+  coverage-overall:
+    name: coverage (overall)
+    runs-on: macos-latest
+    continue-on-error: true
+    permissions:
+      contents: read
+      code-quality: write
+    outputs:
+      rate: ${{ steps.rate.outputs.rate }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+        with:
+          components: llvm-tools-preview
+      - name: Install cargo-llvm-cov
+        uses: taiki-e/install-action@e49978b799e49ff429d162b7a30601a569ab6538 # v2.81.1
+        with:
+          tool: cargo-llvm-cov
+      - name: Cache cargo artifacts
+        uses: Swatinem/rust-cache@c19371144df3bb44fab255c43d04cbc2ab54d1c4 # v2.9.1
+      # `--all-features` pulls in gpui (Metal backend on macOS); the GUI crates
+      # are instrumented and `#[gpui::test]` runs headlessly via `TestAppContext`.
+      - name: Generate Cobertura XML
+        run: cargo llvm-cov --workspace --all-features --locked --cobertura --output-path cobertura-overall.xml
+      - name: Generate HTML report
+        run: cargo llvm-cov report --html --output-dir target/llvm-cov
+      - name: Extract line rate
+        id: rate
+        shell: bash
+        run: |
+          rate=$(grep -o 'line-rate="[0-9.]*"' cobertura-overall.xml | head -1 | grep -o '[0-9.]*' | head -1)
+          pct=$(awk "BEGIN { printf \"%.2f\", ${rate:-0} * 100 }")
+          echo "rate=${pct}" >> "$GITHUB_OUTPUT"
+      - name: Upload coverage to GitHub
+        if: ${{ github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository }}
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1
+        with:
+          file: cobertura-overall.xml
+          language: Rust
+          label: code-coverage/overall
+      - name: Upload HTML report artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: coverage-html-overall
           path: target/llvm-cov/html
 
   # Posts (or updates) a single PR comment reporting both tiers against their
-  # targets. A dedicated job (rather than each matrix leg) avoids a race on the
-  # shared comment. Reads the per-tier line rates from the matrix job outputs, so
-  # it needs no artifact download. Skipped for fork PRs (read-only token).
+  # targets. A dedicated job (rather than the coverage jobs themselves) avoids a
+  # race on the shared comment. Reads each tier's line rate from its job output,
+  # so it needs no artifact download. Skipped for fork PRs (read-only token).
   coverage-report:
     name: coverage report
     runs-on: ubuntu-latest
-    needs: coverage
+    needs: [coverage-core, coverage-overall]
     if: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository }}
     permissions:
       pull-requests: write
@@ -249,8 +288,8 @@ jobs:
       - name: Comment coverage summary on PR
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
         env:
-          CORE_RATE: ${{ needs.coverage.outputs.core_rate }}
-          OVERALL_RATE: ${{ needs.coverage.outputs.overall_rate }}
+          CORE_RATE: ${{ needs.coverage-core.outputs.rate }}
+          OVERALL_RATE: ${{ needs.coverage-overall.outputs.rate }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         with:
           script: |

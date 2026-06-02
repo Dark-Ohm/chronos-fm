@@ -58,24 +58,27 @@ gpui crate は dev-dependency で `gpui = { version = "0.2", features = ["test-s
 `cargo-llvm-cov` で計測し、GitHub の native code coverage (PR diff inline) と、ダウンロード可能な
 HTML レポート artifact を **併用**。外部 SaaS (Codecov / Coveralls) は **採用しない**。
 
-### CI ワークフロー (`.github/workflows/ci.yml` の `coverage` ジョブ)
+### CI ワークフロー (`.github/workflows/ci.yml` の `coverage-*` ジョブ)
 
-`test` ジョブと同じ matrix split を踏襲し、2 つの tier を計測する:
+`test` ジョブと同じ split に倣い、2 つの coverage ジョブで計測する:
 
-| tier | runner | コマンド | 範囲 |
-|------|--------|----------|------|
-| **core** | `ubuntu-latest` | `cargo llvm-cov --locked --cobertura ...` | headless な `default-members` (nohrs-core / models / services) |
-| **overall** | `macos-latest` | `cargo llvm-cov --workspace --all-features --locked --cobertura ...` | gpui を含む全 crate (GUI) |
+| job (tier) | runner | コマンド | 範囲 |
+|------------|--------|----------|------|
+| **coverage-core** | `ubuntu-latest` | `cargo llvm-cov --locked --cobertura ...` | headless な `default-members` (nohrs-core / models / services) |
+| **coverage-overall** | `macos-latest` | `cargo llvm-cov --workspace --all-features --locked --cobertura ...` | gpui を含む全 crate (GUI) |
 
-- macOS leg は gpui を Metal バックエンドで build するため、Linux のような system library
+- macOS 側は gpui を Metal バックエンドで build するため、Linux のような system library
   (`libxcb` / `wayland` / `vulkan` 等) の導入は不要。`#[gpui::test]` は両 OS で `TestAppContext`
   により headless に実行される。
-- 各 leg が生成する Cobertura XML を GitHub native code coverage に tier 別ラベル
+- 各ジョブが生成する Cobertura XML を GitHub native code coverage に tier 別ラベル
   (`code-coverage/core` / `code-coverage/overall`) で upload し、HTML レポートを
   `coverage-html-core` / `coverage-html-overall` artifact として upload する。
-- 後続の `coverage-report` ジョブが両 leg の line-rate (matrix job output 経由) をまとめ、
-  PR に **1 つ**のコメントで core / overall を目標値と並べて表示する。
-- `coverage` ジョブは `continue-on-error: true`。テスト失敗は `test` ジョブ (required gate) が
+- matrix は **使わない**: matrix leg は単一の `outputs` を共有し、GitHub は最後に完了した leg の
+  値だけを残す (last-writer-wins) ため、両 tier の rate を確実に下流へ渡せない。代わりに 2 つの
+  独立ジョブがそれぞれ安定した `rate` output を公開する。
+- 後続の `coverage-report` ジョブが両ジョブの `rate` output をまとめ、PR に **1 つ**のコメントで
+  core / overall を目標値と並べて表示する。
+- coverage 系ジョブは `continue-on-error: true`。テスト失敗は `test` ジョブ (required gate) が
   検知するので、coverage 自体は merge を block しない。
 
 ### 閾値 (gate)
