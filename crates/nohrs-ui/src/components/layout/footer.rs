@@ -194,3 +194,26 @@ fn truncate_path(path: &str, max_len: usize) -> String {
     // Show first and last parts
     format!("{}/.../{}", parts[0], parts[parts.len() - 1])
 }
+
+#[cfg(test)]
+mod tests {
+    use super::truncate_path;
+
+    #[test]
+    fn short_paths_are_returned_unchanged() {
+        assert_eq!(truncate_path("/a/b", 10), "/a/b");
+    }
+
+    #[test]
+    fn long_multi_segment_paths_elide_the_middle() {
+        let path = "/usr/local/share/nohrs/config.toml";
+        assert_eq!(truncate_path(path, 10), "/.../config.toml");
+    }
+
+    #[test]
+    fn long_single_segment_paths_keep_the_tail() {
+        let truncated = truncate_path("averylongsinglefilename.txt", 8);
+        assert!(truncated.starts_with("..."));
+        assert!(truncated.ends_with("ame.txt"));
+    }
+}

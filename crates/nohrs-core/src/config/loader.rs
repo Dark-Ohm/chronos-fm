@@ -125,4 +125,60 @@ mod tests {
         let path = dir.path().join("config.toml");
         assert!(backup(&path).unwrap().is_none());
     }
+
+    #[test]
+    fn write_default_creates_deep_parents_and_overwrites() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("a/b/c/config.toml");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "stale").unwrap();
+        write_default(&path).unwrap();
+        let contents = std::fs::read_to_string(&path).unwrap();
+        assert!(contents.starts_with("#:schema"));
+        assert!(!contents.contains("stale"));
+    }
+
+    #[test]
+    fn ensure_exists_reports_creation_then_no_op() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        assert!(ensure_exists(&path).unwrap(), "first call creates the file");
+        assert!(
+            !ensure_exists(&path).unwrap(),
+            "second call leaves it untouched"
+        );
+    }
+
+    #[test]
+    fn backup_preserves_original_contents() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        std::fs::write(&path, "schema_version = 1\naccent = \"teal\"").unwrap();
+        let backup_path = backup(&path).unwrap().expect("backup created");
+        assert_eq!(
+            std::fs::read_to_string(&backup_path).unwrap(),
+            "schema_version = 1\naccent = \"teal\""
+        );
+        // The original is left in place by `backup`.
+        assert!(path.exists());
+    }
+
+    #[test]
+    fn reset_without_existing_file_writes_default_and_no_backup() {
+        let dir = tempdir().unwrap();
+        let path = dir.path().join("config.toml");
+        let backup_path = reset(&path).unwrap();
+        assert!(backup_path.is_none());
+        assert!(std::fs::read_to_string(&path)
+            .unwrap()
+            .starts_with("#:schema"));
+    }
+
+    #[test]
+    fn needs_migration_only_for_older_versions() {
+        assert!(needs_migration(0));
+        assert!(!needs_migration(CURRENT_SCHEMA_VERSION));
+        assert!(!needs_migration(CURRENT_SCHEMA_VERSION + 1));
+        assert!(!needs_migration(u64::MAX));
+    }
 }

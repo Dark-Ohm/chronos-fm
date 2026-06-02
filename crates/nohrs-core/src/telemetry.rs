@@ -44,4 +44,13 @@ mod tests {
         let result: Result<u8, &str> = Err("boom");
         assert_eq!(result.log_err(), None);
     }
+
+    #[test]
+    fn works_across_value_and_error_types() {
+        let owned: Result<String, String> = Ok("kept".to_string());
+        assert_eq!(owned.log_err().as_deref(), Some("kept"));
+
+        let io_err: Result<(), std::io::Error> = Err(std::io::Error::other("io"));
+        assert_eq!(io_err.log_err(), None);
+    }
 }

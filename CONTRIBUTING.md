@@ -137,13 +137,20 @@ cargo llvm-cov --all-features --html
 open target/llvm-cov/html/index.html   # xdg-open on Linux
 ```
 
-CI measures coverage on two tiers mirroring the `test` matrix: a Linux **core**
-tier (headless `default-members`) and a macOS **overall** tier
-(`--workspace --all-features`, which instruments the gpui crates). Each tier
-feeds GitHub's native code coverage (inline PR diff) and uploads its HTML report
-as a downloadable artifact (`coverage-html-core` / `coverage-html-overall`); a
-single PR comment reports both against their targets (core 80% / overall 50%).
-Coverage is informational during P1–P5 and does not block merge.
+CI measures coverage on two tiers: a Linux **core** tier (`-p nohrs-core`) and a
+macOS **overall** tier (`--workspace --all-features`, which instruments the gpui
+crates). Each tier feeds GitHub's native code coverage (inline PR diff) and
+uploads its HTML report as a downloadable artifact (`coverage-html-core` /
+`coverage-html-overall`); a single PR comment reports both against their targets.
+
+Coverage is an **enforced gate**: the build fails if `nohrs-core` drops below
+**80%** line coverage or the overall workspace drops below **50%**
+(`cargo llvm-cov ... --fail-under-lines`). Check locally before pushing:
+
+```sh
+cargo llvm-cov -p nohrs-core --fail-under-lines 80
+cargo llvm-cov --workspace --all-features --fail-under-lines 50
+```
 
 ## License
 

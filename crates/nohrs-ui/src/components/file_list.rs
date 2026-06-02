@@ -240,8 +240,47 @@ pub fn get_file_type(name: &str, kind: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{format_date, get_file_type, human_bytes};
+    use super::{format_date, get_file_type, human_bytes, FileListDelegate};
+    use gpui_component::IndexPath;
+    use nohrs_models::file_entry::FileEntryDto;
     use proptest::prelude::*;
+
+    fn entry(name: &str) -> FileEntryDto {
+        FileEntryDto {
+            name: name.into(),
+            path: format!("/{name}"),
+            kind: "file".into(),
+            size: 0,
+            modified: 0,
+        }
+    }
+
+    #[test]
+    fn delegate_starts_empty() {
+        let delegate = FileListDelegate::new();
+        assert!(delegate.items.is_empty());
+        assert!(delegate.get_selected().is_none());
+    }
+
+    #[test]
+    fn set_items_replaces_items_and_clears_selection() {
+        let mut delegate = FileListDelegate::new();
+        delegate.selected = Some(IndexPath::new(0));
+        delegate.set_items(vec![entry("a"), entry("b")]);
+        assert_eq!(delegate.items.len(), 2);
+        assert!(
+            delegate.get_selected().is_none(),
+            "set_items resets the selection"
+        );
+    }
+
+    #[test]
+    fn get_selected_resolves_the_selected_row() {
+        let mut delegate = FileListDelegate::new();
+        delegate.set_items(vec![entry("a"), entry("b")]);
+        delegate.selected = Some(IndexPath::new(1));
+        assert_eq!(delegate.get_selected().map(|e| e.name.as_str()), Some("b"));
+    }
 
     #[test]
     fn human_bytes_picks_the_expected_unit() {

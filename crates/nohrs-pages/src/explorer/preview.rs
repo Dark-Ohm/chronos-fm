@@ -246,3 +246,105 @@ impl ExplorerPage {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn detect_language_maps_known_extensions() {
+        for (path, expected) in [
+            ("a.rs", "rust"),
+            ("a.md", "markdown"),
+            ("a.json", "json"),
+            ("a.js", "javascript"),
+            ("a.ts", "typescript"),
+            ("a.html", "html"),
+            ("a.go", "go"),
+            ("a.zig", "zig"),
+            ("a.toml", "toml"),
+            ("a.yaml", "yaml"),
+            ("a.yml", "yaml"),
+            ("a.css", "css"),
+            ("a.c", "c"),
+            ("a.cpp", "cpp"),
+        ] {
+            assert_eq!(detect_language(path), expected, "for {path}");
+        }
+    }
+
+    #[test]
+    fn detect_language_is_case_insensitive_and_defaults_to_plain() {
+        assert_eq!(detect_language("MAIN.RS"), "rust");
+        assert_eq!(detect_language("notes.unknown"), "plain");
+        assert_eq!(detect_language("noext"), "plain");
+    }
+
+    #[test]
+    fn image_path_classification() {
+        for ext in ["png", "jpg", "jpeg", "gif", "bmp", "svg", "webp"] {
+            assert!(is_image_path(&format!("a.{ext}")), "{ext} is an image");
+        }
+        assert!(is_image_path("PHOTO.PNG"));
+        assert!(!is_image_path("a.txt"));
+    }
+
+    #[test]
+    fn binary_image_excludes_svg() {
+        assert!(is_binary_image_path("a.png"));
+        assert!(is_binary_image_path("a.gif"));
+        // SVG is text, so it is not treated as a binary image.
+        assert!(!is_binary_image_path("a.svg"));
+        assert!(!is_binary_image_path("a.txt"));
+    }
+
+    #[test]
+    fn read_preview_classifies_files() {
+        let dir = tempfile::tempdir().unwrap();
+
+        let text_path = dir.path().join("note.txt");
+        std::fs::write(&text_path, "hello\nworld").unwrap();
+        match read_preview(&text_path.to_string_lossy()) {
+            PreviewOutcome::Text(body) => assert_eq!(body, "hello\nworld"),
+            _ => panic!("expected Text"),
+        }
+
+        // Binary-image extension short-circuits to Image without decoding.
+        let png_path = dir.path().join("pic.png");
+        std::fs::write(&png_path, [0u8, 1, 2, 3]).unwrap();
+        assert!(matches!(
+            read_preview(&png_path.to_string_lossy()),
+            PreviewOutcome::Image
+        ));
+
+        // Non-UTF-8, non-image → Unsupported.
+        let bin_path = dir.path().join("blob.bin");
+        std::fs::write(&bin_path, [0xff, 0xfe, 0xfd]).unwrap();
+        assert!(matches!(
+            read_preview(&bin_path.to_string_lossy()),
+            PreviewOutcome::Unsupported
+        ));
+
+        // A directory and a missing path are both Unsupported.
+        assert!(matches!(
+            read_preview(&dir.path().to_string_lossy()),
+            PreviewOutcome::Unsupported
+        ));
+        assert!(matches!(
+            read_preview("/nonexistent/path/here"),
+            PreviewOutcome::Unsupported
+        ));
+    }
+
+    #[test]
+    fn line_start_offset_handles_lf_crlf_and_bounds() {
+        let lf = "a\nbb\nccc";
+        assert_eq!(line_start_offset(lf, 0), Some(0));
+        assert_eq!(line_start_offset(lf, 1), Some(2));
+        assert_eq!(line_start_offset(lf, 2), Some(5));
+        assert_eq!(line_start_offset(lf, 3), None);
+
+        let crlf = "a\r\nbb";
+        assert_eq!(line_start_offset(crlf, 1), Some(3));
+    }
+}

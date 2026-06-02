@@ -76,3 +76,57 @@ impl SyntaxService {
         result
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::SyntaxService;
+
+    #[test]
+    fn new_loads_default_syntaxes_and_themes() {
+        let svc = SyntaxService::new();
+        assert!(!svc.syntax_set.syntaxes().is_empty());
+        assert!(!svc.theme_set.themes.is_empty());
+    }
+
+    #[test]
+    fn highlight_of_empty_text_is_empty() {
+        let svc = SyntaxService::new();
+        assert!(svc.highlight("", Some("rs")).is_empty());
+    }
+
+    #[test]
+    fn highlight_is_deterministic_and_covers_every_byte() {
+        let svc = SyntaxService::new();
+        let text = "fn main() {}\n";
+        let first: Vec<_> = svc
+            .highlight(text, Some("rs"))
+            .into_iter()
+            .map(|(r, _)| r)
+            .collect();
+        let second: Vec<_> = svc
+            .highlight(text, Some("rs"))
+            .into_iter()
+            .map(|(r, _)| r)
+            .collect();
+        assert_eq!(first, second, "highlighting is deterministic");
+        assert!(!first.is_empty());
+
+        // Ranges are contiguous from 0 and span the whole input.
+        let mut expected = 0;
+        for range in &first {
+            assert_eq!(range.start, expected);
+            expected = range.end;
+        }
+        assert_eq!(expected, text.len());
+    }
+
+    #[test]
+    fn unknown_extension_falls_back_to_plain_text() {
+        let svc = SyntaxService::new();
+        let text = "just some text\n";
+        let ranges = svc.highlight(text, None);
+        assert!(!ranges.is_empty());
+        let covered: usize = ranges.iter().map(|(r, _)| r.end - r.start).sum();
+        assert_eq!(covered, text.len());
+    }
+}

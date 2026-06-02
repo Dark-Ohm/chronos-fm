@@ -69,6 +69,10 @@ pub fn config_file() -> PathBuf {
 mod tests {
     use super::*;
 
+    // `XDG_*` env tests mutate process-global state; serialize them so parallel
+    // test threads do not observe each other's vars.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     #[test]
     fn config_file_lives_under_config_home() {
         let file = config_file();
@@ -77,11 +81,44 @@ mod tests {
 
     #[test]
     fn absolute_xdg_var_is_honoured() {
-        // Guard against other tests mutating the same process env concurrently
-        // by setting and reading within the same call sequence.
+        let _guard = ENV_LOCK.lock().unwrap();
         std::env::set_var("XDG_CONFIG_HOME", "/tmp/xdg-test-abs");
         let dir = config_dir();
         std::env::remove_var("XDG_CONFIG_HOME");
         assert_eq!(dir, PathBuf::from("/tmp/xdg-test-abs/nohrs"));
+    }
+
+    #[test]
+    fn relative_xdg_var_is_ignored() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", "relative/path");
+        let home = config_home();
+        std::env::remove_var("XDG_CONFIG_HOME");
+        // A relative value is ignored per the XDG spec, so we fall back to a home
+        // (or cwd) based path, never the relative value itself.
+        assert!(!home.ends_with("relative/path"));
+    }
+
+    #[test]
+    fn each_home_honours_its_own_xdg_var() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("XDG_CONFIG_HOME", "/tmp/cfg");
+        std::env::set_var("XDG_DATA_HOME", "/tmp/data");
+        std::env::set_var("XDG_CACHE_HOME", "/tmp/cache");
+        let (config, data, cache) = (config_home(), data_home(), cache_home());
+        for key in ["XDG_CONFIG_HOME", "XDG_DATA_HOME", "XDG_CACHE_HOME"] {
+            std::env::remove_var(key);
+        }
+        assert_eq!(config, PathBuf::from("/tmp/cfg"));
+        assert_eq!(data, PathBuf::from("/tmp/data"));
+        assert_eq!(cache, PathBuf::from("/tmp/cache"));
+    }
+
+    #[test]
+    fn app_dirs_append_app_name_and_config_file_is_under_config_dir() {
+        assert!(config_dir().ends_with("nohrs"));
+        assert!(data_dir().ends_with("nohrs"));
+        assert!(cache_dir().ends_with("nohrs"));
+        assert_eq!(config_file(), config_dir().join("config.toml"));
     }
 }

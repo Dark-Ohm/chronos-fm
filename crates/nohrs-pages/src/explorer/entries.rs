@@ -87,4 +87,55 @@ mod tests {
         assert_eq!(get_extension("Main.RS", "file"), "rs");
         assert_eq!(get_extension("README", "file"), "zzz_noext");
     }
+
+    #[test]
+    fn get_extension_edge_cases() {
+        // Multi-dot names use the final component only.
+        assert_eq!(get_extension("archive.tar.gz", "file"), "gz");
+        assert_eq!(get_extension("", "file"), "zzz_noext");
+        // Unknown kinds fall through to the kind string itself.
+        assert_eq!(get_extension("link", "symlink"), "symlink");
+    }
+
+    #[test]
+    fn sort_by_size_orders_within_groups_and_keeps_dirs_first() {
+        let mut entries = vec![
+            entry("big.bin", "file", 300),
+            entry("small.bin", "file", 100),
+            entry("zzz_dir", "dir", 0),
+            entry("mid.bin", "file", 200),
+        ];
+        sort_entries(&mut entries, SortKey::Size, true);
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert_eq!(names, ["zzz_dir", "small.bin", "mid.bin", "big.bin"]);
+
+        sort_entries(&mut entries, SortKey::Size, false);
+        let names: Vec<_> = entries.iter().map(|e| e.name.as_str()).collect();
+        // Directories still lead; files reverse to largest-first.
+        assert_eq!(names, ["zzz_dir", "big.bin", "mid.bin", "small.bin"]);
+    }
+
+    #[test]
+    fn sort_by_modified_orders_by_timestamp() {
+        let mut entries = vec![
+            FileEntryDto {
+                name: "old".into(),
+                path: "/old".into(),
+                kind: "file".into(),
+                size: 0,
+                modified: 100,
+            },
+            FileEntryDto {
+                name: "new".into(),
+                path: "/new".into(),
+                kind: "file".into(),
+                size: 0,
+                modified: 900,
+            },
+        ];
+        sort_entries(&mut entries, SortKey::Modified, true);
+        assert_eq!(entries[0].name, "old");
+        sort_entries(&mut entries, SortKey::Modified, false);
+        assert_eq!(entries[0].name, "new");
+    }
 }

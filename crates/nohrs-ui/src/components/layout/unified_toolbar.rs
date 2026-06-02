@@ -241,3 +241,35 @@ impl Action for AccountMenuAction {
         Ok(Box::new(Self::new(command)))
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AccountMenuCommand;
+    use serde_json::json;
+
+    #[test]
+    fn from_str_maps_known_commands_and_rejects_unknown() {
+        assert_eq!(
+            AccountMenuCommand::from_str("settings"),
+            Some(AccountMenuCommand::Settings)
+        );
+        assert_eq!(
+            AccountMenuCommand::from_str("sign-out"),
+            Some(AccountMenuCommand::SignOut)
+        );
+        assert_eq!(AccountMenuCommand::from_str("nope"), None);
+    }
+
+    #[test]
+    fn from_value_accepts_string_and_command_object() {
+        assert_eq!(
+            AccountMenuCommand::from_value(&json!("themes")),
+            Some(AccountMenuCommand::Themes)
+        );
+        assert_eq!(
+            AccountMenuCommand::from_value(&json!({ "command": "keymap" })),
+            Some(AccountMenuCommand::Keymap)
+        );
+        assert_eq!(AccountMenuCommand::from_value(&json!(42)), None);
+    }
+}

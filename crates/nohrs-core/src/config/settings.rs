@@ -675,4 +675,130 @@ mod tests {
         let parsed = Config::from_toml_str(toml);
         insta::assert_debug_snapshot!(parsed);
     }
+
+    #[test]
+    fn theme_mode_parse_accepts_only_known_spellings() {
+        assert_eq!(ThemeMode::parse("system"), Some(ThemeMode::System));
+        assert_eq!(ThemeMode::parse("light"), Some(ThemeMode::Light));
+        assert_eq!(ThemeMode::parse("dark"), Some(ThemeMode::Dark));
+        assert_eq!(ThemeMode::parse("Dark"), None);
+        assert_eq!(ThemeMode::parse(""), None);
+        assert_eq!(ThemeMode::parse("neon"), None);
+    }
+
+    #[test]
+    fn sort_order_parse_accepts_only_known_spellings() {
+        assert_eq!(SortOrder::parse("name"), Some(SortOrder::Name));
+        assert_eq!(SortOrder::parse("modified"), Some(SortOrder::Modified));
+        assert_eq!(SortOrder::parse("size"), Some(SortOrder::Size));
+        assert_eq!(SortOrder::parse("kind"), Some(SortOrder::Kind));
+        assert_eq!(SortOrder::parse("Size"), None);
+        assert_eq!(SortOrder::parse("created"), None);
+    }
+
+    #[test]
+    fn empty_config_is_defaults_without_diagnostics() {
+        let (config, diagnostics) = Config::from_toml_str("");
+        assert_eq!(config, Config::default());
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    }
+
+    #[test]
+    fn only_schema_version_loads_clean() {
+        let (config, diagnostics) = Config::from_toml_str("schema_version = 1");
+        assert_eq!(config, Config::default());
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+    }
+
+    #[test]
+    fn non_table_sections_warn_and_keep_defaults() {
+        let (config, diagnostics) = Config::from_toml_str("theme = \"x\"\nui = 1");
+        assert_eq!(config, Config::default());
+        let warnings: Vec<_> = diagnostics.iter().map(|d| d.message.as_str()).collect();
+        assert!(warnings.iter().any(|m| m.contains("[theme]")));
+        assert!(warnings.iter().any(|m| m.contains("[ui]")));
+    }
+
+    #[test]
+    fn empty_accent_warns_and_keeps_default() {
+        let toml = "[theme]\naccent = \"\"";
+        let (config, diagnostics) = Config::from_toml_str(toml);
+        assert_eq!(config.theme.accent, Config::default().theme.accent);
+        assert!(diagnostics.iter().any(|d| d.message.contains("accent")));
+    }
+
+    #[test]
+    fn apply_override_sets_every_field() {
+        let mut config = Config::default();
+        config.apply_override(&ConfigOverride {
+            theme_mode: Some(ThemeMode::Dark),
+            theme_accent: Some("crimson".into()),
+            ui_default_sort: Some(SortOrder::Size),
+            ui_show_hidden: Some(true),
+            ui_icon_pack: Some("nerd".into()),
+        });
+        assert_eq!(config.theme.mode, ThemeMode::Dark);
+        assert_eq!(config.theme.accent, "crimson");
+        assert_eq!(config.ui.default_sort, SortOrder::Size);
+        assert!(config.ui.show_hidden);
+        assert_eq!(config.ui.icon_pack, "nerd");
+    }
+
+    #[test]
+    fn empty_override_is_a_no_op() {
+        let mut config = Config::default();
+        let before = config.clone();
+        config.apply_override(&ConfigOverride::default());
+        assert_eq!(config, before);
+    }
+
+    #[test]
+    fn to_json_round_trips_to_equal_config() {
+        let config = Config::default();
+        let json = config.to_json().unwrap();
+        assert!(json.contains("schema_version"));
+        let parsed: Config = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed, config);
+    }
+
+    // `NOHRS_*` env tests mutate process-global state; serialize them so parallel
+    // test threads do not observe each other's vars.
+    static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    #[test]
+    fn from_env_reads_valid_vars() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("NOHRS_THEME", "dark");
+        std::env::set_var("NOHRS_ACCENT", "violet");
+        std::env::set_var("NOHRS_DEFAULT_SORT", "size");
+        std::env::set_var("NOHRS_SHOW_HIDDEN", "on");
+        std::env::set_var("NOHRS_ICON_PACK", "nerd");
+        let over = ConfigOverride::from_env();
+        for key in [
+            "NOHRS_THEME",
+            "NOHRS_ACCENT",
+            "NOHRS_DEFAULT_SORT",
+            "NOHRS_SHOW_HIDDEN",
+            "NOHRS_ICON_PACK",
+        ] {
+            std::env::remove_var(key);
+        }
+        assert_eq!(over.theme_mode, Some(ThemeMode::Dark));
+        assert_eq!(over.theme_accent.as_deref(), Some("violet"));
+        assert_eq!(over.ui_default_sort, Some(SortOrder::Size));
+        assert_eq!(over.ui_show_hidden, Some(true));
+        assert_eq!(over.ui_icon_pack.as_deref(), Some("nerd"));
+    }
+
+    #[test]
+    fn from_env_skips_invalid_values() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        std::env::set_var("NOHRS_THEME", "neon");
+        std::env::set_var("NOHRS_SHOW_HIDDEN", "maybe");
+        let over = ConfigOverride::from_env();
+        std::env::remove_var("NOHRS_THEME");
+        std::env::remove_var("NOHRS_SHOW_HIDDEN");
+        assert_eq!(over.theme_mode, None);
+        assert_eq!(over.ui_show_hidden, None);
+    }
 }
