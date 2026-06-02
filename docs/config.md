@@ -12,12 +12,13 @@
 | データ種別 | 場所 |
 |-----------|------|
 | **config** | `$XDG_CONFIG_HOME/nohrs/config.toml` (Linux/macOS: `~/.config/nohrs/config.toml`) |
-| **SQLite DB** | `$XDG_DATA_HOME/nohrs/db.sqlite` |
+| **SQLite DB** (メタデータ・履歴) | `$XDG_DATA_HOME/nohrs/db.sqlite` |
+| **redb (ホスト KV, P2)** | `$XDG_DATA_HOME/nohrs/state.redb` |
 | **Tantivy index** | `$XDG_DATA_HOME/nohrs/index/` |
-| **redb (plugin KV)** | `$XDG_DATA_HOME/nohrs/plugin-kv.redb` |
+| **redb (plugin KV, P4)** | `$XDG_DATA_HOME/nohrs/plugin-kv.redb` |
 | **ログ / キャッシュ** | `$XDG_CACHE_HOME/nohrs/` |
 | **plugin インストール先** | `$XDG_DATA_HOME/nohrs/plugins/<plugin-id>/` |
-| **window position など高頻度更新** | SQLite `key_value` テーブル (config.toml ではない) |
+| **window position・タブ/セッション復元など高頻度更新** | redb `state.redb` (config.toml ではない、詳細は [`docs/persistence.md`](./persistence.md)) |
 
 XDG 環境変数 `$XDG_CONFIG_HOME` / `$XDG_DATA_HOME` / `$XDG_CACHE_HOME` を直接解決し、未設定時は `~/.config` / `~/.local/share` / `~/.cache` にフォールバックして上記を組み立てる。`dirs::config_dir()` / `data_dir()` / `cache_dir()` は **使わない**: macOS では `~/Library/Application Support` 等の OS ネイティブパスを返してしまい、本プロジェクトが全プラットフォームで意図する XDG スタイルの dotfile パス (`~/.config` など) と矛盾するため。
 
@@ -62,6 +63,14 @@ backend = "auto"  # "sqlite-fts" | "tantivy" | "ripgrep" | "auto"
 [launcher]
 hotkey = "Cmd+Shift+Space"
 position_remember = true
+
+[diagnostics.store]
+# パフォーマンス解析用のストア操作ログ。デフォルト全 off (本番では無音)。
+# 出力は tracing 経由 (target = "nohrs_store::sql" / "nohrs_store::redb")、RUST_LOG で絞り込み可。
+# 詳細は docs/persistence.md §5。
+log_all_queries = false   # 全 SQL クエリを debug で記録 (verbose)
+slow_query_ms   = 0       # >0 のとき、この閾値(ms)超過の SQL クエリを warn で記録 (0 = 無効)
+log_redb_ops    = false   # redb の get/put/delete/batch 操作と所要時間を記録
 ```
 
 ---
@@ -119,6 +128,7 @@ config.toml の冒頭に:
 | `ui.default_sort` | ✅ Yes | **P1** | 開いているビューに伝播 |
 | `ui.show_hidden` | ✅ Yes | **P1** | 開いているビューに伝播 |
 | `ui.icon_pack` | ✅ Yes | **P1** | アイコンキャッシュをクリア |
+| `diagnostics.store.*` | ❌ No (再起動) | P3 で hot reload に格上げ検討 | ストア接続 open 時に profile フックの登録可否を決めるため (off 時はフック未登録でオーバーヘッド 0) |
 | `keybindings.*` | ❌ No (再起動) | P3 で hot reload に格上げ検討 | キーマップは入力ハンドラに焼き込まれているため |
 | `plugins.enabled` | ❌ No (再起動) | P5 で動的 enable/disable に格上げ検討 | wasm host のライフサイクル安定化が前提 |
 | `schema_version` | ❌ No (再起動、マイグレーション処理走る) | 永続 | 変更は版アップに伴う |

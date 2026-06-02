@@ -194,7 +194,7 @@ manifest が要求してもブロックされる操作:
 | **process: shell injection** | `sh`, `bash`, `zsh`, `cmd.exe`, `powershell` をコマンド名で要求 | 引数フィルタが効かなくなる |
 | **process: 引数の shell expansion** | `process.spawn` は **必ず list、shell なし** | `sh -c` 直渡し禁止、host 側で reject |
 | **fs.write: システムパス** | `/etc/`, `/usr/`, `/bin/`, `/sbin/`, `~/Library/Preferences/`, `~/Library/Application Support/` (nohrs 自身を除く) | manifest で要求しても install 時に hard reject |
-| **fs.write: nohrs データ** | `$XDG_DATA_HOME/nohrs/db.sqlite`, `$XDG_DATA_HOME/nohrs/plugin-kv.redb` | 他 plugin のデータや host state の破壊を防ぐ |
+| **fs.write: nohrs データ** | `$XDG_DATA_HOME/nohrs/db.sqlite`, `$XDG_DATA_HOME/nohrs/state.redb`, `$XDG_DATA_HOME/nohrs/plugin-kv.redb` | 他 plugin のデータや host state の破壊を防ぐ |
 | **network: localhost** | `localhost`, `127.0.0.1`, `0.0.0.0`, `::1` | manifest で許可しても reject (内部サービスへの攻撃を防ぐ) |
 | **network: link-local / private IP** | `169.254.0.0/16`, `192.168.0.0/16`, `10.0.0.0/8`, `172.16.0.0/12` | SSRF 防御 |
 

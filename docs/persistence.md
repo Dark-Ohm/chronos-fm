@@ -1,6 +1,6 @@
 # Persistence — SQLite + redb
 
-> Status: Draft (P2 で実装、P4 で plugin KV 拡張)
+> Status: Draft (P2 で SQLite + redb ホスト KV を実装、P4 で plugin KV 拡張)
 > Related: [`ROADMAP.md`](./ROADMAP.md), [`docs/async-runtime.md`](./async-runtime.md), [`docs/plugin-api.md`](./plugin-api.md)
 
 本書はメタデータ・履歴・プラグイン状態の永続化レイヤを定めます。
@@ -9,16 +9,29 @@
 
 ## 1. 全体方針
 
-| データ種別 | ストア | 理由 |
-|-----------|--------|------|
-| **ファイルメタデータ・履歴・KV (ホスト)** | **SQLite (rusqlite)** | SQL 表現力 (差分 query / 結合 query) が必要 |
-| **プラグイン専用 KV** | **redb** | 高速 R/W、plugin_id でテーブル隔離、host data と分離 |
-| **設定ファイル** | TOML (`config.toml`) | 詳細は [`docs/config.md`](./config.md) |
+| データ種別 | ストア | ファイル | 理由 |
+|-----------|--------|---------|------|
+| **ファイルメタデータ・履歴** | **SQLite (rusqlite)** | `db.sqlite` | SQL 表現力 (差分 query / 結合 query / 順序付き query) が必要 |
+| **ホスト KV** (window 位置・タブ/セッション復元・動的設定) | **redb** | `state.redb` | 純粋な key→blob の高頻度・小サイズ書き込み。SQL 不要、メタデータ書き込みと隔離 |
+| **プラグイン専用 KV** (P4) | **redb** | `plugin-kv.redb` | 高速 R/W、plugin_id でテーブル隔離、host data と分離 |
+| **設定ファイル** | TOML (`config.toml`) | — | 詳細は [`docs/config.md`](./config.md) |
 
 理由:
-- ホストデータは SQL 表現力 (検索メタデータの差分検出など) が必要
-- プラグイン KV はシンプル かつ高速性が要求 (Raycast / VSCode 流の plugin state)
-- 2 つの DB を持つが、それぞれ単一ファイルで backup 単純、`MetadataStore` / `KvStore` の trait は別物なので混乱無し
+- 検索メタデータ (差分検出など) と履歴 (kind+時刻順) は SQL 表現力が必要 → SQLite
+- ホスト KV (タブ復元・window 位置等) は純 KV で SQL 不要。高頻度・小サイズの書き込みを、P3 のメタデータインデクサがハンマーする SQLite 単一ライター WAL から隔離するため redb に置く
+- プラグイン KV (P4) はシンプルかつ高速性が要求され (Raycast / VSCode 流の plugin state)、host KV と同じ redb 実装 (`RedbKvStore`) を再利用する
+- 複数の DB を持つが、それぞれ単一ファイルで backup 単純、`MetadataStore` / `KvStore` の trait は別物なので混乱無し
+
+### 1.1 SQLite と redb の使い分け基準
+
+> **判断基準: 「キー完全一致以外で問い合わせる必要があるか？」**
+
+| 答え | 例 | ストア |
+|------|----|--------|
+| **Yes** — 範囲 / 差分 / 順序 / 二次インデックスでクエリする | `list_children` / `list_changed_since` / `find_by_inode` / kind+時刻順の履歴 | **SQLite** |
+| **No** — 純粋な key→blob の get / put / prefix だけ | タブ/セッション復元、window 位置、ホスト動的 KV、plugin KV | **redb** |
+
+新しい永続データを追加するときは必ずこの基準で配置先を決める。判断に迷う「とりあえず DB」を避け、SQL 表現力を実際に使うものだけを SQLite に集約する。
 
 ---
 
@@ -54,12 +67,7 @@ CREATE TABLE files (
 CREATE INDEX idx_files_parent ON files(parent_path);
 CREATE INDEX idx_files_inode  ON files(inode);
 
--- ホスト KV (動的設定、launcher window position 等)
-CREATE TABLE key_value (
-    key        TEXT PRIMARY KEY,
-    value      BLOB NOT NULL,    -- JSON or MessagePack
-    updated_at INTEGER NOT NULL
-);
+-- (ホスト KV は redb `state.redb` に置く。§3 参照。SQLite には持たない)
 
 -- 履歴 (recent files, search history, command usage)
 CREATE TABLE history (
@@ -128,7 +136,7 @@ fn migrate(conn: &Connection) -> Result<()> {
 
 ---
 
-## 3. redb (plugin KV)
+## 3. redb (ホスト KV + plugin KV)
 
 ### 設定
 
@@ -137,12 +145,32 @@ fn migrate(conn: &Connection) -> Result<()> {
 redb = "2"
 ```
 
-### ファイル配置
-
-- `$XDG_DATA_HOME/nohrs/plugin-kv.redb` (単一ファイル)
 - ACID + MVCC、SQLite と同じく WAL 風 crash recovery
+- ホスト KV (P2) と plugin KV (P4) は **別ファイル** に分ける
 
-### テーブル設計
+| ファイル | 用途 | フェーズ |
+|---------|------|---------|
+| `$XDG_DATA_HOME/nohrs/state.redb` | ホスト KV (window 位置・タブ/セッション復元・動的設定) | **P2** |
+| `$XDG_DATA_HOME/nohrs/plugin-kv.redb` | プラグイン専用 KV / cache | P4 |
+
+### ホスト KV テーブル設計 (P2)
+
+```rust
+// crates/nohrs-store/src/nohrs_store.rs (擬似コード)
+use redb::TableDefinition;
+
+// 単一テーブル。key は "window.position" / "session.tabs" 等の名前空間付き文字列。
+const HOST_KV: TableDefinition<'static, &str, &[u8]> = TableDefinition::new("kv");
+```
+
+- `KvStore::get` / `put` / `delete` は `HOST_KV` への単純な点アクセス
+- `KvStore::list_prefix(prefix)` は `range(prefix..)` を走査し prefix 不一致で打ち切る
+- `KvStore::batch(ops)` は 1 つの write transaction にまとめて atomic commit
+- value は JSON or MessagePack で serialize した blob (タブ群のスナップショット等)
+
+### プラグイン KV テーブル設計 (P4)
+
+`plugin-kv.redb` に plugin_id ごとの隔離テーブルを置く (本 Issue #63 では対象外、P4 で実装)。
 
 ```rust
 // 擬似コード
@@ -232,9 +260,13 @@ pub trait PluginStore: Send + Sync {
 pub struct SqliteStore { conn: Arc<Mutex<Connection>> }
 impl MetadataQuery  for SqliteStore { ... }
 impl MetadataStore  for SqliteStore { ... }
-impl KvStore        for SqliteStore { ... }   // ホスト KV
 impl HistoryStore   for SqliteStore { ... }
 
+// ホスト KV は redb backend (P2)。`state.redb` の単一 "kv" テーブルを使う。
+pub struct RedbKvStore { db: Arc<redb::Database> }
+impl KvStore  for RedbKvStore { ... }
+
+// (P4) プラグイン専用 KV / cache。`plugin-kv.redb` を plugin_id で隔離。
 pub struct RedbPluginKv { db: Arc<redb::Database>, plugin_id: String }
 impl KvStore  for RedbPluginKv { ... }
 impl Cache    for RedbPluginCache { ... }
@@ -247,7 +279,29 @@ impl Cache    for RedbPluginCache { ... }
 
 ---
 
-## 5. プラグインへの公開範囲
+## 5. 診断 / パフォーマンスログ
+
+ストア操作の所要時間を計測してパフォーマンス解析に使うためのログ機構。デフォルトは全 off (本番は無音) で、`config.toml` の `[diagnostics.store]` で有効化する (スキーマは [`docs/config.md`](./config.md) §2)。出力は既存の `tracing` + `EnvFilter` (`RUST_LOG`) 経路 ([`crates/nohrs-core/src/telemetry/logging.rs`](../crates/nohrs-core/src/telemetry/logging.rs)) にそのまま乗る。
+
+### SQLite
+
+rusqlite の組み込みフックを使う:
+
+- `Connection::profile(Some(callback))` — 各ステートメント完了後に実行 SQL と所要時間を受け取る。`slow_query_ms` 超過なら `warn`、`log_all_queries` 有効時は全件を `debug` で `tracing` へ emit (target = `nohrs_store::sql`)。
+- `Connection::trace(Some(callback))` — 必要なら展開後 SQL を `trace` レベルで出力 (より詳細)。
+
+### redb
+
+redb には同等の組み込みフックが無いため、`RedbKvStore` の各操作 (`get` / `put` / `delete` / `batch`) を計測ラッパで囲み、`log_redb_ops` 有効時に操作名と所要時間を `tracing` へ emit (target = `nohrs_store::redb`)。
+
+### 方針
+
+- フックの登録はストア接続の open 時に config を見て決定する (config off ならフック自体を登録せず、無効時のオーバーヘッドをゼロにする)。
+- 閾値・フラグの解釈は `config.toml` のレニエントなバリデーション方針 (config.md §6) に従う。
+
+---
+
+## 6. プラグインへの公開範囲
 
 | 機能 | コミュニティ plugin の権限 |
 |------|--------------------------|
@@ -262,8 +316,11 @@ impl Cache    for RedbPluginCache { ... }
 
 ---
 
-## 6. バックアップ・移行
+## 7. バックアップ・移行
 
-- SQLite は単一ファイル → `cp ~/.local/share/nohrs/db.sqlite ./backup-$(date +%Y%m%d).sqlite`
-- redb も単一ファイル
+- いずれも単一ファイル。P2 では `db.sqlite` (メタデータ・履歴) と `state.redb` (ホスト KV) の 2 ファイル、P4 で `plugin-kv.redb` が加わる
+  ```sh
+  cp ~/.local/share/nohrs/db.sqlite   ./backup-$(date +%Y%m%d).sqlite
+  cp ~/.local/share/nohrs/state.redb  ./backup-$(date +%Y%m%d).redb
+  ```
 - ユーザー向けの export/import 機能は P5 以降で検討

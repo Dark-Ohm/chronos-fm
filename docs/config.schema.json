@@ -1,5 +1,42 @@
 {
   "$defs": {
+    "Diagnostics": {
+      "description": "Diagnostics / performance-logging settings (see `docs/persistence.md` §5).",
+      "properties": {
+        "store": {
+          "$ref": "#/$defs/DiagnosticsStore",
+          "description": "Performance logging for the persistence layer (`nohrs-store`)."
+        }
+      },
+      "required": [
+        "store"
+      ],
+      "type": "object"
+    },
+    "DiagnosticsStore": {
+      "description": "Performance logging for the SQLite / redb store. All off by default, so a\ndefault config adds no overhead. Output goes through `tracing` (targets\n`nohrs_store::sql` / `nohrs_store::redb`) and is filterable with `RUST_LOG`.",
+      "properties": {
+        "log_all_queries": {
+          "description": "Log every SQL query at `debug` (verbose).",
+          "type": "boolean"
+        },
+        "log_redb_ops": {
+          "description": "Log redb `get`/`put`/`delete`/`batch` operations and their durations.",
+          "type": "boolean"
+        },
+        "slow_query_ms": {
+          "description": "Log SQL queries slower than this many milliseconds at `warn`. Zero (the\ndefault) disables slow-query logging.",
+          "minimum": 0,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "log_all_queries",
+        "slow_query_ms",
+        "log_redb_ops"
+      ],
+      "type": "object"
+    },
     "SortOrder": {
       "description": "The column a directory listing is ordered by.",
       "oneOf": [
@@ -88,8 +125,12 @@
     }
   },
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "description": "The fully merged, validated configuration.\n\nOnly the P1 surface (`theme` / `ui`) is modelled here. `[keybindings]` and\n`[plugins]` are recognised as reserved sections (see [`is_reserved_section`])\nbut intentionally not deserialized yet, so their future shapes can be added\nwithout breaking older files.",
+  "description": "The fully merged, validated configuration.\n\nModels the P1 surface (`theme` / `ui`) plus the P2 `[diagnostics]` section.\n`[keybindings]` and `[plugins]` are recognised as reserved sections (see\n[`is_reserved_section`]) but intentionally not deserialized yet, so their\nfuture shapes can be added without breaking older files.",
   "properties": {
+    "diagnostics": {
+      "$ref": "#/$defs/Diagnostics",
+      "description": "Diagnostics / performance-logging settings."
+    },
     "schema_version": {
       "description": "On-disk schema version. Must be [`CURRENT_SCHEMA_VERSION`] for this build.",
       "minimum": 0,
@@ -107,7 +148,8 @@
   "required": [
     "schema_version",
     "theme",
-    "ui"
+    "ui",
+    "diagnostics"
   ],
   "title": "Config",
   "type": "object"
