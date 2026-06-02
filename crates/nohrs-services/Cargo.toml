@@ -25,7 +25,8 @@ anyhow.workspace  = true
 serde.workspace   = true
 tracing.workspace = true
 time.workspace    = true
-tokio = { version = "1", features = ["macros", "rt-multi-thread", "sync", "time"] }
+async-channel = "2"
+postage = "0.5"
 tantivy = "0.26"
 ignore = "0.4"
 grep = "0.4"

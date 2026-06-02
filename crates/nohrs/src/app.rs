@@ -41,22 +41,9 @@ impl NohrsApp {
         let config_error = config::report_diagnostics(&diagnostics);
 
         // GPUI drives the app (replacing `#[tokio::main]`; ADR 0004, async-runtime.md
-        // §7 P1). A small residual tokio runtime is kept and entered on this thread
-        // only so the watcher task (`tokio::spawn`) and channels (`tokio::sync::*`)
-        // inside `SearchService::new` still resolve a runtime. P2 removes those last
-        // tokio users and this runtime with them.
-        let runtime = match tokio::runtime::Builder::new_multi_thread()
-            .enable_all()
-            .build()
-        {
-            Ok(runtime) => runtime,
-            Err(error) => {
-                tracing::error!("failed to start async runtime: {error}");
-                return;
-            }
-        };
-        let _runtime_guard = runtime.enter();
-
+        // §7). The search service is now tokio-free — its file watcher and progress
+        // channels run on std threads and runtime-agnostic channels — so no async
+        // runtime needs to be entered here.
         Application::new().with_assets(Assets).run(move |app: &mut App| {
             gpui_component::init(app);
             let resizable = ResizableState::new(app);

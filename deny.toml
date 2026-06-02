@@ -47,14 +47,16 @@ deny = [
   # rustls unification — no OpenSSL in the tree.
   { name = "openssl-sys" },
   # NOTE: testing.md §3 also bans tokio outside the WASI plugin-execution layer
-  # (nohrs-plugin-host, P4+). It cannot be enforced yet — two independent sources
-  # put tokio in the tree today:
-  #   1. nohrs-services depends on it directly (Cargo.toml), pending the app-core
-  #      tokio removal in ADR 0004 (P2).
-  #   2. gpui pulls a full async reqwest stack (zed-reqwest → hyper → h2 →
-  #      tokio-util → tokio) whose chain the `wrappers` allowlist cannot express.
-  # A hard `{ name = "tokio" }` deny would therefore fail CI immediately. Add it
-  # once (1) lands and (2) is shown to be expressible via `wrappers`.
+  # (nohrs-plugin-host, P4+). The app-core tokio removal (ADR 0004 / #64, P2) is
+  # done: no first-party (nohrs-*) crate depends on tokio directly any more.
+  # tokio is still present transitively, however, because gpui pulls a full async
+  # reqwest stack as a non-optional dependency
+  # (gpui → gpui_http_client → zed-reqwest → hyper → h2 → tokio) — `cargo tree -i
+  # tokio` roots only in that chain, never in a first-party crate. A hard
+  # `{ name = "tokio" }` deny therefore still cannot be enforced: tokio's direct
+  # parents in that chain (h2, hyper, hyper-util, tokio-rustls, tokio-socks, …)
+  # cannot be cleanly expressed via the `wrappers` allowlist. Add the hard deny
+  # once gpui's HTTP stack can be feature-gated off (or a tokio-free gpui ships).
 ]
 
 [sources]
