@@ -122,7 +122,28 @@ manifest に未知 key があれば:
 
 ---
 
-## 3. サンドボックスの 2 層構造
+## 3. サンドボックスの多層構造 (層 0–層 2)
+
+層 1 / 層 2 は **機密性・完全性** (範囲外 read/write・exfiltration の阻止) を守る。これとは別軸で、**可用性 (DoS)** を層 0 で守る。WASM sandbox はメモリを分離するが CPU・メモリ量・実行時間は制限しないため、暴走プラグインがリソースを枯渇させうる。
+
+### 3.0 層 0: 実行リソース制限と可用性隔離
+
+| リソース | 制限手段 |
+|---------|---------|
+| CPU (無限ループ) | wasmtime の **epoch interruption** (または fuel) で host call にデッドラインを設定し、超過で trap |
+| linear memory 量 | `StoreLimitsBuilder` でプラグインごとに上限 (例: 256 MiB) を設定 |
+| host call の壁時計時間 | host 側で timeout、超過で該当 instance を停止 → [`plugin-overview.md`](./plugin-overview.md) §2 の trap → 24h auto-disable に接続 |
+| `spawn_blocking` プール枯渇 | プラグイン実行を専用 tokio runtime に閉じる (下記) |
+
+#### 可用性隔離としての専用 tokio runtime
+
+wasmtime-wasi は tokio 依存 ([ADR 0004](./adr/0004-remove-tokio.md) §6)。これを **プロセス共有のグローバル runtime にせず、`nohrs-plugin-host` 内の専用 `current_thread` runtime に閉じる** のは依存衛生だけが理由ではなく、**可用性の隔離** でもある:
+
+- **ブラスト半径**: tokio スケジューラは協調的で、yield しないタスクはワーカースレッドを占有する。グローバル runtime だと暴走プラグインが他プラグインや host 側タスクを巻き添えに stall させる (noisy neighbor)。専用 runtime に閉じれば、暴走はその runtime を駆動する単一の `cx.background_spawn` ワーカーに封じ込まる。
+- **強制停止**: 専用 `Runtime` を drop すればそのプラグインのタスク群をまとめて破棄でき、「1 プラグインだけ落とす」が成立する。グローバル runtime では特定プラグインのタスクだけを安全に剥がせない。
+- **`block_on` ネスト事故の回避**: 公開 `Plugin` trait は内部で `rt.block_on(...)` する ([async-runtime.md](../async-runtime.md) §6)。専用 runtime を別スレッドで駆動する構造は「runtime 内 runtime」panic (`Cannot start a runtime from within a runtime`) を構造的に防ぐ。
+
+> 注意: runtime の共有は **機密性・完全性の脆弱性にはならない**。メモリ隔離 (層 1) と capability (層 2) は executor と直交し、「同じ runtime に乗る＝host メモリや他プラグインを覗ける」は成立しない。runtime 隔離が守るのは **可用性とライフサイクル制御** である。
 
 ### 3.1 層 1: WASM sandbox (wasmtime)
 
@@ -146,6 +167,8 @@ fn http_fetch(ctx: &PluginContext, req: HttpRequest) -> Result<HttpResponse> {
 ```
 
 `check_network` は manifest の `network` ホワイトリストと突き合わせ、不一致なら `NotPermitted`。
+
+`check_read_path` / `check_write_path` は突き合わせ前に **path を canonicalize し symlink を解決** してから `read_paths` / `write_paths` の glob とマッチする。`..` や symlink で許可範囲外へ抜ける path traversal を防ぐため、文字列のままマッチしてはならない。
 
 ### 3.3 Defense in depth
 
