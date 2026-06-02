@@ -241,9 +241,12 @@ pub fn get_file_type(name: &str, kind: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::{format_date, get_file_type, human_bytes, FileListDelegate};
+    use gpui::TestAppContext;
+    use gpui_component::list::{List, ListDelegate};
     use gpui_component::IndexPath;
     use nohrs_models::file_entry::FileEntryDto;
     use proptest::prelude::*;
+    use std::sync::{Arc, Mutex};
 
     fn entry(name: &str) -> FileEntryDto {
         FileEntryDto {
@@ -252,6 +255,13 @@ mod tests {
             kind: "file".into(),
             size: 0,
             modified: 0,
+        }
+    }
+
+    fn dir_entry(name: &str) -> FileEntryDto {
+        FileEntryDto {
+            kind: "dir".into(),
+            ..entry(name)
         }
     }
 
@@ -312,5 +322,64 @@ mod tests {
             let rendered = human_bytes(size);
             prop_assert!(!rendered.is_empty());
         }
+    }
+
+    // GPUI tests: drive the delegate through a real `List<FileListDelegate>`
+    // entity in a test window so the `ListDelegate` impl (including the
+    // `render_item` element tree painted for the visible rows) actually runs.
+
+    #[gpui::test]
+    async fn list_renders_rows_and_tracks_selection(cx: &mut TestAppContext) {
+        // gpui-component installs the `Theme` global the list/icon widgets read
+        // while painting; without it the row icons would panic during the draw.
+        cx.update(gpui_component::init);
+        let (list, cx) = cx.add_window_view(|window, cx| {
+            let mut delegate = FileListDelegate::new();
+            // A file, a directory, and an extensioned file exercise every arm of
+            // `render_item` (icon choice, size column, type column).
+            delegate.set_items(vec![entry("a.txt"), dir_entry("src"), entry("b.png")]);
+            List::new(delegate, window, cx)
+        });
+        // The maximized test window paints the rows on open.
+        cx.run_until_parked();
+
+        list.read_with(cx, |list, cx| {
+            assert_eq!(list.delegate().items_count(0, cx), 3);
+            assert!(list.selected_index().is_none());
+        });
+
+        // Selecting routes through the delegate and is resolvable afterwards.
+        list.update_in(cx, |list, window, cx| {
+            list.set_selected_index(Some(IndexPath::new(1)), window, cx);
+        });
+        list.read_with(cx, |list, _cx| {
+            assert_eq!(
+                list.delegate().get_selected().map(|e| e.name.as_str()),
+                Some("src")
+            );
+        });
+    }
+
+    #[gpui::test]
+    async fn confirm_invokes_callback_for_selected_item(cx: &mut TestAppContext) {
+        cx.update(gpui_component::init);
+        // `ConfirmCallback` is `Arc<dyn Fn + 'static>`; an `Arc<Mutex<_>>` sink
+        // keeps the closure `Send + Sync` (clippy::arc_with_non_send_sync).
+        let confirmed: Arc<Mutex<Option<String>>> = Arc::new(Mutex::new(None));
+        let (list, cx) = cx.add_window_view(|window, cx| {
+            let mut delegate = FileListDelegate::new();
+            delegate.set_items(vec![entry("a.txt"), entry("b.txt")]);
+            let sink = Arc::clone(&confirmed);
+            delegate.on_confirm = Some(Arc::new(move |item: &FileEntryDto| {
+                *sink.lock().unwrap() = Some(item.name.clone());
+            }));
+            List::new(delegate, window, cx)
+        });
+
+        list.update_in(cx, |list, window, cx| {
+            list.set_selected_index(Some(IndexPath::new(1)), window, cx);
+            list.delegate_mut().confirm(false, window, cx);
+        });
+        assert_eq!(confirmed.lock().unwrap().as_deref(), Some("b.txt"));
     }
 }

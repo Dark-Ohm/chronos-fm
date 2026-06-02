@@ -299,11 +299,14 @@ jobs:
       # in-process: the gpui binary entrypoint (`nohrs/src/{app,cli,main}.rs`),
       # pure rendering/view and window-chrome code, the search backends (external
       # processes / tantivy index), and the page/list glue exercised only through
-      # the running app.
+      # the running app. The reusable components (`file_list`, `footer`, `pane`)
+      # are now covered by `#[gpui::test]`s that build/draw them in a test window,
+      # so only `unified_toolbar` stays excluded (its popup-menu body only runs
+      # when the menu is opened, which a headless draw never triggers).
       - name: Enforce per-file coverage floor (testable subset)
         run: >
           cargo llvm-cov report --fail-under-file-lines 70
-          --ignore-filename-regex 'nohrs/src/(app|cli|main)\.rs|/explorer/view|/explorer\.rs|/explorer/list_setup\.rs|nohrs-pages/src/(root|git|s3|settings|extensions|nohrs_pages)\.rs|/search/|nohrs-services/src/search\.rs|nohrs-ui/src/(assets|window)\.rs|/components/pane\.rs|/components/file_list\.rs|/components/layout/'
+          --ignore-filename-regex 'nohrs/src/(app|cli|main)\.rs|/explorer/view|/explorer\.rs|/explorer/list_setup\.rs|nohrs-pages/src/(root|git|s3|settings|extensions|nohrs_pages)\.rs|/search/|nohrs-services/src/search\.rs|nohrs-ui/src/(assets|window)\.rs|/components/layout/unified_toolbar\.rs'
 
   # Posts (or updates) a single PR comment reporting both tiers against their
   # targets. A dedicated job (rather than the coverage jobs themselves) avoids a

@@ -51,3 +51,25 @@ pub fn split_container<L: IntoElement, R: IntoElement>(left: L, right: R) -> imp
                 .child(right),
         )
 }
+
+#[cfg(test)]
+mod tests {
+    use super::{split_container, tab_bar};
+    use gpui::{div, point, px, size, ParentElement, TestAppContext};
+
+    #[gpui::test]
+    async fn placeholders_lay_out_without_panicking(cx: &mut TestAppContext) {
+        let cx = cx.add_empty_window();
+        // `draw` runs the element through layout and paint, so the tab-bar and
+        // split-container builders are actually exercised (not just constructed).
+        cx.draw(
+            point(px(0.0), px(0.0)),
+            size(px(800.0), px(600.0)),
+            |_window, _cx| {
+                div()
+                    .child(tab_bar())
+                    .child(split_container(div().child("left"), div().child("right")))
+            },
+        );
+    }
+}

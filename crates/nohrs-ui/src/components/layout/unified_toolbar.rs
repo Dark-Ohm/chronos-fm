@@ -244,7 +244,8 @@ impl Action for AccountMenuAction {
 
 #[cfg(test)]
 mod tests {
-    use super::AccountMenuCommand;
+    use super::{unified_toolbar, AccountMenuCommand, UnifiedToolbarProps};
+    use gpui::{IntoElement, Render, TestAppContext, Window};
     use serde_json::json;
 
     #[test]
@@ -271,5 +272,34 @@ mod tests {
             Some(AccountMenuCommand::Keymap)
         );
         assert_eq!(AccountMenuCommand::from_value(&json!(42)), None);
+    }
+
+    struct ToolbarHost {
+        props: UnifiedToolbarProps,
+        renders: usize,
+    }
+
+    impl Render for ToolbarHost {
+        fn render(
+            &mut self,
+            _window: &mut Window,
+            cx: &mut gpui::Context<Self>,
+        ) -> impl IntoElement {
+            self.renders += 1;
+            unified_toolbar(self.props.clone(), cx)
+        }
+    }
+
+    #[gpui::test]
+    async fn toolbar_builds_drag_region_and_account_button(cx: &mut TestAppContext) {
+        // The account `Button` widget reads the gpui-component `Theme` global.
+        cx.update(gpui_component::init);
+        let props = UnifiedToolbarProps {
+            account_name: "Ada".into(),
+            account_plan: "Pro".into(),
+        };
+        let (host, cx) = cx.add_window_view(|_window, _cx| ToolbarHost { props, renders: 0 });
+        cx.run_until_parked();
+        host.read_with(cx, |host, _cx| assert!(host.renders > 0));
     }
 }
