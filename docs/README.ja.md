@@ -20,7 +20,7 @@ Nohrs は、Raycast 風ランチャーとモダンでキーボード中心のフ
 ## デモ
 
 <div align="center">
-  <img src="../assets/doc/demo.gif" alt="Nohrs の動作画面 — ファイル閲覧・プレビュー・名前での絞り込み" width="760">
+  <img src="../assets/doc/demo.gif" alt="Nohrs の動作画面 — ファイル閲覧・プレビュー・全文検索" width="760">
 </div>
 
 ## なぜ Nohrs?
