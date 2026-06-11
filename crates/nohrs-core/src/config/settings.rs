@@ -50,6 +50,8 @@ pub struct Config {
     pub theme: Theme,
     /// Explorer / view settings.
     pub ui: Ui,
+    /// Split-view and pane settings.
+    pub explorer: Explorer,
     /// Keybinding overrides (draft; full support in P3). Empty means the
     /// built-in keymap is used.
     pub keybindings: Keybindings,
@@ -71,6 +73,7 @@ impl Default for Config {
             schema_version: CURRENT_SCHEMA_VERSION,
             theme: Theme::default(),
             ui: Ui::default(),
+            explorer: Explorer::default(),
             keybindings: Keybindings::default(),
             plugins: Plugins::default(),
             indexing: Indexing::default(),
@@ -119,6 +122,50 @@ impl Default for Ui {
             default_sort: SortOrder::Name,
             show_hidden: false,
             icon_pack: "default".to_string(),
+        }
+    }
+}
+
+/// Split-view and pane settings (see `docs/explorer-essentials.md` §3).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct Explorer {
+    /// Orientation a fresh split uses unless overridden by the split shortcut.
+    pub split_direction: SplitDirection,
+    /// When enabled, navigating in one pane mirrors the path into the others.
+    pub synced_panes: bool,
+    /// When enabled, the previous session's tabs are restored on restart (§4).
+    pub restore_tabs: bool,
+}
+
+impl Default for Explorer {
+    fn default() -> Self {
+        Self {
+            split_direction: SplitDirection::Vertical,
+            synced_panes: false,
+            restore_tabs: true,
+        }
+    }
+}
+
+/// How a 2-way split arranges its panes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "lowercase")]
+pub enum SplitDirection {
+    /// Panes side by side, separated by a vertical divider (`Cmd+\`).
+    #[default]
+    Vertical,
+    /// Panes stacked, separated by a horizontal divider (`Cmd+Shift+\`).
+    Horizontal,
+}
+
+impl SplitDirection {
+    /// Parse the `config.toml` spelling (`vertical`/`horizontal`).
+    pub fn parse(value: &str) -> Option<Self> {
+        match value {
+            "vertical" => Some(Self::Vertical),
+            "horizontal" => Some(Self::Horizontal),
+            _ => None,
         }
     }
 }
@@ -499,6 +546,12 @@ impl Config {
                 None => diagnostics.push(Diagnostic::warn("[ui] is not a table; ignoring")),
             }
         }
+        if let Some(value) = table.get("explorer") {
+            match value.as_table() {
+                Some(explorer) => read_explorer(explorer, &mut config.explorer, &mut diagnostics),
+                None => diagnostics.push(Diagnostic::warn("[explorer] is not a table; ignoring")),
+            }
+        }
         if let Some(value) = table.get("keybindings") {
             match value.as_table() {
                 Some(keys) => read_keybindings(keys, &mut config.keybindings, &mut diagnostics),
@@ -546,6 +599,7 @@ impl Config {
                 "schema_version",
                 "theme",
                 "ui",
+                "explorer",
                 "keybindings",
                 "plugins",
                 "indexing",
@@ -581,6 +635,11 @@ impl Config {
              default_sort = \"name\"   # \"name\" | \"modified\" | \"size\" | \"kind\"\n\
              show_hidden = false\n\
              icon_pack = \"default\"\n\
+             \n\
+             [explorer]\n\
+             split_direction = \"vertical\"   # \"vertical\" (left/right) | \"horizontal\" (top/bottom)\n\
+             synced_panes = false            # when true, panes mirror the same path\n\
+             restore_tabs = true             # restore the previous session's tabs on restart\n\
              \n\
              # The sections below are parsed and validated, but not yet applied at\n\
              # runtime — they take effect when their subsystem is wired in a later\n\
@@ -673,6 +732,42 @@ fn read_ui(table: &toml::Table, ui: &mut Ui, diagnostics: &mut Vec<Diagnostic>) 
         table,
         &["default_sort", "show_hidden", "icon_pack"],
         "ui.",
+        diagnostics,
+    );
+}
+
+fn read_explorer(table: &toml::Table, explorer: &mut Explorer, diagnostics: &mut Vec<Diagnostic>) {
+    if let Some(value) = table.get("split_direction") {
+        match value.as_str().and_then(SplitDirection::parse) {
+            Some(direction) => explorer.split_direction = direction,
+            None => diagnostics.push(Diagnostic::warn(format!(
+                "invalid explorer.split_direction {value}; using {:?}",
+                explorer.split_direction
+            ))),
+        }
+    }
+    if let Some(value) = table.get("synced_panes") {
+        match value.as_bool() {
+            Some(flag) => explorer.synced_panes = flag,
+            None => diagnostics.push(Diagnostic::warn(format!(
+                "invalid explorer.synced_panes {value}; using {}",
+                explorer.synced_panes
+            ))),
+        }
+    }
+    if let Some(value) = table.get("restore_tabs") {
+        match value.as_bool() {
+            Some(flag) => explorer.restore_tabs = flag,
+            None => diagnostics.push(Diagnostic::warn(format!(
+                "invalid explorer.restore_tabs {value}; using {}",
+                explorer.restore_tabs
+            ))),
+        }
+    }
+    warn_unknown_keys(
+        table,
+        &["split_direction", "synced_panes", "restore_tabs"],
+        "explorer.",
         diagnostics,
     );
 }
@@ -1141,6 +1236,34 @@ mod tests {
         // Bad values fall back to defaults.
         assert_eq!(config.diagnostics.store.slow_query_ms, 0);
         assert!(!config.diagnostics.store.log_all_queries);
+        assert_eq!(diagnostics.len(), 2);
+    }
+
+    #[test]
+    fn explorer_section_parses_direction_and_sync() {
+        let toml = r#"
+            [explorer]
+            split_direction = "horizontal"
+            synced_panes = true
+        "#;
+        let (config, diagnostics) = Config::from_toml_str(toml);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        assert_eq!(config.explorer.split_direction, SplitDirection::Horizontal);
+        assert!(config.explorer.synced_panes);
+    }
+
+    #[test]
+    fn explorer_section_rejects_bad_values_leniently() {
+        let toml = r#"
+            [explorer]
+            split_direction = "diagonal"
+            synced_panes = "maybe"
+        "#;
+        let (config, diagnostics) = Config::from_toml_str(toml);
+        assert!(errors(&diagnostics).is_empty());
+        // Bad values fall back to defaults.
+        assert_eq!(config.explorer.split_direction, SplitDirection::Vertical);
+        assert!(!config.explorer.synced_panes);
         assert_eq!(diagnostics.len(), 2);
     }
 

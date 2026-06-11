@@ -1,4 +1,4 @@
-use crate::explorer::ExplorerPage;
+use crate::explorer::ExplorerPane;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::{Icon, IconName, ListItem};
@@ -6,9 +6,9 @@ use nohrs_ui::theme::theme; // Assuming theme is accessible
 
 /// Renders the explorer sidebar listing quick-access locations.
 pub fn render(
-    page: &mut ExplorerPage,
+    page: &mut ExplorerPane,
     _window: &mut Window,
-    cx: &mut Context<ExplorerPage>,
+    cx: &mut Context<ExplorerPane>,
 ) -> impl IntoElement + use<> {
     div()
         .size_full()
@@ -62,8 +62,8 @@ fn sidebar_item(icon: IconName, label: &str, _active: bool) -> impl IntoElement 
 }
 
 fn render_shortcuts(
-    _page: &mut ExplorerPage,
-    cx: &mut Context<ExplorerPage>,
+    _page: &mut ExplorerPane,
+    cx: &mut Context<ExplorerPane>,
 ) -> impl IntoElement + use<> {
     let shortcuts = get_shortcuts();
     let mut shortcuts_el = div().flex().flex_col().gap_1().px(px(8.0));
