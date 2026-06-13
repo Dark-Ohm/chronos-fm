@@ -9,7 +9,7 @@
 
 use nohrs_core::errors::{Error, Result};
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 
 /// How a [`move_path`] operation was carried out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,10 +34,39 @@ pub enum ConflictResolution {
     Skip,
 }
 
-/// Returns whether `dst` already exists, the condition that triggers conflict
-/// resolution before a copy or move.
+/// Returns whether `dst` is already occupied, the condition that triggers
+/// conflict resolution before a copy or move.
+///
+/// Unlike [`Path::exists`], this probes the entry itself rather than following
+/// symlinks, so a dangling symlink at `dst` still counts as occupied. An
+/// ambiguous error (e.g. a permission failure while stat-ing) is treated
+/// conservatively as occupied so the caller surfaces the conflict path rather
+/// than silently overwriting.
 pub fn would_conflict(dst: &Path) -> bool {
-    dst.exists()
+    path_occupied(dst)
+}
+
+// Whether a filesystem entry exists at `path`, detecting the entry itself
+// (including a broken symlink) rather than following links. Ambiguous errors
+// are reported as occupied; only a definitive "not found" is reported as free.
+fn path_occupied(path: &Path) -> bool {
+    match fs::symlink_metadata(path) {
+        Ok(_) => true,
+        Err(error) => error.kind() != std::io::ErrorKind::NotFound,
+    }
+}
+
+// Validates that `name` is a single, normal path component — not empty, not `.`
+// or `..`, and free of path separators — so child-name inputs cannot escape the
+// target directory when joined.
+fn ensure_plain_name(name: &str) -> Result<()> {
+    let mut components = Path::new(name).components();
+    match (components.next(), components.next()) {
+        (Some(Component::Normal(component)), None) if component == std::ffi::OsStr::new(name) => {
+            Ok(())
+        }
+        _ => Err(Error::Other(format!("invalid file name: {name:?}"))),
+    }
 }
 
 /// Returns `true` when `src` and `dst_dir` reside on different filesystems, in
@@ -50,7 +79,10 @@ pub fn is_cross_volume(src: &Path, dst_dir: &Path) -> Result<bool> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::MetadataExt;
-        let src_dev = fs::metadata(src)?.dev();
+        // `rename(2)` acts on the source directory entry itself, so use the
+        // entry's own device (don't follow a symlink). The destination is the
+        // directory the entry lands in, so its resolved device is what matters.
+        let src_dev = fs::symlink_metadata(src)?.dev();
         let dst_dev = fs::metadata(dst_dir)?.dev();
         Ok(src_dev != dst_dev)
     }
@@ -66,7 +98,7 @@ pub fn is_cross_volume(src: &Path, dst_dir: &Path) -> Result<bool> {
 /// (`report.pdf` becomes `report (2).pdf`), trying `N = 2, 3, ...` until a free
 /// name is found. Returns `name` unchanged when there is no collision.
 pub fn unique_name(dir: &Path, name: &str) -> String {
-    if !dir.join(name).exists() {
+    if !path_occupied(&dir.join(name)) {
         return name.to_string();
     }
     let path = Path::new(name);
@@ -80,7 +112,7 @@ pub fn unique_name(dir: &Path, name: &str) -> String {
             Some(extension) => format!("{stem} ({counter}).{extension}"),
             None => format!("{stem} ({counter})"),
         };
-        if !dir.join(&candidate).exists() {
+        if !path_occupied(&dir.join(&candidate)) {
             return candidate;
         }
         counter += 1;
@@ -159,6 +191,7 @@ fn is_cross_device(_error: &std::io::Error) -> bool {
 /// Renames `src` to `new_name` within its current directory, returning the new
 /// full path. `new_name` must be a bare file name, not a path with separators.
 pub fn rename_in_place(src: &Path, new_name: &str) -> Result<PathBuf> {
+    ensure_plain_name(new_name)?;
     let parent = src.parent().ok_or_else(|| {
         Error::Other(format!(
             "cannot rename path without a parent: {}",
@@ -173,6 +206,7 @@ pub fn rename_in_place(src: &Path, new_name: &str) -> Result<PathBuf> {
 /// Creates a new directory named `name` inside `parent`, returning its full
 /// path. Fails if a file or directory of that name already exists.
 pub fn create_dir(parent: &Path, name: &str) -> Result<PathBuf> {
+    ensure_plain_name(name)?;
     let dst = parent.join(name);
     fs::create_dir(&dst)?;
     Ok(dst)
@@ -311,6 +345,38 @@ mod tests {
         fs::write(tree.join("inner.txt"), "y").unwrap();
         delete_permanent(&tree).unwrap();
         assert!(!tree.exists());
+    }
+
+    #[test]
+    fn would_conflict_detects_a_dangling_symlink() {
+        let dir = tempdir().unwrap();
+        let link = dir.path().join("broken");
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(dir.path().join("missing-target"), &link).unwrap();
+        #[cfg(not(unix))]
+        std::fs::write(&link, "x").unwrap();
+        // `Path::exists()` would report `false` for a dangling symlink; the
+        // entry is nonetheless occupied.
+        assert!(would_conflict(&link));
+    }
+
+    #[test]
+    fn rename_and_create_reject_path_traversal_names() {
+        let dir = tempdir().unwrap();
+        let src = dir.path().join("f.txt");
+        fs::write(&src, "x").unwrap();
+        for bad in ["../escape", "a/b", ".", "..", ""] {
+            assert!(
+                rename_in_place(&src, bad).is_err(),
+                "rename allowed {bad:?}"
+            );
+            assert!(
+                create_dir(dir.path(), bad).is_err(),
+                "create allowed {bad:?}"
+            );
+        }
+        // A plain name is still accepted.
+        assert!(create_dir(dir.path(), "ok-dir").is_ok());
     }
 
     #[test]

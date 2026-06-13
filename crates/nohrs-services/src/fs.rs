@@ -1,5 +1,5 @@
 //! Directory listing with stable, case-insensitive ordering and cursor paging,
-//! plus synchronous file mutation operations (copy/move/rename/delete/trash).
+//! plus synchronous file mutation operations (see [`ops`]).
 
 /// Synchronous directory listing.
 pub mod listing;

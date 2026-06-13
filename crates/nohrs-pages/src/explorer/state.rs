@@ -422,17 +422,17 @@ impl ExplorerPane {
     }
 
     pub(crate) fn apply_filter(&mut self) {
+        // Rebuilding the visible row set (here or via the search path) invalidates
+        // the row indices the selection is expressed in, so reset it rather than
+        // risk acting on unrelated rows after a sort/filter/reload/search.
+        self.clear_selection();
+
         // When explicit search results are displayed, `filtered_entries` is owned
         // by the search path; only refresh row sizes here.
         if self.search_results.is_some() {
             self.update_item_sizes();
             return;
         }
-
-        // Rebuilding `filtered_entries` invalidates the row indices the
-        // selection is expressed in, so reset it rather than risk selecting
-        // unrelated rows after a sort/filter/reload.
-        self.clear_selection();
 
         let show_hidden = self.show_hidden;
         let visible = self

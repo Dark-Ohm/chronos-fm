@@ -51,8 +51,13 @@ pub fn render(
                     cx.stop_propagation();
                     cx.notify();
                 }
-                "escape" => {
+                // Search-close Escape is handled by the branch above (which
+                // returns early), so here Escape only clears a selection — and
+                // only consumes the event when there was one to clear, leaving
+                // an empty-selection Escape free to bubble.
+                "escape" if !this.selection.is_empty() => {
                     this.clear_selection();
+                    cx.stop_propagation();
                     cx.notify();
                 }
                 "up" => {
