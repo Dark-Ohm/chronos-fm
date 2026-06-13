@@ -504,6 +504,18 @@ impl ExplorerPage {
         self.group.active_pane().read(cx).status_for_footer()
     }
 
+    /// Selection and listing counts for the active tab, as `(selected, total)`,
+    /// for the footer's "N selected" / "N items" indicators.
+    pub fn selection_counts(&self, cx: &App) -> (usize, usize) {
+        let pane = self.group.active_pane().read(cx);
+        (pane.selection.len(), pane.filtered_entries.len())
+    }
+
+    /// Absolute path of the active tab's current directory, for the footer.
+    pub fn current_path(&self, cx: &App) -> String {
+        self.group.active_pane().read(cx).cwd.clone()
+    }
+
     // Captures the current panes/tabs into a persistable snapshot (§4).
     fn session_snapshot(&self, cx: &App) -> SessionSnapshot {
         let panes = (0..self.group.pane_count())

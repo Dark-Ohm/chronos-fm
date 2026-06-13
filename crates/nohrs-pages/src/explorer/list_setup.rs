@@ -18,7 +18,7 @@ impl ExplorerPane {
                 window,
                 |this, _list, event: &ListEvent, window, cx| match event {
                     ListEvent::Select(ix) => {
-                        this.selected_index = Some(ix.row);
+                        this.select_single(ix.row);
                         if let Some(item) = this.filtered_entries.get(ix.row).cloned() {
                             if item.kind == "file" {
                                 this.open_preview(item.path, window, cx);
@@ -36,7 +36,7 @@ impl ExplorerPane {
                             }
                         }
                         this.last_click_info = None;
-                        this.selected_index = Some(ix.row);
+                        this.select_single(ix.row);
                         if let Some(item) = this.filtered_entries.get(ix.row).cloned() {
                             this.activate_entry(item, window, cx);
                         }

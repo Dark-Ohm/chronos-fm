@@ -21,7 +21,7 @@ pub fn render(
         .min_h(px(0.0));
 
     for (ix, item) in items.into_iter().enumerate() {
-        let selected = page.selected_index == Some(ix);
+        let selected = page.is_selected(ix);
         grid = grid.child(render_grid_item(page, item, ix, selected, window, cx));
     }
 
@@ -91,13 +91,21 @@ fn render_grid_item(
             gpui::MouseButton::Left,
             cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
                 this.record_click(ix, event.click_count);
-                this.selected_index = Some(ix);
+                let modifiers = event.modifiers;
+                if modifiers.shift {
+                    this.select_range_to(ix);
+                } else if modifiers.platform || modifiers.control {
+                    this.toggle_select(ix);
+                } else {
+                    this.select_single(ix);
+                }
                 if preview_item.kind == "file" {
                     this.open_preview(preview_item.path.clone(), window, cx);
                 }
                 if event.click_count >= 2 {
                     this.activate_entry(activation_item.clone(), window, cx);
                 }
+                cx.notify();
             }),
         )
         .child(

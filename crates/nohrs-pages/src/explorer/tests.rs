@@ -866,3 +866,100 @@ async fn restore_disabled_ignores_saved_session(cx: &mut TestAppContext) {
         })
         .unwrap();
 }
+
+#[gpui::test]
+async fn selection_single_toggle_range_and_paths(cx: &mut TestAppContext) {
+    let window = new_explorer(cx);
+    window
+        .update(cx, |page, _window, _cx| {
+            page.filtered_entries = vec![
+                file("a", "file", 1),
+                file("b", "file", 2),
+                file("c", "file", 3),
+                file("d", "file", 4),
+            ];
+
+            // Single selection re-anchors and becomes active.
+            page.select_single(1);
+            assert!(page.is_selected(1));
+            assert_eq!(page.selection.len(), 1);
+            assert_eq!(page.active_index, Some(1));
+
+            // Shift range spans from the anchor (row 1) to row 3 inclusive.
+            page.select_range_to(3);
+            assert_eq!(
+                page.selection.iter().copied().collect::<Vec<_>>(),
+                vec![1, 2, 3]
+            );
+            assert_eq!(page.active_index, Some(3));
+
+            // Cmd/Ctrl toggle removes one without clearing the rest and adds
+            // another, re-anchoring at the toggled row.
+            page.toggle_select(2);
+            assert!(!page.is_selected(2) && page.is_selected(1) && page.is_selected(3));
+            page.toggle_select(0);
+            assert!(page.is_selected(0));
+
+            // `selected_paths` follows row order (rows 0, 1, 3).
+            assert_eq!(page.selected_paths(), vec!["/tmp/a", "/tmp/b", "/tmp/d"]);
+        })
+        .unwrap();
+}
+
+#[gpui::test]
+async fn selection_all_clear_and_arrow_navigation(cx: &mut TestAppContext) {
+    let window = new_explorer(cx);
+    window
+        .update(cx, |page, _window, _cx| {
+            page.filtered_entries = vec![
+                file("a", "file", 1),
+                file("b", "file", 2),
+                file("c", "file", 3),
+            ];
+
+            page.select_all();
+            assert_eq!(page.selection.len(), 3);
+            assert_eq!(page.active_index, Some(2));
+
+            page.clear_selection();
+            assert!(page.selection.is_empty());
+            assert_eq!(page.active_index, None);
+            assert_eq!(page.selection_anchor, None);
+
+            // Arrow-down from an empty selection lands on the first row.
+            page.move_active(1, false);
+            assert_eq!(page.active_index, Some(0));
+            page.move_active(1, false);
+            assert_eq!(page.active_index, Some(1));
+
+            // Shift+down extends the range from the anchor; up is clamped at 0.
+            page.move_active(1, true);
+            assert_eq!(
+                page.selection.iter().copied().collect::<Vec<_>>(),
+                vec![1, 2]
+            );
+            page.select_single(0);
+            page.move_active(-1, false);
+            assert_eq!(page.active_index, Some(0));
+        })
+        .unwrap();
+}
+
+#[gpui::test]
+async fn apply_filter_resets_stale_selection(cx: &mut TestAppContext) {
+    let window = new_explorer(cx);
+    window
+        .update(cx, |page, _window, _cx| {
+            page.entries = vec![file("a", "file", 1), file("b", "file", 2)];
+            page.apply_filter();
+            page.select_all();
+            assert!(!page.selection.is_empty());
+
+            // Re-filtering rebuilds the row set, so the selection must reset to
+            // avoid pointing at stale indices.
+            page.apply_filter();
+            assert!(page.selection.is_empty());
+            assert_eq!(page.active_index, None);
+        })
+        .unwrap();
+}

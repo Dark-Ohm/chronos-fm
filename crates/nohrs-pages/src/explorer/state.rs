@@ -59,8 +59,12 @@ pub struct ExplorerPane {
     pub preview_path: Option<String>,
     /// Text content of the previewed file, when it is textual.
     pub preview_text: Option<String>,
-    /// Index of the selected row within `filtered_entries`.
-    pub selected_index: Option<usize>,
+    /// Indices (into `filtered_entries`) of all currently selected rows.
+    pub selection: std::collections::BTreeSet<usize>,
+    /// Anchor row for Shift range selection, or `None` when nothing is anchored.
+    pub selection_anchor: Option<usize>,
+    /// The active/primary row that drives the preview and keyboard navigation.
+    pub active_index: Option<usize>,
     /// Scroll handle for the virtualized listing.
     pub virtual_scroll_handle: VirtualListScrollHandle,
     /// Per-row sizes for the virtualized listing.
@@ -188,7 +192,9 @@ impl ExplorerPane {
             subs: Vec::new(),
             preview_path: None,
             preview_text: None,
-            selected_index: None,
+            selection: std::collections::BTreeSet::new(),
+            selection_anchor: None,
+            active_index: None,
             virtual_scroll_handle: VirtualListScrollHandle::new(),
             item_sizes: Rc::new(Vec::new()),
             col_name_width: config::COL_NAME_WIDTH,
@@ -287,6 +293,95 @@ impl ExplorerPane {
         });
     }
 
+    /// Returns whether the row at `ix` (an index into `filtered_entries`) is
+    /// part of the current selection.
+    pub fn is_selected(&self, ix: usize) -> bool {
+        self.selection.contains(&ix)
+    }
+
+    /// Replaces the selection with the single row `ix`, making it both the
+    /// anchor and the active row (a plain click or arrow-key move).
+    pub(crate) fn select_single(&mut self, ix: usize) {
+        self.selection.clear();
+        self.selection.insert(ix);
+        self.selection_anchor = Some(ix);
+        self.active_index = Some(ix);
+    }
+
+    /// Toggles row `ix` in the selection (Cmd/Ctrl+click) and re-anchors there.
+    pub(crate) fn toggle_select(&mut self, ix: usize) {
+        if !self.selection.remove(&ix) {
+            self.selection.insert(ix);
+        }
+        self.selection_anchor = Some(ix);
+        self.active_index = Some(ix);
+    }
+
+    /// Selects the contiguous range between the current anchor and `ix`
+    /// (Shift+click / Shift+arrow). Falls back to a single selection when there
+    /// is no anchor yet.
+    pub(crate) fn select_range_to(&mut self, ix: usize) {
+        let anchor = match self.selection_anchor {
+            Some(anchor) => anchor,
+            None => {
+                self.select_single(ix);
+                return;
+            }
+        };
+        let (low, high) = if anchor <= ix {
+            (anchor, ix)
+        } else {
+            (ix, anchor)
+        };
+        self.selection = (low..=high).collect();
+        self.active_index = Some(ix);
+    }
+
+    /// Selects every visible row.
+    pub(crate) fn select_all(&mut self) {
+        let len = self.filtered_entries.len();
+        self.selection = (0..len).collect();
+        self.selection_anchor = if len > 0 { Some(0) } else { None };
+        self.active_index = len.checked_sub(1);
+    }
+
+    /// Clears the selection, anchor, and active row.
+    pub(crate) fn clear_selection(&mut self) {
+        self.selection.clear();
+        self.selection_anchor = None;
+        self.active_index = None;
+    }
+
+    /// Moves the active row by `delta` rows, clamped to the visible range. With
+    /// `extend` (Shift held) the selection grows from the anchor; otherwise the
+    /// moved-to row becomes the sole selection. Selecting from an empty state
+    /// lands on the first row.
+    pub(crate) fn move_active(&mut self, delta: isize, extend: bool) {
+        let len = self.filtered_entries.len();
+        if len == 0 {
+            return;
+        }
+        let next = match self.active_index {
+            Some(current) => (current as isize + delta).clamp(0, len as isize - 1) as usize,
+            None => 0,
+        };
+        if extend {
+            self.select_range_to(next);
+        } else {
+            self.select_single(next);
+        }
+    }
+
+    /// Paths of the currently selected rows, in row order. Used by file
+    /// operations and drag-and-drop.
+    pub fn selected_paths(&self) -> Vec<String> {
+        self.selection
+            .iter()
+            .filter_map(|&ix| self.filtered_entries.get(ix))
+            .map(|entry| entry.path.clone())
+            .collect()
+    }
+
     pub(crate) fn update_item_sizes(&mut self) {
         let total_width = self.total_table_width();
 
@@ -333,6 +428,11 @@ impl ExplorerPane {
             self.update_item_sizes();
             return;
         }
+
+        // Rebuilding `filtered_entries` invalidates the row indices the
+        // selection is expressed in, so reset it rather than risk selecting
+        // unrelated rows after a sort/filter/reload.
+        self.clear_selection();
 
         let show_hidden = self.show_hidden;
         let visible = self
