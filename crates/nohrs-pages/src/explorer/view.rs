@@ -34,13 +34,43 @@ pub fn render(
         .track_focus(&page.focus_handle)
         .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
             let key_lc = event.keystroke.key.to_lowercase();
-            let with_modifier =
-                event.keystroke.modifiers.platform || event.keystroke.modifiers.control;
+            let modifiers = event.keystroke.modifiers;
+            let with_modifier = modifiers.platform || modifiers.control;
             let is_f = key_lc == "f" || event.keystroke.key == "KeyF";
             let close_with_escape = key_lc == "escape" && this.search_visible;
             if (is_f && with_modifier) || close_with_escape {
                 this.toggle_search(window, cx);
                 cx.stop_propagation();
+                return;
+            }
+            // Selection model (§5). Escape while searching is handled above, so
+            // here it only clears the selection.
+            match key_lc.as_str() {
+                "a" if with_modifier => {
+                    this.select_all();
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+                // Search-close Escape is handled by the branch above (which
+                // returns early), so here Escape only clears a selection — and
+                // only consumes the event when there was one to clear, leaving
+                // an empty-selection Escape free to bubble.
+                "escape" if !this.selection.is_empty() => {
+                    this.clear_selection();
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+                "up" => {
+                    this.move_active(-1, modifiers.shift);
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+                "down" => {
+                    this.move_active(1, modifiers.shift);
+                    cx.stop_propagation();
+                    cx.notify();
+                }
+                _ => {}
             }
         }))
         .on_mouse_move(

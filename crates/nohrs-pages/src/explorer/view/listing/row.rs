@@ -26,7 +26,9 @@ pub fn render(
         _ => rgb(theme::GRAY_600),
     };
 
-    let bg_color = if ix % 2 == 0 {
+    let bg_color = if page.is_selected(ix) {
+        theme::ACCENT_LIGHT
+    } else if ix % 2 == 0 {
         theme::BG
     } else {
         theme::GRAY_50
@@ -115,13 +117,21 @@ pub fn render(
                         if let gpui::ClickEvent::Mouse(mouse) = event {
                             if mouse.up.button == gpui::MouseButton::Left {
                                 this.record_click(ix, mouse.up.click_count);
-                                this.selected_index = Some(ix);
+                                let modifiers = mouse.up.modifiers;
+                                if modifiers.shift {
+                                    this.select_range_to(ix);
+                                } else if modifiers.platform || modifiers.control {
+                                    this.toggle_select(ix);
+                                } else {
+                                    this.select_single(ix);
+                                }
                                 if item_for_preview.kind == "file" {
                                     this.open_preview(item_for_preview.path.clone(), window, cx);
                                 }
                                 if mouse.up.click_count >= 2 {
                                     this.activate_entry(item_for_activate.clone(), window, cx);
                                 }
+                                cx.notify();
                             }
                         }
                     }),

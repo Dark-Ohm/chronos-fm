@@ -313,7 +313,12 @@ impl Render for RootView {
                             None => (None, false),
                         },
                     };
+                    let (selected_count, total_count) = self.explorer.read(cx).selection_counts(cx);
+                    let current_path = self.explorer.read(cx).current_path(cx);
                     let props = FooterProps {
+                        selected_count,
+                        total_count,
+                        current_path,
                         indexing_progress: self.indexing_progress,
                         status_message,
                         status_is_error,

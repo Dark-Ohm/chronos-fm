@@ -67,6 +67,9 @@ impl ExplorerPane {
                         if this.search_generation != generation {
                             return;
                         }
+                        // The result set replaces `filtered_entries`, so drop any
+                        // selection whose indices referred to the old listing.
+                        this.clear_selection();
                         match processed {
                             Ok((grouped, entries)) => {
                                 this.filtered_entries = entries;
