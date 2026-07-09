@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=chronos-fm
+Comment=Launcher × Explorer — CachyOS build (GPUI/wgpu, optimized)
+Exec=chronos-fm
+Icon=chronos-fm
+Terminal=false
+Type=Application
+Categories=Utility;
+StartupNotify=true
