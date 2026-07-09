@@ -3,12 +3,12 @@
 
   # Chronos-FM
 
-  **Launcher × Explorer** — a fast, extensible, plugin-ready file workspace for macOS, built in Rust.
+  **Launcher × Explorer** — a fast, extensible, plugin-ready file workspace, built in Rust with [GPUI](https://gpui.rs).
 
-  [![CI](https://github.com/Dark-Ohm/chronos-fm/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Dark-Ohm/chronos-fm/actions/workflows/ci.yml)
+  [![CI](https://github.com/Dark-Ohm/chronos-fm/actions/workflows/cachy.yml/badge.svg)](https://github.com/Dark-Ohm/chronos-fm/actions/workflows/cachy.yml)
   [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
   [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](rust-toolchain.toml)
-  [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
+  [![Platform](https://img.shields.io/badge/platform-Linux-2ec27e.svg)](https://cachyos.org)
   [![Discord](https://img.shields.io/badge/Discord-join-5865F2?logo=discord&logoColor=white)](https://discord.gg/dZM7fUtE94)
 
   [Quick Start](#quick-start) · [Why Chronos-FM?](#why-chronos-fm) · [Roadmap](docs/ROADMAP.md) · [日本語 README](docs/README.ja.md)
@@ -44,30 +44,29 @@ Chronos-FM is **pre-alpha** and not yet published. Once the first release ships:
 cargo install chronos-fm
 ```
 
-Prebuilt macOS binaries will appear on the [Releases](https://github.com/Dark-Ohm/chronos-fm/releases) page. For now, build from source.
+Prebuilt Linux binaries (CachyOS / AUR) will appear on the [Releases](https://github.com/Dark-Ohm/chronos-fm/releases) page. For now, build from source.
 
-### Build from source
+### Build from source (Linux)
+
+Chronos-FM builds and runs natively on Linux (GPUI with Vulkan/wgpu — tested on
+CachyOS + Hyprland with the NVIDIA driver).
 
 ```sh
-# Toolkit-free crates only (core / models / services) — this is what Linux CI builds
-cargo build
+# One-time: create unversioned dev-lib symlinks so GPUI links without root
+bash script/ui-run.sh setup
 
-# Full workspace, including the GUI crates and binary
-# (requires gpui's platform toolchain; macOS recommended — see below)
-cargo build --workspace
-cargo run -p chronos-fm
+# Build the GUI binary
+RUSTFLAGS="-L $HOME/.local/devlibs" cargo build -p chronos-fm
+
+# Run it (from a Wayland/X11 session)
+./target/debug/chronos-fm
+# or, to (re)launch headless and wait for first render:
+bash script/ui-run.sh launch
 ```
 
-#### macOS prerequisites for gpui
-
-gpui renders with Metal on macOS, so Xcode and the Metal toolchain are required:
-
-1. Install Xcode from the App Store (launch it once to finish setup).
-2. Install the command line tools: `xcode-select --install`
-3. Point the CLI at the installed Xcode: `sudo xcode-select --switch /Applications/Xcode.app/Contents/Developer`
-4. If the build reports a missing Metal toolchain: `xcodebuild -downloadComponent MetalToolchain`
-
-> For Linux native, Nix, and Docker setups, see the [recommended setup matrix](docs/dev-environment.md#1-推奨セットアップ早見表).
+The toolkit-free crates (`core`, `models`, `services`, `store`) build everywhere
+with a plain `cargo build`. For Nix/Docker setups see
+[docs/dev-environment.md](docs/dev-environment.md).
 
 ## Status
 
@@ -92,7 +91,7 @@ Full details, vision, and design docs live in [`docs/ROADMAP.md`](docs/ROADMAP.m
 ## Community
 
 - **Discord**: https://discord.gg/dZM7fUtE94
-- **X (Twitter)**: https://x.com/nohdotrs
+- **X (Twitter)**: https://x.com/chronosfmdotapp
 - **GitHub**: https://github.com/Dark-Ohm/chronos-fm
 
 Contributions are welcome — open an issue or a pull request.
