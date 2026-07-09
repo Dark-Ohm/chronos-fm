@@ -199,7 +199,7 @@ zed.dev の IA から商用要素 (Pricing / Business / Sign up / Jobs / Team / 
 
 ### 6.2 `/releases`
 
-- GitHub API (`/repos/chronos-fm/chronos-fm/releases`) からビルド時に取得
+- GitHub API (`/repos/Dark-Ohm/chronos-fm/releases`) からビルド時に取得
 - 一覧表示 (バージョン・日付・ハイライト一行)
 - 各カードクリックで GitHub の release URL に遷移
 - macOS バイナリの直接ダウンロードリンク (release asset 経由)

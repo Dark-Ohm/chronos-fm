@@ -49,7 +49,7 @@
 
 ```rust
 let res = cx.background_spawn(async {
-    ureq::get("https://api.github.com/repos/chronos-fm/chronos-fm/releases")
+    ureq::get("https://api.github.com/repos/Dark-Ohm/chronos-fm/releases")
         .call()
 }).await?;
 ```
