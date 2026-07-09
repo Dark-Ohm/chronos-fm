@@ -59,7 +59,7 @@ version      = "0.0.1"
 edition      = "2024"
 rust-version = "1.85"
 license      = "MIT"
-repository   = "https://github.com/chronos-fm/chronos-fm"
+repository   = "https://github.com/Dark-Ohm/chronos-fm"
 homepage     = "https://chronos-fm.app"
 authors      = ["chronos-fm contributors"]
 

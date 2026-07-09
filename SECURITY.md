@@ -18,7 +18,7 @@ fixes land there and ship in the next release.
 **Please do not open a public issue for security vulnerabilities.**
 
 Report privately via GitHub's
-[security advisory form](https://github.com/chronos-fm/chronos-fm/security/advisories/new).
+[security advisory form](https://github.com/Dark-Ohm/chronos-fm/security/advisories/new).
 If you cannot use that, reach a maintainer through the
 [Discord](https://discord.gg/dZM7fUtE94) and ask for a private channel.
 

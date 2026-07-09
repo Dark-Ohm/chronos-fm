@@ -14,7 +14,7 @@ if [[ "${TAG}" != *-cachy* ]] || [[ -z "${VERSION}" || -z "${BUILD}" ]]; then
 fi
 
 # Compute sha256 of source tarball
-SOURCE_URL="https://github.com/chronos-fm/chronos-fm/archive/refs/tags/v${TAG}.tar.gz"
+SOURCE_URL="https://github.com/Dark-Ohm/chronos-fm/archive/refs/tags/v${TAG}.tar.gz"
 SHA256=$(curl -sL "${SOURCE_URL}" | sha256sum | cut -d' ' -f1)
 
 # Extract GPUI commit from Cargo.lock (from git source)
@@ -61,7 +61,7 @@ optdepends=(
 )
 _GPUI_COMMIT="${GPUI_COMMIT}"
 source=(
-  "\${pkgname%-cachy}-\${pkgver}.tar.gz::https://github.com/chronos-fm/chronos-fm/archive/refs/tags/v\${pkgver}-cachy\${pkgrel}.tar.gz"
+  "\${pkgname%-cachy}-\${pkgver}.tar.gz::https://github.com/Dark-Ohm/chronos-fm/archive/refs/tags/v\${pkgver}-cachy\${pkgrel}.tar.gz"
   "gpui::git+https://github.com/zed-industries/zed.git#commit=\${_GPUI_COMMIT}"
 )
 sha256sums=('${SHA256}' 'SKIP')

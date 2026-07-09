@@ -5,7 +5,7 @@
 
   **Launcher × Explorer** — a fast, extensible, plugin-ready file workspace for macOS, built in Rust.
 
-  [![CI](https://github.com/chronos-fm/chronos-fm/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/chronos-fm/chronos-fm/actions/workflows/ci.yml)
+  [![CI](https://github.com/Dark-Ohm/chronos-fm/actions/workflows/ci.yml/badge.svg?branch=develop)](https://github.com/Dark-Ohm/chronos-fm/actions/workflows/ci.yml)
   [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
   [![Rust](https://img.shields.io/badge/rust-stable-orange.svg)](rust-toolchain.toml)
   [![Platform](https://img.shields.io/badge/platform-macOS-lightgrey.svg)](https://www.apple.com/macos)
@@ -44,7 +44,7 @@ Chronos-FM is **pre-alpha** and not yet published. Once the first release ships:
 cargo install chronos-fm
 ```
 
-Prebuilt macOS binaries will appear on the [Releases](https://github.com/chronos-fm/chronos-fm/releases) page. For now, build from source.
+Prebuilt macOS binaries will appear on the [Releases](https://github.com/Dark-Ohm/chronos-fm/releases) page. For now, build from source.
 
 ### Build from source
 
@@ -93,7 +93,7 @@ Full details, vision, and design docs live in [`docs/ROADMAP.md`](docs/ROADMAP.m
 
 - **Discord**: https://discord.gg/dZM7fUtE94
 - **X (Twitter)**: https://x.com/nohdotrs
-- **GitHub**: https://github.com/chronos-fm/chronos-fm
+- **GitHub**: https://github.com/Dark-Ohm/chronos-fm
 
 Contributions are welcome — open an issue or a pull request.
 

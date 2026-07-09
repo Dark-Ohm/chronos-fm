@@ -8,7 +8,7 @@ By participating you agree to abide by our [Code of Conduct](CODE_OF_CONDUCT.md)
 ## Getting started
 
 1. Read the [Roadmap](docs/ROADMAP.md) to see where the project is headed.
-2. Browse [open issues](https://github.com/chronos-fm/chronos-fm/issues). Issues labeled
+2. Browse [open issues](https://github.com/Dark-Ohm/chronos-fm/issues). Issues labeled
    `good first issue` are a good entry point.
 3. For anything non-trivial, open (or comment on) an issue first so we can agree
    on the approach before you invest time.

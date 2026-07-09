@@ -75,7 +75,7 @@ optdepends=(
 )
 _GPUI_COMMIT="a1b2c3d4e5f678901234567890abcdef12345678"
 source=(
-  "git+https://github.com/chronos-fm/chronos-fm.git#tag=v${pkgver}-cachy${pkgrel}"
+  "git+https://github.com/Dark-Ohm/chronos-fm.git#tag=v${pkgver}-cachy${pkgrel}"
   "gpui::git+https://github.com/zed-industries/zed.git#commit=${_GPUI_COMMIT}"
 )
 sha256sums=(SKIP SKIP)

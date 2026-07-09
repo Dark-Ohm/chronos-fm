@@ -143,4 +143,4 @@ File issues at GitHub with label `cachyos` and include output of:
 
 ## License
 
-MIT — see [LICENSE](https://github.com/chronos-fm/chronos-fm/blob/main/LICENSE)
+MIT — see [LICENSE](https://github.com/Dark-Ohm/chronos-fm/blob/main/LICENSE)

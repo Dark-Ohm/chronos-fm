@@ -34,4 +34,4 @@ are additive changes within a phase. See [`docs/ROADMAP.md`](docs/ROADMAP.md) fo
 - Package metadata (`description`, `repository`, `homepage`, `license`,
   `keywords`, `categories`, `authors`, `rust-version`) so `cargo publish` works.
 
-[Unreleased]: https://github.com/chronos-fm/chronos-fm/commits/develop
+[Unreleased]: https://github.com/Dark-Ohm/chronos-fm/commits/develop

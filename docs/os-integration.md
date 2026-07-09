@@ -2,7 +2,7 @@
 
 > Status: Draft (P1 で骨子、P2 で詳細化・実装)
 > Related: [`ROADMAP.md`](./ROADMAP.md) / [`explorer-essentials.md`](./explorer-essentials.md)
-> Source: [#58 のコメント](https://github.com/chronos-fm/chronos-fm/issues/58#issuecomment-4589555237)
+> Source: [#58 のコメント](https://github.com/Dark-Ohm/chronos-fm/issues/58#issuecomment-4589555237)
 
 本書は chronos-fm を「Finder を起動しなくても完結するファイラー」にするための **OS レベル統合**の方針を定めます。[`explorer-essentials.md`](./explorer-essentials.md) がファイラー UI (DnD / ファイル操作 / split / tab) に閉じるのに対し、本書はアプリバンドル登録・システムイベント連携・プレビュー連携といった OS 固有のグルーを扱います。
 

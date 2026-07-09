@@ -43,7 +43,7 @@ Chronos-FM は **pre-alpha** であり、まだ公開されていません。最
 cargo install chronos-fm
 ```
 
-ビルド済みの macOS バイナリは [Releases](https://github.com/chronos-fm/chronos-fm/releases) ページで提供予定です。現時点ではソースからビルドしてください。
+ビルド済みの macOS バイナリは [Releases](https://github.com/Dark-Ohm/chronos-fm/releases) ページで提供予定です。現時点ではソースからビルドしてください。
 
 ### ソースからビルド
 
@@ -90,7 +90,7 @@ Chronos-FM は 6 つのシリアルなフェーズで開発します。P1 は `0
 
 - **Discord**: https://discord.gg/dZM7fUtE94
 - **X (Twitter)**: https://x.com/chronosfmdotapp
-- **GitHub**: https://github.com/chronos-fm/chronos-fm
+- **GitHub**: https://github.com/Dark-Ohm/chronos-fm
 
 コントリビューションを歓迎します。Issue や Pull Request をお気軽にどうぞ。
 

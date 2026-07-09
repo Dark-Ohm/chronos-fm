@@ -112,7 +112,7 @@ yay -S chronos-fm-cachyos
 See [docs/release-testing-checklist.md](docs/release-testing-checklist.md) for the full manual test matrix.
 
 ## Feedback
-Report issues at: https://github.com/chronos-fm/chronos-fm/issues
+Report issues at: https://github.com/Dark-Ohm/chronos-fm/issues
 ```
 
 ---
