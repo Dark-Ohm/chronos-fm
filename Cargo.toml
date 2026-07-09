@@ -1,0 +1,63 @@
+[workspace]
+resolver = "2"
+members = [
+  "crates/chronos-fm",
+  "crates/chronos-fm-core",
+  "crates/chronos-fm-models",
+  "crates/chronos-fm-services",
+  "crates/chronos-fm-store",
+  "crates/chronos-fm-ui",
+  "crates/chronos-fm-pages",
+]
+# P2 以降に追加:
+#   "crates/chronos-fm-launcher",
+#   "crates/chronos-fm-plugin-host",
+#   "crates/plugins/*"
+exclude = ["web"]
+
+# gpui renders with Metal/Blade and the GUI stack is only exercised on macOS, so
+# Linux CI builds headless. `default-members` keeps bare `cargo build`/`test`/
+# `clippy` to the toolkit-free crates; the GUI crates (chronos-fm-ui / chronos-fm-pages /
+# chronos-fm) are still workspace members and build with `--workspace`, `-p`, or on
+# macOS. This mirrors the previous single-crate `default = []` / `gui` feature.
+default-members = [
+  "crates/chronos-fm-core",
+  "crates/chronos-fm-models",
+  "crates/chronos-fm-services",
+  "crates/chronos-fm-store",
+]
+
+[workspace.package]
+version      = "0.0.1"
+edition      = "2024"
+rust-version = "1.85"
+license      = "MIT"
+repository   = "https://github.com/chronos-fm/chronos-fm"
+homepage     = "https://chronos-fm.app"
+authors      = ["chronos-fm contributors"]
+
+[workspace.dependencies]
+anyhow             = "1"
+thiserror          = "1"
+tracing            = "0.1"
+tracing-subscriber = { version = "0.3", features = ["fmt", "env-filter"] }
+serde              = { version = "1", features = ["derive"] }
+serde_json         = "1"
+time               = { version = "0.3", features = ["formatting", "macros"] }
+
+[workspace.lints.rust]
+unsafe_code  = "deny"
+# Every public item must carry a doc comment (testing.md §3). Promoted to an
+# error in CI by `-D warnings`; to be raised to "deny" in P7 (#48).
+missing_docs = "warn"
+
+[workspace.lints.clippy]
+unwrap_used = "warn"
+expect_used = "warn"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+opt-level = 3
+strip = "debuginfo"

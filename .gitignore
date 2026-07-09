@@ -1,0 +1,40 @@
+# Rust
+/target/
+/debug/
+/release/
+*.rs.bk
+*.rlib
+*.prof*
+
+# IDE/editor
+.vscode/
+.idea/
+
+# Logs & env
+*.log
+.env
+.env.*
+
+# macOS
+.DS_Store
+
+# Coverage / tooling
+coverage/
+
+# AI Agent
+.agent
+
+# personal
+/.specify
+
+# Nix
+result
+result-*
+.direnv/
+
+# Python bytecode
+__pycache__/
+*.pyc
+
+# Worktrees
+.worktrees/

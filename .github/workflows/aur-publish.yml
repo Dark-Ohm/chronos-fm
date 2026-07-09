@@ -1,0 +1,33 @@
+name: Publish to AUR
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  aur-publish:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Install aurpublish
+        run: cargo install --locked aurpublish
+
+      - name: Configure SSH for AUR
+        uses: webfactory/ssh-agent@v0.9
+        with:
+          ssh-private-key: ${{ secrets.AUR_SSH_KEY }}
+
+      - name: Generate PKGBUILD
+        run: ./script/gen-pkgbuild.sh ${{ github.ref_name }}
+
+      - name: Publish to AUR
+        run: |
+          cd pkgbuild
+          aurpublish --no-confirm

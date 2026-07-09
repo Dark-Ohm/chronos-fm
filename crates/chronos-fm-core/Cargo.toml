@@ -1,0 +1,33 @@
+[package]
+name = "chronos-fm-core"
+description = "Core primitives (errors, config, telemetry) shared across chronos-fm crates."
+version.workspace      = true
+edition.workspace      = true
+rust-version.workspace = true
+license.workspace      = true
+repository.workspace   = true
+homepage.workspace     = true
+authors.workspace      = true
+
+[lib]
+name = "chronos_fm_core"
+path = "src/chronos_fm_core.rs"
+
+[dependencies]
+thiserror.workspace          = true
+tracing.workspace            = true
+tracing-subscriber.workspace = true
+time.workspace               = true
+serde.workspace              = true
+serde_json.workspace         = true
+toml                         = "0.9"
+schemars                     = "1"
+notify                       = "8"
+dirs                         = "6"
+
+[dev-dependencies]
+tempfile = "3"
+insta = "1"
+
+[lints]
+workspace = true

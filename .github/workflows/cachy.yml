@@ -1,0 +1,61 @@
+name: CachyOS Build & Test
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux/archlinux:base-devel
+      options: --user root
+    steps:
+      - name: Install deps
+        run: |
+          pacman -Syu --noconfirm --needed \
+            base-devel git rustup clang lld vulkan-icd-loader \
+            wayland wayland-protocols libxkbcommon libxcb libxkbcommon-x11 \
+            xorg-server-xvfb
+          rustup default stable
+          rustup component add rustfmt clippy
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Cache cargo
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry/index
+            ~/.cargo/registry/cache
+          key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
+
+      - name: Build (release)
+        run: |
+          export RUSTFLAGS="-C opt-level=3 -C lto=thin -C codegen-units=1 -C link-arg=-fuse-ld=lld"
+          cargo build --release --locked -p chronos-fm
+
+      - name: Smoke test
+        run: |
+          xvfb-run -a --server-args="-screen 0 1024x768x24" \
+            timeout 10 ./target/release/chronos-fm --version
+
+      - name: Verify GPUI commit
+        run: |
+          GPUI_COMMIT="69e2130295c2649963eb639fc70b4f2ee8ea1624"
+          grep -q "${GPUI_COMMIT}" Cargo.lock \
+            && echo "✅ GPUI commit matches" \
+            || (echo "❌ GPUI commit mismatch" && exit 1)
+
+      - name: Upload binary artifact
+        if: startsWith(github.ref, 'refs/tags/')
+        uses: actions/upload-artifact@v4
+        with:
+          name: chronos-fm-linux-x86_64
+          path: target/release/chronos-fm

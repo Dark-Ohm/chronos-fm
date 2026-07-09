@@ -1,0 +1,80 @@
+# Maintainer: chronos-fm contributors <chronos-fm@chronos-fm.app>
+pkgname=chronos-fm-cachy
+pkgver=0.1.0
+pkgrel=1
+pkgdesc="Launcher × Explorer — CachyOS build (GPUI/wgpu, optimized)"
+arch=(x86_64)
+url="https://chronos-fm.app"
+license=(MIT)
+depends=(
+  gcc-libs
+  glibc
+  openssl
+  wayland
+  wayland-protocols
+  libxkbcommon
+  libxcb
+  libxkbcommon-x11
+  vulkan-icd-loader
+)
+makedepends=(
+  git
+  cargo
+  clang
+  lld
+  xorg-server-xvfb
+)
+optdepends=(
+  'vulkan-radeon: AMD Vulkan driver'
+  'vulkan-intel: Intel Vulkan driver'
+  'nvidia-utils: NVIDIA Vulkan driver'
+  'lib32-nvidia-utils: NVIDIA 32-bit Vulkan (for 32-bit apps)'
+)
+_GPUI_COMMIT="a1b2c3d4e5f678901234567890abcdef12345678"
+source=(
+  "git+https://github.com/chronos-fm/chronos-fm.git#tag=v${pkgver}-cachy${pkgrel}"
+  "gpui::git+https://github.com/zed-industries/zed.git#commit=${_GPUI_COMMIT}"
+)
+sha256sums=(SKIP SKIP)
+
+export RUSTFLAGS="-C opt-level=3 -C lto=thin -C codegen-units=1 \
+  -C link-arg=-fuse-ld=lld -C panic=abort"
+export CARGO_PROFILE_RELEASE_LTO=thin
+export CARGO_PROFILE_RELEASE_CODEGEN_UNITS=1
+export CARGO_PROFILE_RELEASE_PANIC=abort
+
+prepare() {
+  cd "chronos-fm"
+  cat >> Cargo.toml <<EOFPATCH
+
+[patch.crates-io]
+gpui = { path = "../gpui/crates/gpui" }
+zed_gpui = { path = "../gpui/crates/zed_gpui" }
+EOFPATCH
+  cargo fetch --locked --target x86_64-unknown-linux-gnu
+}
+
+build() {
+  cd "chronos-fm"
+  cargo build --release --locked -p chronos-fm
+}
+
+check() {
+  cd "chronos-fm"
+  xvfb-run -a --server-args="-screen 0 1024x768x24" \
+    timeout 10 ./target/release/chronos-fm --version
+  grep -q "${_GPUI_COMMIT}" Cargo.lock && echo "✅ GPUI commit verified"
+}
+
+package() {
+  cd "chronos-fm"
+  install -Dm755 target/release/chronos-fm "${pkgdir}/usr/bin/chronos-fm"
+  install -Dm644 packaging/arch/chronos-fm.desktop "${pkgdir}/usr/share/applications/chronos-fm.desktop"
+  for size in 16 32 48 64 128 256 512; do
+    install -Dm644 "assets/icons/chronos-fm-${size}.png" \
+      "${pkgdir}/usr/share/icons/hicolor/${size}x${size}/apps/chronos-fm.png"
+  done
+  install -Dm644 assets/icons/chronos-fm.svg \
+    "${pkgdir}/usr/share/icons/hicolor/scalable/apps/chronos-fm.svg"
+  install -Dm644 LICENSE "${pkgdir}/usr/share/licenses/${pkgname}/LICENSE"
+}

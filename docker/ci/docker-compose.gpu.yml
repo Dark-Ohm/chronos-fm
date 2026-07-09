@@ -1,0 +1,23 @@
+services:
+  chronos-fm:
+    build:
+      context: ../..
+      dockerfile: docker/ci/Dockerfile
+    environment:
+      - DISPLAY=:99
+    volumes:
+      - ../..:/chronos-fm
+      - ${HOME}/.cargo/registry:/root/.cargo/registry
+      - chronos-fm-data:/root/.chronos-fm
+    entrypoint: ["/bin/bash", "-lc", "Xtigervnc :99 -geometry 1280x800 -depth 24 -SecurityTypes None >/tmp/vnc.log 2>&1 & sleep 1 && DISPLAY=:99 fvwm >/tmp/fvwm.log 2>&1 & sleep 1 && exec \"$@\"", "--"]
+    command: ["cargo", "test"]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+volumes:
+  chronos-fm-data:
