@@ -1,6 +1,14 @@
 # Chronos-FM Roadmap
 
 > Last updated: 2026-05-28
+> **Обновление 2026-07-18 — частично заменено:** все упоминания «WASM
+> Component Model / wit-bindgen / wasmtime» ниже про plugin-host (P4)
+> заменены решением [ADR 0009](./adr/0009-luau-plugin-host-supersedes-wasm.md)
+> — plugin-host теперь Luau (`chronos_luau`, общий с сиблинг-проектом
+> ChronOS), не WASM. Rust/TypeScript/Python шаблоны плагинов отменены.
+> Текст ниже пока НЕ переписан построчно (P4 не начат — переписать при
+> реальном старте P4, не заранее); ADR 0009 — источник истины по
+> plugin-host, не текст секции P4 этого файла.
 
 Chronos-FM は、macOS の Finder を起点に「Launcher × Explorer」を高速・拡張可能・プラグイン可能な形で再構築する OSS プロジェクトです。本書は `0.0.x` から `1.0.0` までの開発計画を示し、各フェーズの目標と参照すべき設計ドキュメントを整理します。
 

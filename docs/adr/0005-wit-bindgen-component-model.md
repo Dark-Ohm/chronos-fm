@@ -1,6 +1,6 @@
 # 0005 — プラグインホストは wit-bindgen + WASM Component Model 一直線
 
-> Status: Accepted
+> Status: Superseded by [ADR 0009](./0009-luau-plugin-host-supersedes-wasm.md) — заменено на Luau, 2026-07-18
 > Date: 2026-05-28
 
 ## Context
