@@ -45,34 +45,37 @@ serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"
 time               = { version = "0.3", features = ["formatting", "macros"] }
 
-# Shared toolkit: ChronOS + Chronos-FM both path-depend on the local gpui-ce
-# fork under ../Source (not crates.io / upstream zed). gpui-component is the
-# longbridge UI kit fork also vendored there; its nested zed git deps are
-# redirected via [patch] below so only one gpui graph is linked.
-gpui = { path = "../Source/gpui" }
-gpui_platform = { path = "../Source/gpui_platform" }
-gpui-component = { path = "../Source/gpui-component/crates/ui" }
+# Shared toolkit: ChronOS + Chronos-FM + Chronos-IDE all git-depend on the
+# same pushed fork (github.com/Dark-Ohm/Chronos-GPUI), pinned to one rev —
+# NOT a path-dep on a local sibling checkout. A path-dep on ../Source only
+# builds on a machine that happens to have that exact sibling directory;
+# a git-dep builds from any fresh clone anywhere. gpui-component is the
+# longbridge UI kit fork, vendored in the same repo; its nested zed git deps
+# are redirected via [patch] below so only one gpui graph is linked.
+gpui = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_platform = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui-component = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
 
 # gpui-component's workspace still declares gpui (and siblings) as
 # git = zed-industries/zed. Without this patch Cargo would resolve two
-# different `gpui` sources (path here vs git there) and fail to unify.
-# Only packages that appear under that git source in our lock graph are listed
-# (extra entries produce "patch was not used" warnings).
+# different `gpui` sources (our fork here vs upstream zed there) and fail to
+# unify. Only packages that appear under that git source in our lock graph
+# are listed (extra entries produce "patch was not used" warnings).
 [patch."https://github.com/zed-industries/zed"]
-gpui = { path = "../Source/gpui" }
-gpui_platform = { path = "../Source/gpui_platform" }
-gpui_macros = { path = "../Source/gpui_macros" }
-gpui_web = { path = "../Source/gpui_web" }
-gpui_shared_string = { path = "../Source/gpui_shared_string" }
-gpui_linux = { path = "../Source/gpui_linux" }
-gpui_wgpu = { path = "../Source/gpui_wgpu" }
-gpui_collections = { path = "../Source/gpui_collections" }
-gpui_scheduler = { path = "../Source/gpui_scheduler" }
-gpui_sum_tree = { path = "../Source/gpui_sum_tree" }
-gpui_refineable = { path = "../Source/gpui_refineable" }
-gpui_derive_refineable = { path = "../Source/gpui_derive_refineable" }
-gpui_media = { path = "../Source/gpui_media" }
-gpui_util = { path = "../Source/gpui_util" }
+gpui = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_platform = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_macros = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_web = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_shared_string = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_linux = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_wgpu = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_collections = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_scheduler = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_sum_tree = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_refineable = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_derive_refineable = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_media = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
+gpui_util = { git = "https://github.com/Dark-Ohm/Chronos-GPUI", rev = "ee80b72" }
 
 [workspace.lints.rust]
 unsafe_code  = "deny"

@@ -2752,6 +2752,7 @@ dependencies = [
 [[package]]
 name = "gpui"
 version = "0.2.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "accesskit",
  "anyhow",
@@ -2835,6 +2836,7 @@ dependencies = [
 [[package]]
 name = "gpui-component"
 version = "0.5.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "aho-corasick",
  "anyhow",
@@ -2882,6 +2884,7 @@ dependencies = [
 [[package]]
 name = "gpui-component-assets"
 version = "0.5.1"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "anyhow",
  "gpui",
@@ -2895,6 +2898,7 @@ dependencies = [
 [[package]]
 name = "gpui-component-macros"
 version = "0.5.1"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2904,6 +2908,7 @@ dependencies = [
 [[package]]
 name = "gpui_collections"
 version = "0.2.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "gpui_util",
  "indexmap",
@@ -2913,6 +2918,7 @@ dependencies = [
 [[package]]
 name = "gpui_derive_refineable"
 version = "0.2.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -2922,6 +2928,7 @@ dependencies = [
 [[package]]
 name = "gpui_linux"
 version = "0.1.0"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "accesskit",
  "accesskit_unix",
@@ -3016,6 +3023,7 @@ dependencies = [
 [[package]]
 name = "gpui_macros"
 version = "0.1.0"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "heck 0.5.0",
  "proc-macro2",
@@ -3026,6 +3034,7 @@ dependencies = [
 [[package]]
 name = "gpui_media"
 version = "0.2.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "anyhow",
  "bindgen",
@@ -3040,6 +3049,7 @@ dependencies = [
 [[package]]
 name = "gpui_platform"
 version = "0.1.0"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "console_error_panic_hook",
  "gpui",
@@ -3052,6 +3062,7 @@ dependencies = [
 [[package]]
 name = "gpui_refineable"
 version = "0.2.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "gpui_derive_refineable",
 ]
@@ -3059,6 +3070,7 @@ dependencies = [
 [[package]]
 name = "gpui_scheduler"
 version = "0.2.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "async-task",
  "backtrace",
@@ -3073,6 +3085,7 @@ dependencies = [
 [[package]]
 name = "gpui_shared_string"
 version = "0.1.0"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "schemars",
  "serde",
@@ -3082,6 +3095,7 @@ dependencies = [
 [[package]]
 name = "gpui_sum_tree"
 version = "0.2.2"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "heapless",
  "log",
@@ -3092,6 +3106,7 @@ dependencies = [
 [[package]]
 name = "gpui_util"
 version = "0.1.0"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "anyhow",
  "log",
@@ -3101,6 +3116,7 @@ dependencies = [
 [[package]]
 name = "gpui_web"
 version = "0.1.0"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "anyhow",
  "console_error_panic_hook",
@@ -3124,6 +3140,7 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
+source = "git+https://github.com/Dark-Ohm/Chronos-GPUI?rev=ee80b72#ee80b7207bfa804a9f3a23c28f8be2b85e1ff589"
 dependencies = [
  "anyhow",
  "bytemuck",
