@@ -45,6 +45,35 @@ serde              = { version = "1", features = ["derive"] }
 serde_json         = "1"
 time               = { version = "0.3", features = ["formatting", "macros"] }
 
+# Shared toolkit: ChronOS + Chronos-FM both path-depend on the local gpui-ce
+# fork under ../Source (not crates.io / upstream zed). gpui-component is the
+# longbridge UI kit fork also vendored there; its nested zed git deps are
+# redirected via [patch] below so only one gpui graph is linked.
+gpui = { path = "../Source/gpui" }
+gpui_platform = { path = "../Source/gpui_platform" }
+gpui-component = { path = "../Source/gpui-component/crates/ui" }
+
+# gpui-component's workspace still declares gpui (and siblings) as
+# git = zed-industries/zed. Without this patch Cargo would resolve two
+# different `gpui` sources (path here vs git there) and fail to unify.
+# Only packages that appear under that git source in our lock graph are listed
+# (extra entries produce "patch was not used" warnings).
+[patch."https://github.com/zed-industries/zed"]
+gpui = { path = "../Source/gpui" }
+gpui_platform = { path = "../Source/gpui_platform" }
+gpui_macros = { path = "../Source/gpui_macros" }
+gpui_web = { path = "../Source/gpui_web" }
+gpui_shared_string = { path = "../Source/gpui_shared_string" }
+gpui_linux = { path = "../Source/gpui_linux" }
+gpui_wgpu = { path = "../Source/gpui_wgpu" }
+gpui_collections = { path = "../Source/gpui_collections" }
+gpui_scheduler = { path = "../Source/gpui_scheduler" }
+gpui_sum_tree = { path = "../Source/gpui_sum_tree" }
+gpui_refineable = { path = "../Source/gpui_refineable" }
+gpui_derive_refineable = { path = "../Source/gpui_derive_refineable" }
+gpui_media = { path = "../Source/gpui_media" }
+gpui_util = { path = "../Source/gpui_util" }
+
 [workspace.lints.rust]
 unsafe_code  = "deny"
 # Every public item must carry a doc comment (testing.md §3). Promoted to an

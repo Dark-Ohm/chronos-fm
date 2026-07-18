@@ -358,7 +358,7 @@ impl<T: PaneItem> PaneGroup<T> {
     /// Focuses the active pane's active tab.
     pub fn focus_active(&self, window: &mut Window, cx: &mut App) {
         let handle = self.active_pane().read(cx).focus_handle(cx);
-        handle.focus(window);
+        handle.focus(window, cx);
     }
 
     /// The active tab of the active pane, falling back to the first to avoid
@@ -603,7 +603,7 @@ impl<T: PaneItem> PaneGroup<T> {
                             .text_color(rgb(theme::MUTED)),
                     ),
             )
-            .child(div().flex_grow())
+            .child(div().flex_grow_1())
             .when(split, |this| {
                 this.child(
                     div()

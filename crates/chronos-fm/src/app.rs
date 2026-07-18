@@ -7,7 +7,7 @@
 //! P3) will be opened from here too, as a symmetric second pillar.
 
 use crate::cli::Cli;
-use gpui::{App, AppContext, Application, Bounds, px, size};
+use gpui::{App, AppContext, Bounds, px, size};
 use gpui_component::Root;
 use gpui_component::resizable::ResizableState;
 use chronos_fm_core::config::{self, ConfigOverride};
@@ -45,7 +45,11 @@ impl ChronosFmApp {
         // §7). The search service is now tokio-free — its file watcher and progress
         // channels run on std threads and runtime-agnostic channels — so no async
         // runtime needs to be entered here.
-        Application::new().with_assets(Assets).run(move |app: &mut App| {
+        // gpui-ce fork: Application::new() is not public; platform selection
+        // (wayland/x11, fonts) lives in gpui_platform — same bootstrap as ChronOS.
+        gpui_platform::application()
+            .with_assets(Assets)
+            .run(move |app: &mut App| {
             gpui_component::init(app);
             let resizable = app.new(|_| ResizableState::default());
             let bounds = Bounds::centered(

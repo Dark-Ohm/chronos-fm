@@ -23,8 +23,9 @@ chronos-fm-services = { path = "../chronos-fm-services", features = ["gui"] }
 chronos-fm-ui       = { path = "../chronos-fm-ui" }
 chronos-fm-pages    = { path = "../chronos-fm-pages" }
 chronos-fm-store    = { path = "../chronos-fm-store" }
-gpui = "0.2"
-gpui-component = "0.5"
+gpui.workspace = true
+gpui_platform.workspace = true
+gpui-component.workspace = true
 tracing.workspace = true
 clap = { version = "4", features = ["derive"] }
 

@@ -18,8 +18,8 @@ path = "src/chronos_fm_ui.rs"
 [dependencies]
 chronos-fm-core   = { path = "../chronos-fm-core" }
 chronos-fm-models = { path = "../chronos-fm-models" }
-gpui = "0.2"
-gpui-component = "0.5"
+gpui.workspace = true
+gpui-component.workspace = true
 rust-embed = "8"
 serde.workspace      = true
 serde_json.workspace = true
@@ -29,7 +29,7 @@ time.workspace       = true
 [dev-dependencies]
 # `test-support` gates `TestAppContext` and the `#[gpui::test]` macro. It is a
 # dev-dependency so the gpui test backend only links into the test build.
-gpui = { version = "0.2", features = ["test-support"] }
+gpui = { workspace = true, features = ["test-support"] }
 proptest = "1"
 
 [lints]
