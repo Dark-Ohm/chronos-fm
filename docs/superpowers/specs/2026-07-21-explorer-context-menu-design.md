@@ -78,13 +78,20 @@ Rows currently in "Cut" state are visually dimmed: `row.rs` checks `cx.global::<
 ```rust
 window.open_alert_dialog(cx, move |alert, _, _| {
     alert
-        .warning()
         .title("Delete Selected Items?")
         .description(format!("{} item(s) will be moved to Trash.", paths.len()))
         .show_cancel(true)
-        .on_ok(move |_, window, cx| { /* trash_path each, reload */ })
+        .button_props(
+            DialogButtonProps::default()
+                .ok_text("Delete")
+                .ok_variant(ButtonVariant::Danger)
+                .show_cancel(true),
+        )
+        .on_ok(move |_, window, cx| { /* trash_path each, reload */ true })
 });
 ```
+
+(Verified against `alert_dialog.rs`/`dialog.rs` at the pinned rev: `AlertDialog` has no `.warning()` — that was copied from an aspirational doc comment, not real code. Severity is expressed via `DialogButtonProps::ok_variant(ButtonVariant::Danger)` instead. `on_ok` must return `bool` — `true` closes the dialog.)
 
 Delete always trashes (`trash_path`), never permanently deletes, in this pass — "Delete Permanently" is an explicit non-goal, deferred to a follow-up if requested.
 
