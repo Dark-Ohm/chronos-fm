@@ -87,7 +87,10 @@ fn list_dir_impl(path: &str, limit: usize, cursor: Option<&str>) -> Result<ListR
                     .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
                     .map(|d| d.as_secs())
                     .unwrap_or(0);
-                if md.file_type().is_dir() {
+                if md.file_type().is_dir()
+                    || (md.file_type().is_file()
+                        && crate::archive::ArchiveFormat::from_path(path).is_some())
+                {
                     ("dir".to_string(), 0, modified)
                 } else if md.file_type().is_file() {
                     ("file".to_string(), md.len(), modified)

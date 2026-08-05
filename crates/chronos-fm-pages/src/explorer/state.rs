@@ -78,6 +78,8 @@ pub struct ExplorerPane {
     pub col_size_width: f32,
     /// Width of the modified-time column.
     pub col_modified_width: f32,
+    /// Properties dialog, if open.
+    pub properties_dialog: Option<gpui::Entity<crate::explorer::properties::PropertiesDialog>>,
     /// Width of the action column.
     pub col_action_width: f32,
     // Resize state
@@ -172,6 +174,7 @@ impl ExplorerPane {
         focus_handle: FocusHandle,
     ) -> Self {
         Self {
+            properties_dialog: None,
             cwd: std::env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
                 .unwrap_or_else(|_| ".".into()),

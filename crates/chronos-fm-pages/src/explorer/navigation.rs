@@ -1,7 +1,7 @@
 use chronos_fm_core::config;
 use chronos_fm_services::fs::listing::{FileEntryDto, ListParams, list_dir_sync};
 
-use gpui::{Context, Window};
+use gpui::{AppContext, Context, Window};
 
 use super::ExplorerPane;
 use super::entries;
@@ -136,5 +136,24 @@ impl ExplorerPane {
         } else {
             self.open_preview(item.path, window, cx);
         }
+    }
+
+    /// Open the Properties dialog for the currently selected entry.
+    pub(crate) fn show_properties(&mut self, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) {
+        let selected = self.active_index
+            .and_then(|idx| self.filtered_entries.get(idx).cloned());
+        let Some(item) = selected else {
+            return;
+        };
+        let item_clone = item.clone();
+        let dialog = cx.new(|cx| super::properties::PropertiesDialog::new(item_clone, cx));
+        self.properties_dialog = Some(dialog);
+        cx.notify();
+    }
+
+    /// Close the Properties dialog.
+    pub(crate) fn close_properties(&mut self, cx: &mut gpui::Context<Self>) {
+        self.properties_dialog = None;
+        cx.notify();
     }
 }

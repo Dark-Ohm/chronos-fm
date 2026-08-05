@@ -51,6 +51,11 @@ pub fn render(
                     cx.stop_propagation();
                     cx.notify();
                 }
+                "i" if with_modifier => {
+                    this.show_properties(window, cx);
+                    cx.stop_propagation();
+                    cx.notify();
+                }
                 // Search-close Escape is handled by the branch above (which
                 // returns early), so here Escape only clears a selection — and
                 // only consumes the event when there was one to clear, leaving
@@ -142,6 +147,28 @@ pub fn render(
                     .into_any_element(),
             ),
         )
+        .child(render_properties_dialog(page, cx))
+}
+
+fn render_properties_dialog(
+    page: &mut ExplorerPane,
+    cx: &mut Context<ExplorerPane>,
+) -> impl IntoElement {
+    if let Some(dialog) = &page.properties_dialog {
+        return div()
+            .absolute()
+            .inset_0()
+            .bg(gpui::hsla(0.0, 0.0, 0.0, 0.4))
+            .flex()
+            .items_center()
+            .justify_center()
+            .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _event, _window, cx| {
+                this.close_properties(cx);
+            }))
+            .child(dialog.clone())
+            .into_any_element();
+    }
+    div().into_any_element()
 }
 
 /// Returns highlight ranges for every case-insensitive occurrence of `query`
