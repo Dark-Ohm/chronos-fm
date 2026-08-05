@@ -3,3 +3,6 @@
 
 mod parse;
 pub use parse::{parse_managed_objects, Device, DeviceValue, ManagedObjects};
+
+mod backend;
+pub use backend::{DeviceBackend, UDisks2Backend};
