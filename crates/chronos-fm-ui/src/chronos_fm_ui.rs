@@ -10,6 +10,8 @@
 pub mod assets;
 /// Presentational UI components built on GPUI.
 pub mod components;
+/// Live removable-media device list (GPUI global).
+pub mod devices_store;
 /// Structural UI patterns (elevated_card, section_header) ported from ChronOS.
 pub mod patterns;
 /// Theme tokens (colors) shared across components.

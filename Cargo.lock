@@ -1202,6 +1202,7 @@ dependencies = [
  "anyhow",
  "chronos-fm-core",
  "chronos-fm-models",
+ "chronos-fm-services",
  "gpui",
  "gpui-component",
  "proptest 1.11.0",

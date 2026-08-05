@@ -25,6 +25,7 @@ serde.workspace      = true
 serde_json.workspace = true
 anyhow.workspace     = true
 time.workspace       = true
+chronos-fm-services = { version = "0.0.1", path = "../chronos-fm-services" }
 
 [dev-dependencies]
 # `test-support` gates `TestAppContext` and the `#[gpui::test]` macro. It is a
