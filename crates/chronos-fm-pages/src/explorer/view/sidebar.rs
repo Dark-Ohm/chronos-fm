@@ -1,10 +1,11 @@
 use crate::explorer::ExplorerPane;
+use chronos_fm_ui::devices_store;
+use chronos_fm_ui::patterns::{elevated_card, section_header};
+use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::list::ListItem;
 use gpui_component::{Icon, IconName};
-use chronos_fm_ui::patterns::{elevated_card, section_header};
-use chronos_fm_ui::theme::theme; // Assuming theme is accessible
 
 /// Renders the explorer sidebar listing quick-access locations.
 pub fn render(
@@ -35,6 +36,7 @@ pub fn render(
                 .child(section_header(cx, "Folders", "quick access"))
                 .child(render_shortcuts(page, cx)),
         )
+        .child(render_devices_section(cx))
 }
 
 fn sidebar_item(
@@ -127,4 +129,56 @@ fn get_shortcuts() -> Vec<(String, String)> {
         }
     }
     v
+}
+
+/// Renders the "Devices" sidebar section: one row per removable/internal
+/// volume from `DeviceStore` (Task 3), using the T002 elevated-card
+/// pattern already applied to the "Folders" section above it. Empty when
+/// `DeviceStore` has no devices (no removable media / udisks2
+/// unavailable) — renders nothing rather than an empty card.
+/// Also returns nothing if the `DeviceStore` global hasn't been registered
+/// yet (e.g. in tests that don't initialise the full app startup path).
+pub(crate) fn render_devices_section(cx: &App) -> impl IntoElement {
+    let store = cx.try_global::<devices_store::DeviceStore>();
+    let Some(store) = store else {
+        return div().into_any_element();
+    };
+    if store.devices.is_empty() {
+        return div().into_any_element();
+    }
+
+    let mut card = elevated_card(cx)
+        .mt(px(16.0))
+        .child(section_header(cx, "Devices", "removable media"));
+
+    if let Some(error) = &store.last_error {
+        card = card.child(
+            div()
+                .text_color(theme::danger(cx))
+                .text_xs()
+                .child(error.clone()),
+        );
+    }
+
+    for device in &store.devices {
+        let label = device.label.clone();
+        let is_mounted = device.mount_point.is_some();
+
+        card = card.child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .gap(px(6.))
+                .child(div().text_color(theme::fg(cx)).child(label))
+                .child(
+                    div()
+                        .text_color(theme::muted(cx))
+                        .text_xs()
+                        .child(if is_mounted { "eject" } else { "mount" }),
+                ),
+        );
+    }
+
+    card.into_any_element()
 }
