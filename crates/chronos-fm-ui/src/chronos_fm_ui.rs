@@ -10,6 +10,8 @@
 pub mod assets;
 /// Presentational UI components built on GPUI.
 pub mod components;
+/// Structural UI patterns (elevated_card, section_header) ported from ChronOS.
+pub mod patterns;
 /// Theme tokens (colors) shared across components.
 pub mod theme;
 /// Window construction helpers, including unified toolbar window options.

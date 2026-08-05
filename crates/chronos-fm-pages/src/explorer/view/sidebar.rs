@@ -3,6 +3,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_component::list::ListItem;
 use gpui_component::{Icon, IconName};
+use chronos_fm_ui::patterns::{elevated_card, section_header};
 use chronos_fm_ui::theme::theme; // Assuming theme is accessible
 
 /// Renders the explorer sidebar listing quick-access locations.
@@ -29,19 +30,9 @@ pub fn render(
                 .child(sidebar_item(IconName::Folder, "Trash", false, cx)),
         )
         .child(
-            div()
-                .flex()
-                .flex_col()
+            elevated_card(cx)
                 .mt(px(16.0))
-                .child(
-                    div()
-                        .px(px(12.0))
-                        .py(px(8.0))
-                        .text_xs()
-                        .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(theme::fg_secondary(cx))
-                        .child("Folder"),
-                )
+                .child(section_header(cx, "Folders", "quick access"))
                 .child(render_shortcuts(page, cx)),
         )
 }
