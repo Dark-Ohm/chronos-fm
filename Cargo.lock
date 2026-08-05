@@ -1200,6 +1200,7 @@ name = "chronos-fm-ui"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "async-trait",
  "chronos-fm-core",
  "chronos-fm-models",
  "chronos-fm-services",
