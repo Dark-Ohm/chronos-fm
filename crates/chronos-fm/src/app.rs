@@ -7,12 +7,14 @@
 //! P3) will be opened from here too, as a symmetric second pillar.
 
 use crate::cli::Cli;
-use gpui::{App, AppContext, Bounds, px, size};
-use gpui_component::{Root, Theme, ThemeRegistry};
+use futures::StreamExt;
+use gpui::{App, AppContext, AsyncApp, Bounds, BorrowAppContext, px, size};
 use gpui_component::resizable::ResizableState;
+use gpui_component::{Root, Theme, ThemeRegistry};
 use chronos_fm_core::config::{self, ConfigOverride};
 use chronos_fm_core::telemetry::logging::init_logging;
 use chronos_fm_pages::RootView;
+use chronos_fm_services::devices::UDisks2Backend;
 use chronos_fm_services::search::SearchService;
 use chronos_fm_store::{KvStore, RedbKvStore, StoreLogConfig};
 use chronos_fm_ui::assets::Assets;
@@ -52,6 +54,13 @@ impl ChronosFmApp {
             .run(move |app: &mut App| {
             gpui_component::init(app);
             activate_chronos_theme(app);
+
+            // Initialize the removable-media device store global and start the
+            // background hotplug watcher (non-blocking — if udisks2 is unreachable,
+            // the Devices section just renders nothing).
+            chronos_fm_ui::devices_store::init(app);
+            spawn_device_hotplug_watcher(app);
+
             let resizable = app.new(|_| ResizableState::default());
             let bounds = Bounds::centered(
                 None,
@@ -116,6 +125,83 @@ impl ChronosFmApp {
             }
         });
     }
+}
+
+/// Connects to `udisks2` and keeps `DeviceStore` live: an initial listing
+/// on success, then a subscription to `InterfacesAdded`/`InterfacesRemoved`
+/// that re-lists on every signal (simpler and more robust than diffing
+/// individual signal payloads, and the list is cheap — a handful of
+/// devices). If `udisks2` is unreachable (no system bus, container,
+/// headless CI), logs a warning and leaves `DeviceStore` empty — the
+/// Devices sidebar section (Task 6) just renders nothing, not an error.
+fn spawn_device_hotplug_watcher(cx: &mut App) {
+    cx.spawn(async move |cx: &mut AsyncApp| {
+        let backend = match cx
+            .background_spawn(async { UDisks2Backend::connect().await })
+            .await
+        {
+            Ok(backend) => Arc::new(backend),
+            Err(error) => {
+                tracing::warn!("Devices panel unavailable: {error}");
+                return;
+            }
+        };
+
+        let backend_for_list: Arc<dyn chronos_fm_services::devices::DeviceBackend> =
+            backend.clone();
+
+        // Initial snapshot.
+        refresh_devices(cx, backend_for_list.clone()).await;
+
+        // Live hotplug: udisks2's ObjectManager emits InterfacesAdded/
+        // InterfacesRemoved on the same object (/org/freedesktop/UDisks2)
+        // this module already talks to; re-list on every signal rather
+        // than parsing the signal payload incrementally.
+        let connection = backend.connection().clone();
+        let proxy = match zbus::fdo::ObjectManagerProxy::new(
+            &connection,
+            "org.freedesktop.UDisks2",
+            "/org/freedesktop/UDisks2",
+        )
+        .await
+        {
+            Ok(proxy) => proxy,
+            Err(error) => {
+                tracing::warn!("Devices hotplug subscription unavailable: {error}");
+                return;
+            }
+        };
+
+        let Ok(mut added) = proxy.receive_interfaces_added().await else {
+            return;
+        };
+        let Ok(mut removed) = proxy.receive_interfaces_removed().await else {
+            return;
+        };
+
+        loop {
+            futures::select_biased! {
+                _ = added.next() => refresh_devices(cx, backend_for_list.clone()).await,
+                _ = removed.next() => refresh_devices(cx, backend_for_list.clone()).await,
+                complete => break,
+            }
+        }
+    })
+    .detach();
+}
+
+async fn refresh_devices(
+    cx: &mut AsyncApp,
+    backend: Arc<dyn chronos_fm_services::devices::DeviceBackend>,
+) {
+    let result = cx.background_spawn(async move { backend.list().await }).await;
+    cx.update(|cx| {
+        cx.update_global::<chronos_fm_ui::devices_store::DeviceStore, _>(|store, _cx| {
+            if let Ok(devices) = result {
+                store.devices = devices;
+            }
+        });
+    });
 }
 
 /// Load the Chronos theme set and make it the active light/dark palette.

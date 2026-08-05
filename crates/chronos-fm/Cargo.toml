@@ -28,6 +28,8 @@ gpui_platform.workspace = true
 gpui-component.workspace = true
 tracing.workspace = true
 clap = { version = "4", features = ["derive"] }
+zbus = "5.13.2"
+futures = "0.3.33"
 
 [lints]
 workspace = true
