@@ -1,10 +1,63 @@
 # HANDOFF — контекст для новой сессии Архитектора (Chronos-FM)
 
-**Обновлено: 2026-07-18. Свежий чистый клон (см. §0), единый тулкит с
-ChronOS ЗАВЕДЁН и ПРИНЯТ (GROK №1, `8c2a7f4`). Лаунчер (P3) НЕ начат,
-но РЕШЕНО — остаётся отдельным от ChronOS `SUPER+L` (§3). Plugin-host
-(P4) РЕШЕНО — Luau (`chronos_luau`), WASM отменён (ADR 0009, §2). Читать
-сверху вниз.**
+**Обновлено: 2026-08-05 (чекпоинт), HEAD `192c5b3`.** Цель сессии:
+«перекрасить Chronos-FM в Chronos + перенести дизайн-паттерны +
+доработать до состояния замены Thunar». Читать этот блок первым, §0-§5
+ниже — история до 2026-07-18, остаётся верной.
+
+## Чекпоинт 2026-08-05 — reskin-трек запущен, T001+T002 приняты
+
+Заведена T-нумерованная оркестрация в этом репо (по образцу ChronOS,
+но локальный счётчик — НЕ путать с T-ID в ChronOS, разные проекты):
+`docs/orchestration/tasks/{active,report,report-log,rejected,done}`.
+Design spec: `docs/superpowers/specs/2026-08-05-theme-reskin-design.md`.
+
+**Параллельно существует независимый функциональный трек b1–b4**
+(`docs/agents/active/` — clipboard/rename, file-ops, context-menu
+row+grid, план `docs/superpowers/plans/2026-07-21-explorer-context
+-menu.md`) — старая b-схема этого репо, НЕ T-нумерована, не трогать
+файлы `row.rs`/`list.rs`/`grid.rs`/`listing.rs` пока они в работе.
+Не раздана на момент чекпоинта (`docs/agents/report/` пуст).
+
+**T001 (theme reskin infra) — ПРИНЯТ, `done/`.** Единый источник цвета:
+`gpui_component::Theme` (у gpui-component уже был готовый light/dark
+toggle-движок, `Theme::change()` был наполовину подключён в `root.rs`,
+просто красил дефолтную палитру) + новый `crates/chronos-fm/assets/
+themes/chronos.theme.json` (140 ключей/режим, сгенерирован
+`script/dev/gen_chronos_theme.py` из Base16-сида — тот же сид, что
+`../ChronOS/crates/ui/src/theme/schemes.rs::DEFAULT_BASE16` (Mocha dark)
+и `light_scheme()` ("Light C"). Мост `crates/chronos-fm-ui/src/theme.rs`
+— 20 бывших `pub const` → `pub fn name(cx: &App) -> Hsla`, читают
+`cx.theme()`. Живая приёмка архитектором (не только компиляция):
+grim+пипетка обоих режимов, `bg` dark `#1e1e2e` и light `#dde0f2` —
+точное совпадение с seed. Найдена и исправлена ошибка: dark-акцент
+случайно был Mocha-mauve вместо `#007acc` (правило «акцент не красится
+темой» нарушалось) — поймано архитектором до приёмки, не пользователем.
+
+**T002 (elevated_card + section_header) — ПРИНЯТ, `done/`.** Новый
+`crates/chronos-fm-ui/src/patterns.rs`, порт ChronOS T231-паттерна (без
+`elevation_apply_light_chrome` — гпуи-компонентный `.shadow_md()`
+эквивалент). Применён в `sidebar.rs` (секция Folders) и `settings.rs`.
+Живой кадр подтвердил `sidebar.rs` (dark); `settings.rs` принят по
+код-ревью — попытка синтетического клика (`ydotool`) на живом столе
+промахнулась мимо gear-иконки в чужое окно (на столе шла не связанная
+с сессией активность), решил не долбить вслепую повторными кликами.
+
+**Empty-state паттерн — НЕ портирован, сознательно.** Источник в ChronOS
+— T252 (`docs/orchestration/tasks/active/T252-*.md` в ChronOS), сам ещё
+не закрыт на момент этого чекпоинта (ждёт отчёта от GPT 5.6 sol). Заводить
+T003 в Chronos-FM только после того как T252 закроется в ChronOS.
+
+**Практическая находка обеих приёмок:** `cargo build ... | tail -N` в
+отчётах глушит реальный exit-код cargo (bash без `pipefail` — экзит-код
+принадлежит `tail`, не билду). Проверять `cargo build ... 2>&1; echo
+EXIT=$?` или без пайпа вовсе — T001-исполнитель наступил, T002-исполнитель
+уже учёл это в своём отчёте.
+
+**Очередь:** T003 (empty-state, после ChronOS T252) — не заведён. b1–b4
+можно раздавать независимо в любой момент (файловые зоны не пересекаются
+с reskin-треком). Хвосты §2 старого HANDOFF (app_id, doc-sync,
+search-permission) — не в очереди, ждут запроса.
 
 ## 0. Как этот репо вообще выглядит (важно, было недоразумение)
 
