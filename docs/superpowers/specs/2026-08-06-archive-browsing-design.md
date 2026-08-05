@@ -20,10 +20,18 @@ archive/
   mod.rs          — ArchiveFormat, split_archive_path(), ArchiveFs trait, LRU-кэш
   zip_archive.rs  — ZipArchive: impl ArchiveFs на крейте `zip`
   tar_archive.rs  — TarArchive: impl ArchiveFs на крейте `tar` + `flate2` + `zstd`
+  sevenz.rs       — SevenZArchive: read-only на `sevenz-rust` (pure Rust)
+  rar_archive.rs  — RarArchive: read-only на `unrar` (C-библиотека, unsafe)
 ```
 
-Крейты: `zip` (read + write, pure Rust), `tar` + `flate2` + `zstd` (read + write,
-streaming). Все — без `unsafe`, совместимы с `unsafe_code = "deny"`.
+Крейты:
+- `zip` (read + write, pure Rust)
+- `tar` + `flate2` + `zstd` (read + write, streaming, pure Rust)
+- `sevenz-rust` (read-only, pure Rust, последний релиз 2023 — заморожен но рабочий)
+- `unrar` (read-only, обёртка над C-libunrar, требует `unsafe` — изолирован в `rar_archive.rs`)
+
+`unsafe_code = "deny"` на workspace-уровне → для `rar_archive.rs` добавить
+`#[allow(unsafe_code)]` в модуле + явный `unsafe`-блок, обоснованный в doc-комментарии.
 
 ### 1.2 Пути — виртуальная схема `::`
 
@@ -42,6 +50,9 @@ streaming). Все — без `unsafe`, совместимы с `unsafe_code = "
 
 ```rust
 pub trait ArchiveFs: Send + Sync {
+    /// Whether this archive format supports write operations.
+    fn is_read_only(&self) -> bool;
+
     /// List the root directory of the archive (or a subdirectory, if the
     /// implementation supports hierarchical listing — v1: flat list with
     /// directories synthesised from file paths).
@@ -51,6 +62,7 @@ pub trait ArchiveFs: Send + Sync {
     fn read_file(&self, path_in_archive: &str) -> Result<Vec<u8>>;
 
     /// Write (replace or create) a file inside the in-memory archive state.
+    /// Returns `Err(ArchiveError::ReadOnly)` for read-only formats (.7z, .rar).
     fn write_file(&mut self, path_in_archive: &str, data: &[u8]) -> Result<()>;
 
     /// Remove a file from the in-memory archive state.
@@ -67,6 +79,26 @@ pub trait ArchiveFs: Send + Sync {
 `list()` возвращает `Vec<FileEntryDto>` с путями вида
 `"docs.zip::/reports/report.txt"`, `kind: "file"` / `"dir"`, `size` и
 `modified` из метаданных архива.
+
+Тип ошибки — `ArchiveError`:
+
+```rust
+#[derive(Debug, thiserror::Error)]
+pub enum ArchiveError {
+    #[error("corrupt archive: {0}")]
+    Corrupt(String),
+    #[error("unsupported format: {0}")]
+    UnsupportedFormat(String),
+    #[error("file not found in archive: {0}")]
+    NotFound(String),
+    #[error("archive is read-only")]
+    ReadOnly,
+    #[error("{0}")]
+    Io(#[from] std::io::Error),
+    #[error("{0}")]
+    Other(#[from] anyhow::Error),
+}
+```
 
 ### 1.4 `list_dir_sync` — прозрачная маршрутизация
 
@@ -114,10 +146,16 @@ pub trait ArchiveFs: Send + Sync {
 | `.tar` | `tar` | ✓ | ✓ |
 | `.tar.gz` | `tar` + `flate2` | ✓ | ✓ |
 | `.tar.zst` | `tar` + `zstd` | ✓ | ✓ |
+| `.7z` | `sevenz-rust` | ✓ | — (read-only) |
+| `.rar` | `unrar` | ✓ | — (read-only) |
 
-**Вне v1:** `.7z`, `.rar`, `.tar.bz2`, `.tar.xz` — backlog.
+**Вне v1:** `.tar.bz2`, `.tar.xz` — backlog.
 Также вне v1: архивы внутри архивов, парольная защита/шифрование, потоковое
 чтение (весь архив в памяти — для типичных размеров ок).
+
+Для read-only форматов (.7z, .rar) методы `write_file`/`remove_file`/`add_file`/
+`commit()` возвращают `Err(ArchiveError::ReadOnly)`. UI показывает статус
+«read-only» в строке состояния при нахождении внутри такого архива.
 
 ## 3. Explorer integration
 
@@ -153,15 +191,16 @@ Sidebar (Folders/Devices) — архивы не показываются как 
 
 ## 6. Коммит
 
-`services+pages : archive browsing — virtual folder for zip/tar.gz/tar.zst (v1: read + write, T004)`
+`services+pages : archive browsing — virtual folder for zip/tar.gz/tar.zst (+ .7z/.rar read-only) (v1: read + write, T004)`
 
 ---
 
 ## Принятые решения (из brainstorm)
 
-1. **Read + write** (editable) — не только просмотр
-2. **Форматы:** `.zip` + `.tar.gz` + `.tar.zst`
+1. **Read + write** для zip/tar; **read-only** для .7z/.rar (нет зрелых pure-Rust крейтов с записью)
+2. **Форматы:** `.zip` + `.tar.gz` + `.tar.zst` + `.7z` + `.rar`
 3. **Интеграция:** внутри `list_dir_sync` — прозрачно для Explorer
 4. **Путь:** виртуальная схема `archive.zip::/inner/file.txt`
 5. **Кэш:** LRU, 3 открытых архива, внутренняя деталь модуля `archive`
 6. **FileEntryDto:** без изменений — существующих полей достаточно
+7. **unsafe для .rar:** изолирован в `rar_archive.rs`, `#[allow(unsafe_code)]`, обоснован doc-комментарием
