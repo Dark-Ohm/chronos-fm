@@ -175,7 +175,7 @@ pub(crate) fn render_devices_section(cx: &App) -> impl IntoElement {
                     div()
                         .text_color(theme::muted(cx))
                         .text_xs()
-                        .child(if is_mounted { "eject" } else { "mount" }),
+                        .child(if is_mounted { "unmount" } else { "mount" }),
                 ),
         );
     }
