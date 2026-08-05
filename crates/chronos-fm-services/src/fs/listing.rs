@@ -36,6 +36,27 @@ pub fn list_dir_sync(params: ListParams<'_>) -> Result<ListResult> {
 
 fn list_dir_impl(path: &str, limit: usize, cursor: Option<&str>) -> Result<ListResult> {
     let dir = Path::new(path);
+
+    // Route archive paths to the archive module.
+    if let Some((archive_path, inner_path)) = crate::archive::split_archive_path(path) {
+        let entries = crate::archive::list_dir(&archive_path, &inner_path)
+            .map_err(|e| chronos_fm_core::errors::Error::Other(e.to_string()))?;
+        return Ok(ListResult {
+            entries,
+            next_cursor: None,
+        });
+    }
+
+    // First entry into an archive (path ends with archive extension)
+    if crate::archive::ArchiveFormat::from_path(dir).is_some() {
+        let entries = crate::archive::list_dir(dir, "")
+            .map_err(|e| chronos_fm_core::errors::Error::Other(e.to_string()))?;
+        return Ok(ListResult {
+            entries,
+            next_cursor: None,
+        });
+    }
+
     let mut names: Vec<(String, PathBuf)> = Vec::new();
 
     // Read directory entries: collect names and paths only (cheap), then sort by name for stable paging.

@@ -65,12 +65,34 @@ fn is_binary_image_path(path: &str) -> bool {
     )
 }
 
+/// Try to read a file from an archive. Returns `None` if the path is not an
+/// archive path or if the read fails.
+fn read_from_archive(path: &str) -> Option<Vec<u8>> {
+    let (archive_path, inner_path) = chronos_fm_services::archive::split_archive_path(path)?;
+    chronos_fm_services::archive::read_file(&archive_path, &inner_path).ok()
+}
+
 /// Reads `path` and classifies it for preview. Runs on a background thread, so
 /// it must not touch any GPUI state.
 // Always invoked from `cx.background_spawn` (see `open_preview`), so its
 // blocking reads run off the GPUI foreground thread.
 #[allow(clippy::disallowed_methods)]
 fn read_preview(path: &str) -> PreviewOutcome {
+    // Archive paths bypass filesystem metadata checks.
+    if let Some(bytes) = read_from_archive(path) {
+        if bytes.len() as u64 > config::PREVIEW_MAX_FILE_SIZE {
+            return PreviewOutcome::TooLarge;
+        }
+        if is_binary_image_path(path) {
+            return PreviewOutcome::Image;
+        }
+        return match String::from_utf8(bytes) {
+            Ok(text) => PreviewOutcome::Text(text),
+            Err(_) if is_image_path(path) => PreviewOutcome::Image,
+            Err(_) => PreviewOutcome::Unsupported,
+        };
+    }
+
     let metadata = match std::fs::metadata(path) {
         Ok(metadata) => metadata,
         Err(_) => return PreviewOutcome::Unsupported,
@@ -321,7 +343,7 @@ mod tests {
             PreviewOutcome::Image
         ));
 
-        // Non-UTF-8, non-image → Unsupported.
+        // Non-UTF-8, non-image -> Unsupported.
         let bin_path = dir.path().join("blob.bin");
         std::fs::write(&bin_path, [0xff, 0xfe, 0xfd]).unwrap();
         assert!(matches!(
