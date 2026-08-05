@@ -5,6 +5,8 @@
 pub mod fs;
 /// Full-text and regex file search services.
 pub mod search;
+/// Removable media device listing and mount control via `udisks2`.
+pub mod devices;
 /// Syntax highlighting backed by `syntect`, mapped to GPUI colors.
 #[cfg(feature = "gui")]
 pub mod syntax;

@@ -1179,6 +1179,7 @@ dependencies = [
  "time",
  "tracing",
  "trash",
+ "zbus",
 ]
 
 [[package]]
