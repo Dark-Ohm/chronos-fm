@@ -4,6 +4,7 @@ mod navigation;
 /// The split-view container that owns one or more panes (`docs/explorer-essentials.md` §3).
 mod page;
 mod preview;
+pub mod properties;
 mod search;
 mod state;
 mod types;
