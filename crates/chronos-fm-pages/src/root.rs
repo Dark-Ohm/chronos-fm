@@ -13,7 +13,7 @@ use crate::{
 };
 use gpui::{
     AnyElement, App, AsyncWindowContext, Context, Entity, FocusHandle, Focusable,
-    InteractiveElement, Render, WeakEntity, Window, div, prelude::*, px, rgb,
+    InteractiveElement, Render, WeakEntity, Window, div, prelude::*, px,
 };
 use gpui_component::resizable::ResizableState;
 use gpui_component::{Icon, Root, Theme, ThemeMode as GpuiThemeMode};
@@ -275,7 +275,7 @@ impl Render for RootView {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(theme::BG))
+            .bg(theme::bg(cx))
             .relative()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::handle_account_action))
@@ -367,9 +367,9 @@ impl RootView {
             .flex()
             .flex_col()
             .items_center()
-            .bg(rgb(theme::TOOLBAR_BG))
+            .bg(theme::toolbar_bg(cx))
             .border_r_1()
-            .border_color(rgb(theme::TOOLBAR_BORDER))
+            .border_color(theme::toolbar_border(cx))
             .py(px(16.0))
             .child(
                 // Page navigation buttons
@@ -398,10 +398,10 @@ impl RootView {
             .rounded(px(8.0))
             .cursor_pointer()
             .when(active, |this| {
-                this.bg(rgb(theme::TOOLBAR_ACTIVE_BG)).shadow_sm()
+                this.bg(theme::toolbar_active_bg(cx)).shadow_sm()
             })
             .when(!active, |this| {
-                this.hover(|style| style.bg(rgb(theme::TOOLBAR_HOVER)))
+                this.hover(|style| style.bg(theme::toolbar_hover(cx)))
             })
             .on_click(cx.listener(move |view, _event, _window, cx| {
                 view.set_page(page, cx);
@@ -410,11 +410,11 @@ impl RootView {
                 Icon::new(Icon::empty())
                     .path(page.icon_path())
                     .size_5()
-                    .text_color(rgb(if active {
-                        theme::TOOLBAR_ACTIVE_TEXT
+                    .text_color(if active {
+                        theme::toolbar_active_text(cx)
                     } else {
-                        theme::TOOLBAR_TEXT
-                    })),
+                        theme::toolbar_text(cx)
+                    }),
             )
     }
 

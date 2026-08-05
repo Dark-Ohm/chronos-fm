@@ -8,7 +8,7 @@
 
 use crate::cli::Cli;
 use gpui::{App, AppContext, Bounds, px, size};
-use gpui_component::Root;
+use gpui_component::{Root, Theme, ThemeRegistry};
 use gpui_component::resizable::ResizableState;
 use chronos_fm_core::config::{self, ConfigOverride};
 use chronos_fm_core::telemetry::logging::init_logging;
@@ -51,6 +51,7 @@ impl ChronosFmApp {
             .with_assets(Assets)
             .run(move |app: &mut App| {
             gpui_component::init(app);
+            activate_chronos_theme(app);
             let resizable = app.new(|_| ResizableState::default());
             let bounds = Bounds::centered(
                 None,
@@ -114,6 +115,44 @@ impl ChronosFmApp {
                 tracing::error!("failed to open main window: {error}");
             }
         });
+    }
+}
+
+/// Load the Chronos theme set and make it the active light/dark palette.
+///
+/// `gpui_component::init` already registered its own default themes; this swaps
+/// the active `light_theme` / `dark_theme` configs for the Chronos ones so every
+/// surface (and native gpui-component widgets) follows the Chronos palette and
+/// the runtime `config.theme.mode` toggle wired in `RootView::apply_config`.
+fn activate_chronos_theme(app: &mut App) {
+    {
+        let registry = ThemeRegistry::global_mut(app);
+        if let Err(err) = registry.load_themes_from_str(include_str!(
+            "../assets/themes/chronos.theme.json"
+        )) {
+            tracing::error!("failed to load Chronos theme: {err}");
+        }
+    }
+
+    let (light, dark) = {
+        let registry = ThemeRegistry::global(app);
+        (
+            registry.themes().get("Chronos Light").cloned(),
+            registry.themes().get("Chronos Dark").cloned(),
+        )
+    };
+
+    if let (Some(light), Some(dark)) = (light, dark) {
+        let mode = Theme::global(app).mode;
+        {
+            let theme = Theme::global_mut(app);
+            theme.light_theme = light;
+            theme.dark_theme = dark;
+        }
+        // Re-apply the current mode against the newly-activated palette.
+        Theme::change(mode, None, app);
+    } else {
+        tracing::warn!("Chronos Light/Dark themes not found in registry");
     }
 }
 

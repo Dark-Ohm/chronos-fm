@@ -15,7 +15,7 @@ pub fn render(
         .size_full()
         .flex()
         .flex_col()
-        .bg(rgb(theme::BG))
+        .bg(theme::bg(cx))
         .py(px(16.0))
         .child(
             div()
@@ -23,10 +23,10 @@ pub fn render(
                 .flex_col()
                 .gap_1()
                 .px(px(8.0))
-                .child(sidebar_item(IconName::Folder, "Home", true))
-                .child(sidebar_item(IconName::Star, "Favorites", false))
-                .child(sidebar_item(IconName::File, "Recent", false))
-                .child(sidebar_item(IconName::Folder, "Trash", false)),
+                .child(sidebar_item(IconName::Folder, "Home", true, cx))
+                .child(sidebar_item(IconName::Star, "Favorites", false, cx))
+                .child(sidebar_item(IconName::File, "Recent", false, cx))
+                .child(sidebar_item(IconName::Folder, "Trash", false, cx)),
         )
         .child(
             div()
@@ -39,14 +39,19 @@ pub fn render(
                         .py(px(8.0))
                         .text_xs()
                         .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(rgb(theme::FG_SECONDARY))
+                        .text_color(theme::fg_secondary(cx))
                         .child("Folder"),
                 )
                 .child(render_shortcuts(page, cx)),
         )
 }
 
-fn sidebar_item(icon: IconName, label: &str, _active: bool) -> impl IntoElement + use<> {
+fn sidebar_item(
+    icon: IconName,
+    label: &str,
+    _active: bool,
+    cx: &mut Context<ExplorerPane>,
+) -> impl IntoElement + use<> {
     let label = label.to_string();
     div()
         .w_full()
@@ -57,9 +62,9 @@ fn sidebar_item(icon: IconName, label: &str, _active: bool) -> impl IntoElement 
         .py(px(8.0))
         .rounded(px(6.0))
         .cursor_pointer()
-        .hover(|this| this.bg(rgb(theme::BG_HOVER)))
-        .child(Icon::new(icon).size_4().text_color(rgb(theme::GRAY_600)))
-        .child(div().text_sm().text_color(rgb(theme::FG)).child(label))
+        .hover(|this| this.bg(theme::bg_hover(cx)))
+        .child(Icon::new(icon).size_4().text_color(theme::gray_600(cx)))
+        .child(div().text_sm().text_color(theme::fg(cx)).child(label))
 }
 
 fn render_shortcuts(
@@ -91,11 +96,11 @@ fn render_shortcuts(
                         .flex()
                         .items_center()
                         .gap_2()
-                        .child(Icon::new(icon).size_4().text_color(rgb(theme::GRAY_600)))
+                        .child(Icon::new(icon).size_4().text_color(theme::gray_600(cx)))
                         .child(
                             div()
                                 .text_sm()
-                                .text_color(rgb(theme::FG))
+                                .text_color(theme::fg(cx))
                                 .child(label_str.clone()),
                         ),
                 ),

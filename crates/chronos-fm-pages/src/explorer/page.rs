@@ -604,7 +604,7 @@ impl Render for ExplorerPage {
             .size_full()
             .flex()
             .flex_col()
-            .bg(rgb(theme::BG))
+            .bg(theme::bg(cx))
             .key_context(PANES_CONTEXT)
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(|this, _: &SplitVertical, window, cx| {

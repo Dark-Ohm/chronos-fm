@@ -1,5 +1,5 @@
 use crate::theme::theme;
-use gpui::{Context, IntoElement, div, prelude::*, px, rgb};
+use gpui::{Context, IntoElement, div, prelude::*, px};
 use gpui_component::{Icon, IconName};
 
 /// Properties controlling the contents of the footer status bar.
@@ -54,9 +54,9 @@ pub fn footer<V: gpui::Render>(
         .items_center()
         .justify_between()
         .px(px(8.0))
-        .bg(rgb(theme::GRAY_200))
+        .bg(theme::gray_200(cx))
         .border_t_1()
-        .border_color(rgb(theme::BORDER))
+        .border_color(theme::border(cx))
         .child(
             // Left section - Status items
             div()
@@ -112,9 +112,9 @@ pub fn footer<V: gpui::Render>(
                 // Transient status / error message
                 .when_some(props.status_message.clone(), |this, message| {
                     let color = if props.status_is_error {
-                        theme::DANGER
+                        theme::danger(cx)
                     } else {
-                        theme::GRAY_700
+                        theme::gray_700(cx)
                     };
                     this.child(
                         div()
@@ -124,7 +124,7 @@ pub fn footer<V: gpui::Render>(
                             .flex()
                             .items_center()
                             .gap_1()
-                            .child(Icon::new(IconName::Info).size_3().text_color(rgb(color)))
+                            .child(Icon::new(IconName::Info).size_3().text_color(color))
                             .child(
                                 // Keep the status on one line so a long or
                                 // multi-line message can't overflow the footer.
@@ -132,7 +132,7 @@ pub fn footer<V: gpui::Render>(
                                     .text_xs()
                                     .whitespace_nowrap()
                                     .overflow_hidden()
-                                    .text_color(rgb(color))
+                                    .text_color(color)
                                     .child(message),
                             ),
                     )
@@ -167,7 +167,7 @@ fn footer_button<V: gpui::Render>(
     id: impl Into<gpui::ElementId>,
     icon: IconName,
     label: &str,
-    _cx: &mut Context<V>,
+    cx: &mut Context<V>,
 ) -> impl IntoElement {
     let label = label.to_string();
     let has_label = !label.is_empty();
@@ -181,13 +181,13 @@ fn footer_button<V: gpui::Render>(
         .gap_1()
         .rounded(px(4.0))
         .cursor_pointer()
-        .hover(|style| style.bg(rgb(theme::GRAY_300)))
-        .child(Icon::new(icon).size_3().text_color(rgb(theme::GRAY_700)))
+        .hover(|style| style.bg(theme::gray_300(cx)))
+        .child(Icon::new(icon).size_3().text_color(theme::gray_700(cx)))
         .when(has_label, |this| {
             this.child(
                 div()
                     .text_xs()
-                    .text_color(rgb(theme::GRAY_700))
+                    .text_color(theme::gray_700(cx))
                     .child(label),
             )
         })

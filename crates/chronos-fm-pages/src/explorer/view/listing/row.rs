@@ -22,16 +22,16 @@ pub fn render(
         _ => IconName::File,
     };
     let icon_color = match item.kind.as_str() {
-        "dir" => rgb(theme::ACCENT),
-        _ => rgb(theme::GRAY_600),
+        "dir" => theme::accent(cx),
+        _ => theme::gray_600(cx),
     };
 
     let bg_color = if page.is_selected(ix) {
-        theme::ACCENT_LIGHT
+        theme::accent_light(cx)
     } else if ix % 2 == 0 {
-        theme::BG
+        theme::bg(cx)
     } else {
-        theme::GRAY_50
+        theme::gray_50(cx)
     };
 
     let file_type = get_file_type(&item.name, &item.kind);
@@ -111,7 +111,7 @@ pub fn render(
                 .w(px(total_width))
                 .h(px(32.0))
                 .px(px(24.0))
-                .bg(rgb(bg_color))
+                .bg(bg_color)
                 .on_click(
                     cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
                         if let gpui::ClickEvent::Mouse(mouse) = event {
@@ -153,7 +153,7 @@ pub fn render(
                                     this.child(
                                         div()
                                             .cursor_pointer()
-                                            .hover(|s| s.bg(rgb(theme::BG_HOVER)).rounded(px(4.0)))
+                                            .hover(|s| s.bg(theme::bg_hover(cx)).rounded(px(4.0)))
                                             .p(px(2.0))
                                             .on_mouse_down(
                                                 gpui::MouseButton::Left,
@@ -178,7 +178,7 @@ pub fn render(
                                             .child(
                                                 Icon::new(expand_icon)
                                                     .size_3()
-                                                    .text_color(rgb(theme::GRAY_600)),
+                                                    .text_color(theme::gray_600(cx)),
                                             ),
                                     )
                                 })
@@ -188,7 +188,7 @@ pub fn render(
                                     div()
                                         .text_sm()
                                         .font_weight(gpui::FontWeight::MEDIUM)
-                                        .text_color(rgb(theme::FG))
+                                        .text_color(theme::fg(cx))
                                         .overflow_hidden()
                                         .text_ellipsis()
                                         .whitespace_nowrap()
@@ -200,7 +200,7 @@ pub fn render(
                                 .w(px(page.col_type_width))
                                 .flex_shrink_0()
                                 .text_sm()
-                                .text_color(rgb(theme::FG_SECONDARY))
+                                .text_color(theme::fg_secondary(cx))
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .whitespace_nowrap()
@@ -211,7 +211,7 @@ pub fn render(
                                 .w(px(page.col_size_width))
                                 .flex_shrink_0()
                                 .text_sm()
-                                .text_color(rgb(theme::FG_SECONDARY))
+                                .text_color(theme::fg_secondary(cx))
                                 .child(match item.kind.as_str() {
                                     "file" => human_bytes(item.size),
                                     "dir" => "-".to_string(),
@@ -223,7 +223,7 @@ pub fn render(
                                 .w(px(page.col_modified_width))
                                 .flex_shrink_0()
                                 .text_sm()
-                                .text_color(rgb(theme::FG_SECONDARY))
+                                .text_color(theme::fg_secondary(cx))
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .whitespace_nowrap()
@@ -251,21 +251,21 @@ pub fn render(
                         .h(px(24.0))
                         .pl(px(48.0))
                         .pr(px(24.0))
-                        .bg(rgb(theme::GRAY_50))
+                        .bg(theme::gray_50(cx))
                         .flex()
                         .items_center()
                         .gap_2()
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(theme::MUTED))
+                                .text_color(theme::muted(cx))
                                 .w(px(32.0))
                                 .child(format!("{}", line_num)),
                         )
                         .child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(theme::FG_SECONDARY))
+                                .text_color(theme::fg_secondary(cx))
                                 .flex_1()
                                 .overflow_hidden()
                                 .whitespace_nowrap()

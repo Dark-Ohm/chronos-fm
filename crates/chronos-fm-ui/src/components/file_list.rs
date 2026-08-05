@@ -1,5 +1,5 @@
 use crate::theme::theme;
-use gpui::{ParentElement, Styled, Window, div, px, rgb};
+use gpui::{ParentElement, Styled, Window, div, px};
 use gpui_component::list::{ListDelegate, ListItem, ListState};
 use gpui_component::{Icon, IconName, IndexPath};
 use chronos_fm_models::file_entry::FileEntryDto;
@@ -58,7 +58,7 @@ impl ListDelegate for FileListDelegate {
         &mut self,
         ix: IndexPath,
         _window: &mut Window,
-        _cx: &mut gpui::Context<ListState<Self>>,
+        cx: &mut gpui::Context<ListState<Self>>,
     ) -> Option<Self::Item> {
         let item = self.items.get(ix.row)?;
 
@@ -70,9 +70,9 @@ impl ListDelegate for FileListDelegate {
 
         // Alternate row background for zebra striping
         let bg_color = if ix.row % 2 == 0 {
-            theme::BG
+            theme::bg(cx)
         } else {
-            theme::GRAY_50
+            theme::gray_50(cx)
         };
 
         let file_type = get_file_type(&item.name, &item.kind);
@@ -80,7 +80,7 @@ impl ListDelegate for FileListDelegate {
         let mut row = ListItem::new(ix)
             .py(px(6.0)) // Reduced from 12.0 for compact rows
             .px(px(24.0))
-            .bg(rgb(bg_color))
+            .bg(bg_color)
             .child(
                 div()
                     .flex()
@@ -97,13 +97,13 @@ impl ListDelegate for FileListDelegate {
                             .child(
                                 Icon::new(icon_name)
                                     .size_4()
-                                    .text_color(rgb(theme::GRAY_600)),
+                                    .text_color(theme::gray_600(cx)),
                             )
                             .child(
                                 div()
                                     .text_sm()
                                     .font_weight(gpui::FontWeight::MEDIUM)
-                                    .text_color(rgb(theme::FG))
+                                    .text_color(theme::fg(cx))
                                     .overflow_hidden()
                                     .text_ellipsis()
                                     .whitespace_nowrap()
@@ -116,7 +116,7 @@ impl ListDelegate for FileListDelegate {
                             .w(px(70.0))
                             .flex_shrink_0()
                             .text_sm()
-                            .text_color(rgb(theme::FG_SECONDARY))
+                            .text_color(theme::fg_secondary(cx))
                             .overflow_hidden()
                             .text_ellipsis()
                             .whitespace_nowrap()
@@ -128,7 +128,7 @@ impl ListDelegate for FileListDelegate {
                             .w(px(70.0))
                             .flex_shrink_0()
                             .text_sm()
-                            .text_color(rgb(theme::FG_SECONDARY))
+                            .text_color(theme::fg_secondary(cx))
                             .text_ellipsis()
                             .whitespace_nowrap()
                             .child(match item.kind.as_str() {
@@ -143,7 +143,7 @@ impl ListDelegate for FileListDelegate {
                             .w(px(90.0))
                             .flex_shrink_0()
                             .text_sm()
-                            .text_color(rgb(theme::FG_SECONDARY))
+                            .text_color(theme::fg_secondary(cx))
                             .overflow_hidden()
                             .text_ellipsis()
                             .whitespace_nowrap()
@@ -159,7 +159,7 @@ impl ListDelegate for FileListDelegate {
                             .child(
                                 Icon::new(IconName::File)
                                     .size_4()
-                                    .text_color(rgb(theme::MUTED))
+                                    .text_color(theme::muted(cx))
                                     .cursor_pointer(),
                             ),
                     ),

@@ -6,7 +6,7 @@ use chronos_fm_ui::theme::theme;
 // Calculate the maximum line width in characters for horizontal scroll sizing
 /// Renders the preview pane for the selected file, showing a text editor,
 /// image, status message, or an empty placeholder.
-pub fn render(page: &mut ExplorerPane, _window: &mut Window) -> impl IntoElement + use<> {
+pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl IntoElement + use<> {
     let title = page
         .preview_path
         .as_ref()
@@ -35,7 +35,7 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window) -> impl IntoElement
             .flex()
             .items_center()
             .justify_center()
-            .text_color(rgb(theme::MUTED))
+            .text_color(theme::muted(cx))
             .child(msg.clone())
             .into_any_element()
     } else {
@@ -44,7 +44,7 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window) -> impl IntoElement
             .flex()
             .items_center()
             .justify_center()
-            .text_color(rgb(theme::MUTED))
+            .text_color(theme::muted(cx))
             .child("No file selected")
             .into_any_element()
     };
@@ -53,19 +53,19 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window) -> impl IntoElement
         .size_full()
         .flex()
         .flex_col()
-        .bg(rgb(theme::BG))
+        .bg(theme::bg(cx))
         .child(
             // Header
             div()
                 .px(px(16.0))
                 .py(px(12.0))
                 .border_b_1()
-                .border_color(rgb(theme::BORDER))
+                .border_color(theme::border(cx))
                 .child(
                     div()
                         .text_sm()
                         .font_weight(gpui::FontWeight::SEMIBOLD)
-                        .text_color(rgb(theme::FG))
+                        .text_color(theme::fg(cx))
                         .child(title),
                 ),
         )

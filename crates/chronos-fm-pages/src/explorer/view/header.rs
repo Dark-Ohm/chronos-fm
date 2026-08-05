@@ -71,12 +71,12 @@ pub fn render(
     let entry_count = page.filtered_entries.len();
 
     div()
-        .bg(rgb(theme::BG))
+        .bg(theme::bg(cx))
         .border_b_1()
-        .border_color(rgb(theme::BORDER))
+        .border_color(theme::border(cx))
         .flex()
         .items_center()
-        .text_color(rgb(theme::FG))
+        .text_color(theme::fg(cx))
         .px(px(24.0))
         .py(px(12.0))
         .gap_2()
@@ -97,7 +97,7 @@ pub fn render(
                                 cx.listener(|view, _, window, cx| view.go_back(window, cx)),
                             )
                         })
-                        .child(div().text_sm().text_color(rgb(theme::GRAY_600)).child("←")),
+                        .child(div().text_sm().text_color(theme::gray_600(cx)).child("←")),
                 )
                 .child(
                     ListItem::new("nav-forward")
@@ -110,13 +110,13 @@ pub fn render(
                                 cx.listener(|view, _, window, cx| view.go_forward(window, cx)),
                             )
                         })
-                        .child(div().text_sm().text_color(rgb(theme::GRAY_600)).child("→")),
+                        .child(div().text_sm().text_color(theme::gray_600(cx)).child("→")),
                 )
                 .child(
                     div()
                         .w(px(1.0))
                         .h(px(20.0))
-                        .bg(rgb(theme::BORDER))
+                        .bg(theme::border(cx))
                         .mx(px(4.0)),
                 ),
         )
@@ -136,7 +136,7 @@ pub fn render(
                 .child(
                     div()
                         .text_xs()
-                        .text_color(rgb(theme::FG_SECONDARY))
+                        .text_color(theme::fg_secondary(cx))
                         .whitespace_nowrap()
                         .child(format!("{} items", entry_count)),
                 )
@@ -151,9 +151,9 @@ pub fn render(
                         }))
                         .child(Icon::new(IconName::Search).size_4().text_color(
                             if search_visible {
-                                rgb(theme::ACCENT)
+                                theme::accent(cx)
                             } else {
-                                rgb(theme::GRAY_600)
+                                theme::gray_600(cx)
                             },
                         )),
                 ),
@@ -199,7 +199,7 @@ fn view_mode_button(
         .px(px(8.0))
         .py(px(6.0))
         .rounded(px(6.0))
-        .when(is_active, |this| this.bg(rgb(theme::BG_HOVER)))
+        .when(is_active, |this| this.bg(theme::bg_hover(cx)))
         .on_click(cx.listener(move |this, _, _, cx| this.set_view_mode(mode, cx)))
         .child(
             div()
@@ -207,17 +207,17 @@ fn view_mode_button(
                 .items_center()
                 .gap_1()
                 .child(Icon::new(icon).size_4().text_color(if is_active {
-                    rgb(theme::ACCENT)
+                    theme::accent(cx)
                 } else {
-                    rgb(theme::GRAY_600)
+                    theme::gray_600(cx)
                 }))
                 .child(
                     div()
                         .text_xs()
                         .text_color(if is_active {
-                            rgb(theme::FG)
+                            theme::fg(cx)
                         } else {
-                            rgb(theme::FG_SECONDARY)
+                            theme::fg_secondary(cx)
                         })
                         .child(label),
                 ),

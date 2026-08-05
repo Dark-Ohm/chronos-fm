@@ -107,9 +107,9 @@ fn render_header_row(
         .w(px(table_width))
         .h(px(48.0))
         .px(px(24.0))
-        .bg(rgb(theme::BG))
+        .bg(theme::bg(cx))
         .border_b_1()
-        .border_color(rgb(theme::BORDER))
+        .border_color(theme::border(cx))
         .child(
             div()
                 .flex()
@@ -201,7 +201,7 @@ fn render_resizable_column_header(
                         cx.stop_propagation();
                     }),
                 )
-                .child(div().w(px(1.0)).h_full().ml(px(3.5)).bg(rgb(theme::BORDER))),
+                .child(div().w(px(1.0)).h_full().ml(px(3.5)).bg(theme::border(cx))),
         )
 }
 
@@ -242,9 +242,9 @@ fn render_column_header(
                             .text_xs()
                             .font_weight(gpui::FontWeight::SEMIBOLD)
                             .text_color(if is_active {
-                                rgb(theme::FG)
+                                theme::fg(cx)
                             } else {
-                                rgb(theme::FG_SECONDARY)
+                                theme::fg_secondary(cx)
                             })
                             .child(label_str),
                     )
@@ -252,7 +252,7 @@ fn render_column_header(
                         this.child(
                             div()
                                 .text_xs()
-                                .text_color(rgb(theme::FG))
+                                .text_color(theme::fg(cx))
                                 .child(sort_icon.unwrap_or("")),
                         )
                     }),

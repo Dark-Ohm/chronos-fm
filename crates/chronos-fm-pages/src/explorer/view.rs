@@ -29,7 +29,7 @@ pub fn render(
         .size_full()
         .flex()
         .flex_col()
-        .bg(rgb(theme::BG))
+        .bg(theme::bg(cx))
         .relative()
         .track_focus(&page.focus_handle)
         .on_key_down(cx.listener(|this, event: &gpui::KeyDownEvent, window, cx| {
@@ -110,7 +110,7 @@ pub fn render(
                                         .size_full()
                                         .overflow_hidden()
                                         .border_r_1()
-                                        .border_color(rgb(theme::BORDER))
+                                        .border_color(theme::border(cx))
                                         .child(sidebar::render(page, window, cx)),
                                 )
                             }),
@@ -135,8 +135,8 @@ pub fn render(
                                     .size_full()
                                     .overflow_hidden()
                                     .border_l_1()
-                                    .border_color(rgb(theme::BORDER))
-                                    .child(preview::render(page, window)),
+                                    .border_color(theme::border(cx))
+                                    .child(preview::render(page, window, cx)),
                             ),
                     )
                     .into_any_element(),

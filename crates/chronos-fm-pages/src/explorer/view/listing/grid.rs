@@ -62,15 +62,15 @@ fn render_grid_item(
     let preview_item = item.clone();
 
     let bg_color = if selected {
-        rgb(theme::BG_HOVER)
+        theme::bg_hover(cx)
     } else {
-        rgb(theme::BG)
+        theme::bg(cx)
     };
 
     let border_color = if selected {
-        rgb(theme::ACCENT)
+        theme::accent(cx)
     } else {
-        rgb(theme::BORDER)
+        theme::border(cx)
     };
 
     div()
@@ -81,7 +81,7 @@ fn render_grid_item(
         .border_1()
         .border_color(border_color)
         .bg(bg_color)
-        .hover(|this| this.bg(rgb(theme::BG_HOVER)))
+        .hover(|this| this.bg(theme::bg_hover(cx)))
         .cursor_pointer()
         .flex()
         .flex_col()
@@ -111,13 +111,13 @@ fn render_grid_item(
         .child(
             Icon::new(icon_name)
                 .size_6()
-                .text_color(rgb(theme::GRAY_600)),
+                .text_color(theme::gray_600(cx)),
         )
         .child(
             div()
                 .text_sm()
                 .font_weight(gpui::FontWeight::MEDIUM)
-                .text_color(rgb(theme::FG))
+                .text_color(theme::fg(cx))
                 .overflow_hidden()
                 .text_ellipsis()
                 .whitespace_nowrap()
@@ -126,19 +126,19 @@ fn render_grid_item(
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(theme::FG_SECONDARY))
+                .text_color(theme::fg_secondary(cx))
                 .child(file_type),
         )
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(theme::FG_SECONDARY))
+                .text_color(theme::fg_secondary(cx))
                 .child(size_text),
         )
         .child(
             div()
                 .text_xs()
-                .text_color(rgb(theme::MUTED))
+                .text_color(theme::muted(cx))
                 .child(modified_text),
         )
         .into_any_element()

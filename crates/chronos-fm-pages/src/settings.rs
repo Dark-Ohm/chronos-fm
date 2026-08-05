@@ -1,4 +1,4 @@
-use gpui::{AnyElement, Context, Render, Window, div, prelude::*, px, rgb};
+use gpui::{AnyElement, Context, Render, Window, div, prelude::*, px};
 use chronos_fm_ui::theme::theme;
 
 /// The settings page, a placeholder for future application configuration.
@@ -18,26 +18,26 @@ impl SettingsPage {
 }
 
 impl Render for SettingsPage {
-    fn render(&mut self, _window: &mut Window, _cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .size_full()
             .flex()
             .flex_col()
             .items_center()
             .justify_center()
-            .bg(rgb(theme::BG))
+            .bg(theme::bg(cx))
             .child(
                 div()
                     .text_2xl()
                     .font_weight(gpui::FontWeight::BOLD)
-                    .text_color(rgb(theme::FG))
+                    .text_color(theme::fg(cx))
                     .child("⚙️ Settings"),
             )
             .child(
                 div()
                     .mt(px(16.0))
                     .text_base()
-                    .text_color(rgb(theme::FG_SECONDARY))
+                    .text_color(theme::fg_secondary(cx))
                     .child("Application settings to be implemented"),
             )
     }

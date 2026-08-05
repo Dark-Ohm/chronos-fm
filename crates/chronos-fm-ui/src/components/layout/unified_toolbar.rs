@@ -1,6 +1,6 @@
 use crate::theme::theme;
 use gpui::{
-    Action, Context, IntoElement, Pixels, Render, WindowControlArea, div, prelude::*, px, rgb,
+    Action, Context, IntoElement, Pixels, Render, WindowControlArea, div, prelude::*, px,
 };
 use gpui_component::{
     Icon, IconName, Sizable, Size,
@@ -36,7 +36,7 @@ impl Default for UnifiedToolbarProps {
 /// Build the unified toolbar element: a draggable window region plus an account button with menu.
 pub fn unified_toolbar<V: Render>(
     props: UnifiedToolbarProps,
-    _cx: &mut Context<V>,
+    cx: &mut Context<V>,
 ) -> impl IntoElement + use<V> {
     let UnifiedToolbarProps {
         account_name,
@@ -53,7 +53,7 @@ pub fn unified_toolbar<V: Render>(
         .icon(
             Icon::new(IconName::CircleUser)
                 .size_5()
-                .text_color(rgb(theme::FG_SECONDARY)),
+                .text_color(theme::fg_secondary(cx)),
         )
         .rounded(ButtonRounded::Large)
         .compact()
@@ -62,6 +62,13 @@ pub fn unified_toolbar<V: Render>(
         .dropdown_menu(move |menu, _window, _cx| {
             let header_name = account_name.clone();
             let header_plan = account_plan.clone();
+
+            // Hoist the resolved colors out of the inner closure: the menu
+            // builder stores its closures for the lifetime of the popup, so a
+            // borrowed `&App` (`_cx`) cannot escape into them. `Hsla` is `Copy`,
+            // so capturing the resolved values is fine.
+            let account_fg_secondary = theme::fg_secondary(_cx);
+            let account_fg = theme::fg(_cx);
 
             let mut menu = menu
                 .min_w(px(220.0))
@@ -75,8 +82,8 @@ pub fn unified_toolbar<V: Render>(
                             .gap_3()
                             .child(
                                 Icon::new(IconName::CircleUser)
-                                    .size_4()
-                                    .text_color(rgb(theme::FG_SECONDARY)),
+                            .size_4()
+                            .text_color(account_fg_secondary),
                             )
                             .child(
                                 div()
@@ -85,15 +92,15 @@ pub fn unified_toolbar<V: Render>(
                                     .gap_y(px(2.0))
                                     .child(
                                         div()
-                                            .text_sm()
-                                            .text_color(rgb(theme::FG))
+                                    .text_sm()
+                                    .text_color(account_fg)
                                             .child(header_name.clone()),
                                     )
                                     .when(!header_plan.is_empty(), |this| {
                                         this.child(
                                             div()
-                                                .text_xs()
-                                                .text_color(rgb(theme::FG_SECONDARY))
+                                    .text_xs()
+                                    .text_color(account_fg_secondary)
                                                 .child(header_plan.clone()),
                                         )
                                     }),
@@ -147,9 +154,9 @@ pub fn unified_toolbar<V: Render>(
         .items_center()
         .justify_between()
         .px(px(16.0))
-        .bg(rgb(theme::BG))
+        .bg(theme::bg(cx))
         .border_b_1()
-        .border_color(rgb(theme::BORDER))
+        .border_color(theme::border(cx))
         .child(drag_region)
         .child(account_button)
 }
