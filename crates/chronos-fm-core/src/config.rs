@@ -12,6 +12,7 @@
 use std::time::Duration;
 
 pub mod loader;
+pub mod patch;
 pub mod paths;
 pub mod settings;
 pub mod watcher;
