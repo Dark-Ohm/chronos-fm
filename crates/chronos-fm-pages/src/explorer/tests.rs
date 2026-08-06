@@ -1139,14 +1139,17 @@ fn context_menu_for_file_sets_path_and_index() {
 /// `list_dir` invocations and returns a fixed listing, so a test can assert
 /// that a provider-backed pane actually polls its provider after being wired
 /// up — the bug was exactly "provider connected but never asked".
-struct CountingProvider {
+/// `pub(crate)` so the S3 page's tests can drive the same fake across the
+/// S3Page → pane boundary (T021).
+pub(crate) struct CountingProvider {
     list_dir_calls: AtomicUsize,
     entries: Vec<FileEntryDto>,
     fail: bool,
 }
 
 impl CountingProvider {
-    fn new(entries: Vec<FileEntryDto>) -> Self {
+    /// A provider that succeeds with `entries` and counts `list_dir` calls.
+    pub(crate) fn new(entries: Vec<FileEntryDto>) -> Self {
         Self {
             list_dir_calls: AtomicUsize::new(0),
             entries,
@@ -1154,7 +1157,8 @@ impl CountingProvider {
         }
     }
 
-    fn failing() -> Self {
+    /// A provider whose `list_dir` always fails (error-banner path).
+    pub(crate) fn failing() -> Self {
         Self {
             list_dir_calls: AtomicUsize::new(0),
             entries: Vec::new(),
@@ -1162,7 +1166,8 @@ impl CountingProvider {
         }
     }
 
-    fn call_count(&self) -> usize {
+    /// How many times `list_dir` has been invoked so far.
+    pub(crate) fn call_count(&self) -> usize {
         self.list_dir_calls.load(Ordering::SeqCst)
     }
 }
