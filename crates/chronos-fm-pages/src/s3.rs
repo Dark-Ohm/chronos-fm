@@ -1,7 +1,6 @@
 //! S3 page — object-storage browser (T011).
 
 use chronos_fm_core::config::Config;
-use chronos_fm_services::s3;
 use chronos_fm_ui::patterns::elevated_card;
 use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;

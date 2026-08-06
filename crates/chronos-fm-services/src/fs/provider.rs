@@ -85,7 +85,6 @@ impl FileSystemProvider for LocalFileSystemProvider {
     }
 
     fn metadata(&self, path: &str) -> Result<FileEntryDto> {
-        use std::os::unix::fs::MetadataExt;
         let md = std::fs::symlink_metadata(path)?;
         let kind = if md.is_dir() {
             "dir"
