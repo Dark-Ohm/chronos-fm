@@ -30,6 +30,14 @@ pub enum ConfigField {
     ExplorerSyncedPanes(bool),
     /// `[explorer].restore_tabs`.
     ExplorerRestoreTabs(bool),
+    /// `[s3].default_profile`.
+    S3DefaultProfile(String),
+    /// `[s3.profiles.<profile>].endpoint`.
+    S3ProfileEndpoint { profile: String, endpoint: String },
+    /// `[s3.profiles.<profile>].region`.
+    S3ProfileRegion { profile: String, region: String },
+    /// `[s3.profiles.<profile>].force_path_style`.
+    S3ProfileForcePathStyle { profile: String, value: bool },
 }
 
 impl ConfigField {
@@ -41,6 +49,10 @@ impl ConfigField {
             Self::ExplorerSplitDirection(_)
             | Self::ExplorerSyncedPanes(_)
             | Self::ExplorerRestoreTabs(_) => "explorer",
+            Self::S3DefaultProfile(_) => "s3",
+            Self::S3ProfileEndpoint { .. }
+            | Self::S3ProfileRegion { .. }
+            | Self::S3ProfileForcePathStyle { .. } => "s3",
         }
     }
 
@@ -55,6 +67,10 @@ impl ConfigField {
             Self::ExplorerSplitDirection(_) => "split_direction",
             Self::ExplorerSyncedPanes(_) => "synced_panes",
             Self::ExplorerRestoreTabs(_) => "restore_tabs",
+            Self::S3DefaultProfile(_) => "default_profile",
+            Self::S3ProfileEndpoint { .. }
+            | Self::S3ProfileRegion { .. }
+            | Self::S3ProfileForcePathStyle { .. } => "profiles",
         }
     }
 
@@ -66,7 +82,9 @@ impl ConfigField {
                 ThemeMode::Light => "light",
                 ThemeMode::Dark => "dark",
             }),
-            Self::ThemeAccent(s) | Self::UiIconPack(s) => value(s.as_str()),
+            Self::ThemeAccent(s) | Self::UiIconPack(s) | Self::S3DefaultProfile(s) => {
+                value(s.as_str())
+            }
             Self::UiDefaultSort(sort) => value(match sort {
                 SortOrder::Name => "name",
                 SortOrder::Modified => "modified",
@@ -80,6 +98,12 @@ impl ConfigField {
                 SplitDirection::Vertical => "vertical",
                 SplitDirection::Horizontal => "horizontal",
             }),
+            // S3 profile fields: the section is `s3` but the key path is
+            // `profiles.<profile>.<field>`. These are handled specially in
+            // `patch_config_text` — here we just provide the value.
+            Self::S3ProfileEndpoint { endpoint, .. } => value(endpoint.as_str()),
+            Self::S3ProfileRegion { region, .. } => value(region.as_str()),
+            Self::S3ProfileForcePathStyle { value: v, .. } => value(*v),
         }
     }
 }
@@ -93,6 +117,18 @@ impl ConfigField {
 /// anything else).
 pub fn patch_config_text(source: &str, field: &ConfigField) -> Result<String> {
     let mut doc: DocumentMut = source.parse().context("parsing config.toml")?;
+
+    // S3 profile fields write to `[s3.profiles.<profile>]`, a sub-table.
+    // They are routed through a separate path that ensures the profile
+    // table exists.
+    if matches!(
+        field,
+        ConfigField::S3ProfileEndpoint { .. }
+            | ConfigField::S3ProfileRegion { .. }
+            | ConfigField::S3ProfileForcePathStyle { .. }
+    ) {
+        return patch_s3_profile(&mut doc, field);
+    }
 
     // Missing section, or a hand-edited non-table at that key (e.g. a
     // top-level `theme = "dark"` string) — replace it with a table
@@ -114,6 +150,46 @@ pub fn patch_config_text(source: &str, field: &ConfigField) -> Result<String> {
     doc[section][key] = field.toml_value();
     if let Some(decor) = decor {
         if let Some(value) = doc[section][key].as_value_mut() {
+            *value.decor_mut() = decor;
+        }
+    }
+
+    Ok(doc.to_string())
+}
+
+/// Patch a key inside `[s3.profiles.<profile>]`, creating the sub-table
+/// hierarchy if needed.
+fn patch_s3_profile(doc: &mut DocumentMut, field: &ConfigField) -> Result<String> {
+    let (profile, profile_key, toml_item) = match field {
+        ConfigField::S3ProfileEndpoint { profile, endpoint } => {
+            (profile, "endpoint", value(endpoint.as_str()))
+        }
+        ConfigField::S3ProfileRegion { profile, region } => {
+            (profile, "region", value(region.as_str()))
+        }
+        ConfigField::S3ProfileForcePathStyle { profile, value: v } => {
+            (profile, "force_path_style", value(*v))
+        }
+        _ => unreachable!("patch_s3_profile called for non-S3 field"),
+    };
+
+    // Ensure `[s3]` exists.
+    if doc.get("s3").is_none_or(|item| !item.is_table()) {
+        doc.as_table_mut().remove("s3");
+        doc["s3"] = toml_edit::table();
+    }
+    // Ensure `[s3.profiles.<profile>]` exists.
+    let profiles_key = format!("profiles.{profile}");
+    if doc["s3"].get(&profiles_key).is_none_or(|item| !item.is_table()) {
+        doc["s3"][&profiles_key] = toml_edit::table();
+    }
+    // Preserve decor on the existing value.
+    let decor = doc["s3"][&profiles_key]
+        .get(profile_key)
+        .and_then(|item| item.as_value().map(|value| value.decor().clone()));
+    doc["s3"][&profiles_key][profile_key] = toml_item;
+    if let Some(decor) = decor {
+        if let Some(value) = doc["s3"][&profiles_key][profile_key].as_value_mut() {
             *value.decor_mut() = decor;
         }
     }

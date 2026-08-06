@@ -65,6 +65,8 @@ pub struct Config {
     pub launcher: Launcher,
     /// Diagnostics / performance-logging settings.
     pub diagnostics: Diagnostics,
+    /// S3-compatible object storage settings.
+    pub s3: S3Config,
 }
 
 impl Default for Config {
@@ -80,6 +82,7 @@ impl Default for Config {
             search: Search::default(),
             launcher: Launcher::default(),
             diagnostics: Diagnostics::default(),
+            s3: S3Config::default(),
         }
     }
 }
@@ -346,6 +349,41 @@ impl Default for Launcher {
 pub struct Diagnostics {
     /// Performance logging for the persistence layer (`chronos-fm-store`).
     pub store: DiagnosticsStore,
+}
+
+/// S3-compatible object storage settings (see `docs/superpowers/specs/2026-08-06-s3-tab-live.md`).
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct S3Config {
+    /// Which profile to use by default.
+    #[serde(default)]
+    pub default_profile: String,
+    /// Named connection profiles, keyed by profile name.
+    #[serde(default)]
+    pub profiles: BTreeMap<String, S3Profile>,
+}
+
+/// One named S3-compatible endpoint.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(default)]
+pub struct S3Profile {
+    /// Endpoint URL, e.g. `https://s3.amazonaws.com`.
+    pub endpoint: String,
+    /// AWS region, e.g. `us-east-1`.
+    pub region: String,
+    /// Whether to use path-style addressing (`bucket/` in the path instead of a
+    /// virtual-host subdomain). Required for MinIO and some S3-compatible stores.
+    pub force_path_style: bool,
+}
+
+impl Default for S3Profile {
+    fn default() -> Self {
+        Self {
+            endpoint: "https://s3.amazonaws.com".to_string(),
+            region: "us-east-1".to_string(),
+            force_path_style: false,
+        }
+    }
 }
 
 /// Performance logging for the SQLite / redb store. All off by default, so a
@@ -632,6 +670,12 @@ impl Config {
                 }
             }
         }
+        if let Some(value) = table.get("s3") {
+            match value.as_table() {
+                Some(s3) => read_s3(s3, &mut config.s3, &mut diagnostics),
+                None => diagnostics.push(Diagnostic::warn("[s3] is not a table; ignoring")),
+            }
+        }
 
         warn_unknown_keys(
             table,
@@ -646,6 +690,7 @@ impl Config {
                 "search",
                 "launcher",
                 "diagnostics",
+                "s3",
             ],
             "",
             &mut diagnostics,
@@ -713,7 +758,15 @@ impl Config {
              \n\
              [plugins]\n\
              # core = [\"git\"]\n\
-             # community = [\"user/repo\"]\n"
+             # community = [\"user/repo\"]\n\
+             \n\
+             [s3]\n\
+             default_profile = \"\"   # profile name to use by default\n\
+             \n\
+             # [s3.profiles.personal]\n\
+             # endpoint = \"https://s3.amazonaws.com\"\n\
+             # region = \"us-east-1\"\n\
+             # force_path_style = false\n"
         )
     }
 }
@@ -954,6 +1007,88 @@ fn read_string_array(
             None
         }
     }
+}
+
+fn read_s3(table: &toml::Table, s3: &mut S3Config, diagnostics: &mut Vec<Diagnostic>) {
+    if let Some(value) = table.get("default_profile") {
+        match value.as_str() {
+            Some(profile) => {
+                s3.default_profile = profile.to_string();
+            }
+            _ => diagnostics.push(Diagnostic::warn(format!(
+                "invalid s3.default_profile {value}; using {:?}",
+                s3.default_profile
+            ))),
+        }
+    }
+    if let Some(profiles_value) = table.get("profiles") {
+        match profiles_value.as_table() {
+            Some(profiles_table) => {
+                for (key, value) in profiles_table {
+                    match value.as_table() {
+                        Some(profile_table) => {
+                            let mut profile = S3Profile::default();
+                            read_s3_profile(
+                                profile_table,
+                                &mut profile,
+                                &format!("s3.profiles.{key}."),
+                                diagnostics,
+                            );
+                            s3.profiles.insert(key.clone(), profile);
+                        }
+                        None => diagnostics.push(Diagnostic::warn(format!(
+                            "s3.profiles.{key} is not a table; ignoring"
+                        ))),
+                    }
+                }
+            }
+            None => diagnostics.push(Diagnostic::warn(
+                "s3.profiles is not a table; ignoring",
+            )),
+        }
+    }
+    warn_unknown_keys(table, &["default_profile", "profiles"], "s3.", diagnostics);
+}
+
+fn read_s3_profile(
+    table: &toml::Table,
+    profile: &mut S3Profile,
+    prefix: &str,
+    diagnostics: &mut Vec<Diagnostic>,
+) {
+    if let Some(value) = table.get("endpoint") {
+        match value.as_str() {
+            Some(ep) if !ep.trim().is_empty() => profile.endpoint = ep.to_string(),
+            _ => diagnostics.push(Diagnostic::warn(format!(
+                "invalid {prefix}endpoint {value}; using {:?}",
+                profile.endpoint
+            ))),
+        }
+    }
+    if let Some(value) = table.get("region") {
+        match value.as_str() {
+            Some(r) if !r.trim().is_empty() => profile.region = r.to_string(),
+            _ => diagnostics.push(Diagnostic::warn(format!(
+                "invalid {prefix}region {value}; using {:?}",
+                profile.region
+            ))),
+        }
+    }
+    if let Some(value) = table.get("force_path_style") {
+        match value.as_bool() {
+            Some(flag) => profile.force_path_style = flag,
+            None => diagnostics.push(Diagnostic::warn(format!(
+                "invalid {prefix}force_path_style {value}; using {}",
+                profile.force_path_style
+            ))),
+        }
+    }
+    warn_unknown_keys(
+        table,
+        &["endpoint", "region", "force_path_style"],
+        prefix,
+        diagnostics,
+    );
 }
 
 fn read_diagnostics(
@@ -1586,6 +1721,54 @@ mod tests {
         assert_eq!(over.ui_default_sort, Some(SortOrder::Size));
         assert_eq!(over.ui_show_hidden, Some(true));
         assert_eq!(over.ui_icon_pack.as_deref(), Some("nerd"));
+    }
+
+    #[test]
+    fn parses_s3_section_with_profiles() {
+        let toml = r#"
+            [s3]
+            default_profile = "minio"
+            [s3.profiles.personal]
+            endpoint = "https://s3.amazonaws.com"
+            region = "us-east-1"
+            force_path_style = false
+            [s3.profiles.minio]
+            endpoint = "http://localhost:9000"
+            region = "us-east-1"
+            force_path_style = true
+        "#;
+        let (config, diagnostics) = Config::from_toml_str(toml);
+        assert!(diagnostics.is_empty(), "{diagnostics:?}");
+        assert_eq!(config.s3.default_profile, "minio");
+        assert_eq!(config.s3.profiles.len(), 2);
+        let personal = &config.s3.profiles["personal"];
+        assert_eq!(personal.endpoint, "https://s3.amazonaws.com");
+        assert_eq!(personal.region, "us-east-1");
+        assert!(!personal.force_path_style);
+        let minio = &config.s3.profiles["minio"];
+        assert_eq!(minio.endpoint, "http://localhost:9000");
+        assert!(minio.force_path_style);
+    }
+
+    #[test]
+    fn s3_section_rejects_bad_values_leniently() {
+        let toml = r#"
+            [s3]
+            default_profile = 42
+            [s3.profiles.x]
+            endpoint = ""
+            region = "  "
+            force_path_style = "yes"
+        "#;
+        let (config, diagnostics) = Config::from_toml_str(toml);
+        assert!(errors(&diagnostics).is_empty());
+        // Bad values fall back to defaults.
+        assert_eq!(config.s3.default_profile, "");
+        let x = &config.s3.profiles["x"];
+        assert_eq!(x.endpoint, S3Profile::default().endpoint);
+        assert_eq!(x.region, S3Profile::default().region);
+        assert!(!x.force_path_style);
+        assert_eq!(diagnostics.len(), 4);
     }
 
     #[test]
