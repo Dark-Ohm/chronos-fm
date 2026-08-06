@@ -27,6 +27,7 @@ use chronos_fm_ui::components::layout::unified_toolbar::{
 };
 use chronos_fm_ui::theme::theme;
 use std::path::PathBuf;
+use std::rc::Rc;
 use std::sync::Arc;
 use std::sync::mpsc;
 use std::time::Duration;
@@ -135,6 +136,30 @@ impl RootView {
                 // `system` follows the OS appearance reported by the window.
                 config::ThemeMode::System => GpuiThemeMode::from(window.appearance()),
             };
+            Theme::change(mode, Some(window), cx);
+        }
+
+        // Accent: re-seed the active theme configs' accent-derived colours so
+        // the whole UI re-colors (buttons, selection, caret, links). Both modes
+        // are seeded so a later mode switch keeps the chosen accent.
+        if config.theme.accent != self.config.theme.accent {
+            let hex = config::accent_hex(&config.theme.accent);
+            let mode = Theme::global(cx).mode;
+            {
+                let theme = Theme::global_mut(cx);
+                let light = Rc::make_mut(&mut theme.light_theme);
+                let dark = Rc::make_mut(&mut theme.dark_theme);
+                for theme_config in [light, dark] {
+                    let colors = &mut theme_config.colors;
+                    colors.accent = Some(hex.clone().into());
+                    colors.primary = Some(hex.clone().into());
+                    colors.caret = Some(hex.clone().into());
+                    colors.link = Some(hex.clone().into());
+                    colors.ring = Some(hex.clone().into());
+                    colors.progress_bar = Some(hex.clone().into());
+                    colors.selection = Some(hex.clone().into());
+                }
+            }
             Theme::change(mode, Some(window), cx);
         }
 

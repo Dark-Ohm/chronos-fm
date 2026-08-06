@@ -87,6 +87,35 @@ fn mode_button(
         .child(label)
 }
 
+fn accent_swatch(
+    color: &chronos_fm_core::config::AccentColor,
+    current: &str,
+    cx: &gpui::App,
+) -> impl IntoElement {
+    // `name` is `&'static str` (lives in ACCENT_PALETTE) — copy it out so
+    // neither the element id nor the click closure borrows the parameter.
+    let name = color.name;
+    let active = current == name;
+    let fill = gpui::Hsla::from(gpui::rgba(color.rgb));
+    // Semi-transparent white reads as a highlight on any accent fill.
+    let hover_border = gpui::Hsla::from(gpui::rgba(0xffffff99));
+    div()
+        .id(name)
+        .size(px(20.))
+        .rounded(px(6.))
+        .cursor_pointer()
+        .bg(fill)
+        .when(active, |d| d.border_2().border_color(theme::fg(cx)))
+        .when(!active, |d| {
+            d.border_1()
+                .border_color(gpui::Hsla::transparent_black())
+                .hover(|style| style.border_color(hover_border))
+        })
+        .on_click(move |_event, _window, _cx| {
+            SettingsPage::write_field(ConfigField::ThemeAccent(name.to_string()));
+        })
+}
+
 fn theme_section(config: &Config, cx: &gpui::App) -> impl IntoElement {
     elevated_card(cx)
         .child(section_header(cx, "Theme", "appearance"))
@@ -112,6 +141,20 @@ fn theme_section(config: &Config, cx: &gpui::App) -> impl IntoElement {
                     config.theme.mode == ThemeMode::Dark,
                     cx,
                 )),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(div().text_color(theme::fg(cx)).child("Accent"))
+                .child(
+                    div().flex().gap(px(8.)).children(
+                        chronos_fm_core::config::ACCENT_PALETTE
+                            .iter()
+                            .map(|color| accent_swatch(color, &config.theme.accent, cx)),
+                    ),
+                ),
         )
 }
 

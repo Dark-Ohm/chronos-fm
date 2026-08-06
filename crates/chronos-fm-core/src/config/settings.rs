@@ -104,6 +104,46 @@ impl Default for Theme {
     }
 }
 
+/// A named accent colour offered by the Settings tab. The `name` is what
+/// `config.toml` stores (`theme.accent`); `rgb` is the value applied to
+/// the theme registry (Chronos blue `0x007acc` and friends).
+pub struct AccentColor {
+    /// Name stored in `config.toml`, e.g. `"blue"`.
+    pub name: &'static str,
+    /// RGB packed as `0xRRGGBB`, e.g. `0x007acc`.
+    pub rgb: u32,
+}
+
+/// The Settings tab's accent preview set (P1). Full hex customization
+/// lands in P5; this is the curated palette the picker shows.
+pub const ACCENT_PALETTE: &[AccentColor] = &[
+    AccentColor { name: "blue", rgb: 0x007acc },
+    AccentColor { name: "green", rgb: 0x00a86b },
+    AccentColor { name: "purple", rgb: 0x8b5cf6 },
+    AccentColor { name: "orange", rgb: 0xe8930c },
+    AccentColor { name: "red", rgb: 0xdc2626 },
+    AccentColor { name: "teal", rgb: 0x0d9488 },
+    AccentColor { name: "pink", rgb: 0xdb2777 },
+];
+
+/// The stored `theme.accent` value (a palette name or a hex string such
+/// as `#007acc` / `0x007acc`) as a `#rrggbb` string ready for the theme
+/// registry, falling back to the default Chronos blue.
+pub fn accent_hex(accent: &str) -> String {
+    if let Some(color) = ACCENT_PALETTE.iter().find(|c| c.name == accent) {
+        return format!("#{:06x}", color.rgb);
+    }
+    let trimmed = accent.trim();
+    let trimmed = trimmed
+        .strip_prefix("0x")
+        .or_else(|| trimmed.strip_prefix('#'))
+        .unwrap_or(trimmed);
+    if trimmed.len() == 6 && trimmed.chars().all(|c| c.is_ascii_hexdigit()) {
+        return format!("#{}", trimmed.to_lowercase());
+    }
+    "#007acc".to_string()
+}
+
 /// Explorer / view settings.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(default)]
@@ -1460,6 +1500,27 @@ mod tests {
         let (config, diagnostics) = Config::from_toml_str(toml);
         assert_eq!(config.theme.accent, Config::default().theme.accent);
         assert!(diagnostics.iter().any(|d| d.message.contains("accent")));
+    }
+
+    #[test]
+    fn accent_hex_resolves_palette_names() {
+        assert_eq!(accent_hex("blue"), "#007acc");
+        assert_eq!(accent_hex("green"), "#00a86b");
+        assert_eq!(accent_hex("pink"), "#db2777");
+    }
+
+    #[test]
+    fn accent_hex_normalizes_hex_spellings() {
+        assert_eq!(accent_hex("#0d9488"), "#0d9488");
+        assert_eq!(accent_hex("0xDC2626"), "#dc2626");
+        assert_eq!(accent_hex(" DC2626 "), "#dc2626");
+    }
+
+    #[test]
+    fn accent_hex_falls_back_to_blue() {
+        assert_eq!(accent_hex(""), "#007acc");
+        assert_eq!(accent_hex("not-a-color"), "#007acc");
+        assert_eq!(accent_hex("#123"), "#007acc");
     }
 
     #[test]

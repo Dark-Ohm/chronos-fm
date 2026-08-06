@@ -19,10 +19,11 @@ pub mod watcher;
 
 pub use loader::{backup, ensure_exists, needs_migration, reset, write_default};
 pub use settings::{
-    CURRENT_SCHEMA_VERSION, Config, ConfigOverride, Diagnostic, DiagnosticLevel, Diagnostics,
-    DiagnosticsStore, Explorer, Indexing, IndexingExclude, IndexingMode, Keybindings, Launcher,
-    Plugins, SCHEMA_URL, Search, SearchBackend, SortOrder, SplitDirection, Theme, ThemeMode, Ui,
-    json_schema_string, load_from_path, report_diagnostics,
+    ACCENT_PALETTE, AccentColor, CURRENT_SCHEMA_VERSION, Config, ConfigOverride, Diagnostic,
+    DiagnosticLevel, Diagnostics, DiagnosticsStore, Explorer, Indexing, IndexingExclude,
+    IndexingMode, Keybindings, Launcher, Plugins, SCHEMA_URL, Search, SearchBackend, SortOrder,
+    SplitDirection, Theme, ThemeMode, Ui, accent_hex, json_schema_string, load_from_path,
+    report_diagnostics,
 };
 pub use watcher::ConfigWatcher;
 
