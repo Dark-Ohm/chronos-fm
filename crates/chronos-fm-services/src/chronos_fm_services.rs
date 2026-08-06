@@ -13,6 +13,8 @@ pub mod mime;
 pub mod devices;
 /// Git repository status and operations (T010, probe).
 pub mod git;
+/// S3-compatible object storage client (T011).
+pub mod s3;
 /// Syntax highlighting backed by `syntect`, mapped to GPUI colors.
 #[cfg(feature = "gui")]
 pub mod syntax;
