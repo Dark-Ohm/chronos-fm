@@ -88,6 +88,16 @@ fn mode_button(
         .child(label)
 }
 
+/// The swatch fill for a palette colour. `ACCENT_PALETTE` packs `0xRRGGBB`,
+/// so this must go through `gpui::rgb` (opaque 6-digit). `gpui::rgba` reads
+/// `0xRRGGBBAA` — feeding it a 6-digit value shifts every channel left by a
+/// byte (red always 0, alpha = former blue), which was the T018 swatch-colour
+/// bug. Extracted so the regression test exercises the exact production
+/// conversion.
+fn accent_fill(color: &chronos_fm_core::config::AccentColor) -> gpui::Hsla {
+    gpui::Hsla::from(gpui::rgb(color.rgb))
+}
+
 fn accent_swatch(
     color: &chronos_fm_core::config::AccentColor,
     current: &str,
@@ -97,7 +107,7 @@ fn accent_swatch(
     // neither the element id nor the click closure borrows the parameter.
     let name = color.name;
     let active = current == name;
-    let fill = gpui::Hsla::from(gpui::rgba(color.rgb));
+    let fill = accent_fill(color);
     // Semi-transparent white reads as a highlight on any accent fill.
     let hover_border = gpui::Hsla::from(gpui::rgba(0xffffff99));
     div()
@@ -409,6 +419,49 @@ impl crate::Page for SettingsPage {
 #[cfg(test)]
 mod tests {
     use gpui::{AppContext, IntoElement, TestAppContext, point, px, size};
+
+    /// T018 regression: the swatch fill is `Hsla::from(gpui::rgb(rgb))`
+    /// (6-digit `0xRRGGBB`). The pre-fix code used `gpui::rgba`, which reads
+    /// `0xRRGGBBAA` and shifted every channel left by a byte — red always 0,
+    /// alpha = former blue. Mirroring the production conversion (rgb hex →
+    /// Hsla → Rgba), every channel must survive the round trip within float
+    /// tolerance; the byte-shift bug violates that by at least ~5× the
+    /// tolerance for the least-affected palette colour (teal's red channel).
+    #[test]
+    fn accent_swatch_colors_match_palette() {
+        for color in chronos_fm_core::config::ACCENT_PALETTE {
+            let rgba = gpui::Rgba::from(super::accent_fill(color));
+            let expected = |shift: u32| ((color.rgb >> shift) & 0xff) as f32 / 255.0;
+            let eps = 0.01;
+            assert!(
+                (rgba.r - expected(16)).abs() < eps,
+                "{}: red channel {:.3} != {:.3}",
+                color.name,
+                rgba.r,
+                expected(16)
+            );
+            assert!(
+                (rgba.g - expected(8)).abs() < eps,
+                "{}: green channel {:.3} != {:.3}",
+                color.name,
+                rgba.g,
+                expected(8)
+            );
+            assert!(
+                (rgba.b - expected(0)).abs() < eps,
+                "{}: blue channel {:.3} != {:.3}",
+                color.name,
+                rgba.b,
+                expected(0)
+            );
+            assert!(
+                (rgba.a - 1.0).abs() < eps,
+                "{}: swatch must be opaque, alpha {:.3}",
+                color.name,
+                rgba.a
+            );
+        }
+    }
 
     #[gpui::test]
     async fn settings_page_renders_without_panicking(cx: &mut TestAppContext) {
