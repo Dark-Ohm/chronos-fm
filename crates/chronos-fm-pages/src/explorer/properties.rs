@@ -10,7 +10,7 @@ use gpui::{
     prelude::*, App, AppContext, Context, EventEmitter, FocusHandle, Focusable, Render,
     Styled, Window, div, px,
 };
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
 /// Status of recursive size computation.
@@ -52,40 +52,15 @@ impl PropertiesDialog {
         let (permissions_rwx, permissions_octal) = Self::format_permissions(&metadata);
         let size_status = Arc::new(Mutex::new(SizeStatus::Idle));
 
-        // Start recursive size computation for directories
+        // Start recursive size computation for directories. The walk lives in
+        // the GPUI-free `compute_recursive_size`, so the background task just
+        // flips to Counting and applies its result (T020).
         if item.kind == "dir" {
             let status = size_status.clone();
-            let path = item.path.clone();
+            let path: PathBuf = item.path.clone().into();
             cx.background_spawn(async move {
-                let mut files: u64 = 0;
-                let mut dirs: u64 = 0;
-                let mut bytes: u64 = 0;
-                let mut errors: u64 = 0;
-
-                *status.lock().unwrap() =
-                    SizeStatus::Counting { files: 0, bytes: 0 };
-
-                for entry in walkdir::WalkDir::new(&path) {
-                    match entry {
-                        Ok(e) => {
-                            if e.file_type().is_dir() {
-                                dirs += 1;
-                            } else if e.file_type().is_file() {
-                                files += 1;
-                                bytes += e.metadata().map(|m| m.len()).unwrap_or(0);
-                            }
-                        }
-                        Err(_) => {
-                            errors += 1;
-                        }
-                    }
-                    if files % 100 == 0 {
-                        *status.lock().unwrap() =
-                            SizeStatus::Counting { files, bytes };
-                    }
-                }
-
-                *status.lock().unwrap() = SizeStatus::Done { bytes, files, dirs, errors };
+                *status.lock().unwrap() = SizeStatus::Counting { files: 0, bytes: 0 };
+                *status.lock().unwrap() = compute_recursive_size(&path);
             })
             .detach();
         } else {
@@ -174,6 +149,42 @@ impl PropertiesDialog {
             ("rw-r--r--".into(), "0644".into())
         }
     }
+}
+
+/// Recursively sum the bytes of every regular file under `path` (a
+/// directory) and count files and directories, `path` itself included as a
+/// directory.
+///
+/// Never aborts on unreadable entries: a failed read increments `errors` and
+/// the walk continues, so the readable remainder is still accounted for. This
+/// is the tolerance the live UI relies on (verified in T016) — extracted into
+/// a GPUI-free function so it is covered by headless unit tests instead of
+/// only manual smoke runs (T020).
+fn compute_recursive_size(path: &Path) -> SizeStatus {
+    let mut files: u64 = 0;
+    let mut dirs: u64 = 0;
+    let mut bytes: u64 = 0;
+    let mut errors: u64 = 0;
+
+    for entry in walkdir::WalkDir::new(path) {
+        match entry {
+            Ok(e) => {
+                if e.file_type().is_dir() {
+                    dirs += 1;
+                } else if e.file_type().is_file() {
+                    files += 1;
+                    // A file whose metadata cannot be read still counts as a
+                    // file but contributes 0 bytes.
+                    bytes += e.metadata().map(|m| m.len()).unwrap_or(0);
+                }
+            }
+            Err(_) => {
+                errors += 1;
+            }
+        }
+    }
+
+    SizeStatus::Done { bytes, files, dirs, errors }
 }
 
 /// Convert a Unix mode to an rwx string like "rwxr-xr-x".
@@ -313,6 +324,77 @@ mod tests {
             PropertiesDialog::format_permissions(&None),
             ("---------".to_string(), "0000".to_string())
         );
+    }
+
+    /// T020: a small tree with files of known sizes and nested directories
+    /// must reach `Done` with the exact byte sum and file/dir counts. `dirs`
+    /// includes the root directory itself (WalkDir yields it first).
+    #[test]
+    fn compute_recursive_size_sums_tree() {
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.bin"), vec![0u8; 1000]).unwrap();
+        std::fs::write(tmp.path().join("b.bin"), vec![0u8; 500]).unwrap();
+        let sub = tmp.path().join("sub");
+        std::fs::create_dir(&sub).unwrap();
+        std::fs::write(sub.join("c.bin"), vec![0u8; 250]).unwrap();
+        let deep = sub.join("deep");
+        std::fs::create_dir(&deep).unwrap();
+        std::fs::write(deep.join("d.bin"), vec![0u8; 100]).unwrap();
+
+        let SizeStatus::Done { bytes, files, dirs, errors } =
+            compute_recursive_size(tmp.path())
+        else {
+            panic!("expected Done status");
+        };
+        assert_eq!(bytes, 1000 + 500 + 250 + 100);
+        assert_eq!(files, 4);
+        assert_eq!(dirs, 3, "root + sub + deep");
+        assert_eq!(errors, 0);
+    }
+
+    /// T020: an unreadable subdirectory must not abort the walk — it counts
+    /// as one error and the readable part of the tree still sums correctly.
+    /// Skipped under root, where chmod 000 does not restrict access (same
+    /// probe as the T016 tests).
+    #[cfg(unix)]
+    #[test]
+    fn compute_recursive_size_tolerates_unreadable_subdir() {
+        use std::os::unix::fs::PermissionsExt;
+
+        // Skip under root: chmod 000 does not restrict root (see T016).
+        let probe = std::env::temp_dir()
+            .join(format!("cfm_props_root_probe_{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&probe);
+        let _ = std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o000));
+        let can_still_read = std::fs::read_dir(&probe).is_ok();
+        let _ = std::fs::set_permissions(&probe, std::fs::Permissions::from_mode(0o755));
+        let _ = std::fs::remove_dir_all(&probe);
+        if can_still_read {
+            return;
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        std::fs::write(tmp.path().join("a.bin"), vec![0u8; 100]).unwrap();
+
+        let locked = tmp.path().join("locked");
+        std::fs::create_dir(&locked).unwrap();
+        std::fs::write(locked.join("secret.bin"), vec![0u8; 900]).unwrap();
+        std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let SizeStatus::Done { bytes, files, dirs, errors } =
+            compute_recursive_size(tmp.path())
+        else {
+            panic!("expected Done status");
+        };
+        // The locked dir's own entry is still yielded (stat succeeds); only
+        // reading its contents fails, which increments `errors`.
+        assert_eq!(bytes, 100, "only the readable file contributes bytes");
+        assert_eq!(files, 1);
+        assert_eq!(dirs, 2, "root + locked dir entry itself");
+        assert_eq!(errors, 1, "unreadable subdir is tolerated, not fatal");
+
+        // Restore permissions so TempDir cleanup can remove the tree.
+        let _ = std::fs::set_permissions(&locked, std::fs::Permissions::from_mode(0o755));
     }
 
     #[cfg(unix)]
