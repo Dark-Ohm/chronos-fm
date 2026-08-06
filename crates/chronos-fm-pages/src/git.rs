@@ -21,6 +21,30 @@ use std::path::PathBuf;
 use std::sync::mpsc;
 use std::time::Duration;
 
+/// Resolve the directory the Git panel should display: the pinned path when
+/// set, otherwise the active explorer tab's directory (follow mode). Returns
+/// `None` when neither is available. Extracted for unit testing (T017).
+fn resolve_follow_dir(
+    pinned_path: Option<&std::path::Path>,
+    explorer_path: Option<&str>,
+) -> Option<PathBuf> {
+    if let Some(p) = pinned_path {
+        return Some(p.to_path_buf());
+    }
+    explorer_path.map(PathBuf::from)
+}
+
+/// Whether the refresh loop should trigger a reload: either a git-content
+/// change signal arrived (`changed`), or the follow-mode directory moved —
+/// which is how the panel tracks explorer navigation (T017).
+fn should_refresh(
+    changed: bool,
+    follow_dir: Option<&PathBuf>,
+    last_dir: Option<&PathBuf>,
+) -> bool {
+    changed || follow_dir != last_dir
+}
+
 /// The live Git status panel.
 pub struct GitPage {
     explorer: WeakEntity<ExplorerPage>,
@@ -33,6 +57,16 @@ pub struct GitPage {
     _watcher: Option<GitWatcher>,
     _shutdown_tx: Option<mpsc::Sender<()>>,
     refresh_tx: Option<mpsc::Sender<()>>,
+    /// The directory the panel last refreshed in follow mode. The refresh
+    /// loop compares it against the current follow dir every tick, so explorer
+    /// navigation (which emits no signal into the watcher channel) still
+    /// triggers a reload (T017).
+    last_dir: Option<PathBuf>,
+    /// Monotonic counter of refresh starts; results from an in-flight status
+    /// read that are older than the latest start are discarded, so a slow
+    /// stale read cannot overwrite newer state after rapid follow-mode
+    /// navigation (T017).
+    refresh_generation: u64,
 }
 
 impl GitPage {
@@ -61,6 +95,8 @@ impl GitPage {
             _watcher: None,
             _shutdown_tx: Some(tx),
             refresh_tx: Some(refresh_tx),
+            last_dir: None,
+            refresh_generation: 0,
         };
         page.start_refresh_loop(window, rx, cx);
         page
@@ -68,20 +104,26 @@ impl GitPage {
 
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         let dir = self.current_dir(cx);
+        self.last_dir = dir.clone();
         self.do_refresh(dir, cx);
     }
 
     fn current_dir(&self, cx: &mut Context<Self>) -> Option<PathBuf> {
-        if let Some(p) = &self.pinned_path {
-            return Some(p.clone());
-        }
-        let explorer = self.explorer.upgrade()?;
-        Some(PathBuf::from(explorer.read(cx).current_path(cx)))
+        let explorer_path = self
+            .explorer
+            .upgrade()
+            .map(|explorer| explorer.read(cx).current_path(cx));
+        resolve_follow_dir(self.pinned_path.as_deref(), explorer_path.as_deref())
     }
 
     fn do_refresh(&mut self, dir: Option<PathBuf>, cx: &mut Context<Self>) {
         let Some(dir) = dir else { return };
         self.refreshing = true;
+        // Follow-mode navigation can start a new read while an older one is
+        // still in flight; bump the generation so the older result is dropped
+        // when it lands (T017).
+        self.refresh_generation += 1;
+        let generation = self.refresh_generation;
         cx.notify();
 
         let this = cx.weak_entity();
@@ -93,6 +135,12 @@ impl GitPage {
                     .spawn(async move { git::open_repo(&dir).and_then(|repo| git::status(&repo)) })
                     .await;
                 this.update(&mut cx, |page, cx| {
+                    if page.refresh_generation != generation {
+                        // A newer refresh superseded this one; drop the stale
+                        // result entirely (its `refreshing` flag is owned by
+                        // the newer read).
+                        return;
+                    }
                     page.refreshing = false;
                     match result {
                         Ok(status) => {
@@ -162,11 +210,18 @@ impl GitPage {
                         if disconnected {
                             break;
                         }
-                        if !changed {
-                            continue;
-                        }
+                        // Re-read the follow-mode directory every tick: explorer
+                        // navigation emits no signal into this channel, so
+                        // `current_dir != last_dir` is how the panel follows the
+                        // active tab (T017). The watcher's `changed` signal still
+                        // drives refreshes for git-content mutations in place.
                         if this
-                            .update_in(&mut cx, |page, _w, cx| page.refresh(cx))
+                            .update_in(&mut cx, |page, _w, cx| {
+                                let dir = page.current_dir(cx);
+                                if should_refresh(changed, dir.as_ref(), page.last_dir.as_ref()) {
+                                    page.refresh(cx);
+                                }
+                            })
                             .is_err()
                         {
                             break;
@@ -446,9 +501,59 @@ fn render_commit_bar(
         )
 }
 
-// render test deferred to T010 verification step (gpui::test recursion_limit)
 #[cfg(test)]
 mod tests {
-    // #[gpui::test]
-    // async fn git_page_renders_without_panicking(...) — see TODO above
+    use super::{resolve_follow_dir, should_refresh};
+    use std::path::PathBuf;
+
+    #[test]
+    fn pinned_path_takes_precedence_over_explorer_path() {
+        let pinned = PathBuf::from("/repo/pinned");
+        assert_eq!(
+            resolve_follow_dir(Some(&pinned), Some("/explorer/cwd")),
+            Some(pinned)
+        );
+    }
+
+    #[test]
+    fn follow_mode_uses_active_explorer_directory() {
+        assert_eq!(
+            resolve_follow_dir(None, Some("/explorer/cwd")),
+            Some(PathBuf::from("/explorer/cwd"))
+        );
+    }
+
+    #[test]
+    fn follow_mode_without_explorer_resolves_to_none() {
+        assert_eq!(resolve_follow_dir(None, None), None);
+    }
+
+    #[test]
+    fn refresh_loop_triggers_on_watcher_signal() {
+        assert!(should_refresh(
+            true,
+            Some(&PathBuf::from("/a")),
+            Some(&PathBuf::from("/a"))
+        ));
+    }
+
+    #[test]
+    fn refresh_loop_triggers_on_directory_change() {
+        assert!(should_refresh(
+            false,
+            Some(&PathBuf::from("/b")),
+            Some(&PathBuf::from("/a"))
+        ));
+    }
+
+    #[test]
+    fn refresh_loop_idles_without_signal_or_navigation() {
+        assert!(!should_refresh(
+            false,
+            Some(&PathBuf::from("/a")),
+            Some(&PathBuf::from("/a"))
+        ));
+        // First tick after construction: no last dir yet → refresh.
+        assert!(should_refresh(false, Some(&PathBuf::from("/a")), None));
+    }
 }
