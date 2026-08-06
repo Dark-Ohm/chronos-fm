@@ -11,6 +11,8 @@ pub mod archive;
 pub mod mime;
 /// Removable media device listing and mount control via `udisks2`.
 pub mod devices;
+/// Git repository status and operations (T010, probe).
+pub mod git;
 /// Syntax highlighting backed by `syntect`, mapped to GPUI colors.
 #[cfg(feature = "gui")]
 pub mod syntax;

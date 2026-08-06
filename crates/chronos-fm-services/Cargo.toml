@@ -46,6 +46,7 @@ lru = "0.18.2"
 thiserror.workspace = true
 xdg-mime = "0.4.0"
 freedesktop-desktop-entry = "0.8.1"
+gix = { version = "0.86.0", features = ["tree-editor"] }
 
 [dev-dependencies]
 tempfile = "3"
