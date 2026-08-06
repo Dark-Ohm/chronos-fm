@@ -91,7 +91,7 @@ impl RootView {
             )
         });
         let git = cx.new(|cx| GitPage::new(explorer.downgrade(), window, cx));
-        let s3 = cx.new(|_cx| S3Page::new());
+        let s3 = cx.new(|cx| S3Page::new(config.clone(), window, cx));
         let extensions = cx.new(|_cx| ExtensionsPage::new());
         let settings = cx.new(|_cx| SettingsPage::new(config.clone()));
 
@@ -193,6 +193,9 @@ impl RootView {
         // without this its active mode/sort/switch states stay frozen at the
         // construction snapshot after the first hot reload.
         self.settings.update(cx, |page, _cx| {
+            page.set_config(config.clone());
+        });
+        self.s3.update(cx, |page, _cx| {
             page.set_config(config.clone());
         });
 
