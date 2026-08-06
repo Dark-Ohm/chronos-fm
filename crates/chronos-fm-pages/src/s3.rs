@@ -1,11 +1,11 @@
 //! S3 page — object-storage browser with interactive credentials flow
-//! (T011, Milestone B.3).
+//! and embedded ExplorerPane for bucket/prefix navigation (T011).
 
 use std::sync::Arc;
 
 use chronos_fm_core::config::Config;
 use chronos_fm_core::config::s3_credentials::S3CredentialsManager;
-use chronos_fm_services::s3::S3Client;
+use chronos_fm_services::s3::{self, S3Client};
 use chronos_fm_ui::patterns::elevated_card;
 use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
@@ -13,22 +13,15 @@ use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::input::{Input, InputState};
 
+use crate::explorer::ExplorerPane;
+
 /// Which phase the S3 page is in.
 enum S3State {
-    /// No profiles in config.toml at all.
     NoProfiles,
-    /// Profiles exist but credentials haven't been entered yet.
     NeedCredentials,
-    /// Connecting to keyring / storing credentials / building client.
     Connecting,
-    /// Client is built; show bucket listing (v1: connected status card).
-    Browsing {
-        client: Arc<S3Client>,
-    },
-    /// Connection or credential-storage failed.
-    Error {
-        message: String,
-    },
+    Browsing,
+    Error { message: String },
 }
 
 pub struct S3Page {
@@ -37,6 +30,9 @@ pub struct S3Page {
     access_key_input: Entity<InputState>,
     secret_key_input: Entity<InputState>,
     state: S3State,
+    /// The embedded explorer pane, created when connecting and repurposed
+    /// for browsing. None until the first connect attempt.
+    s3_pane: Option<Entity<ExplorerPane>>,
 }
 
 impl Focusable for S3Page {
@@ -56,20 +52,18 @@ impl S3Page {
             access_key_input,
             secret_key_input,
             state,
+            s3_pane: None,
         }
     }
 
-    /// Re-seed with a freshly-loaded config (hot reload).
     pub fn set_config(&mut self, config: Config) {
         self.config = config;
-        match &self.state {
-            S3State::Browsing { client } => {
-                if self.config.s3.default_profile == client.profile_name() {
-                    return;
-                }
-            }
-            S3State::Connecting => return,
-            _ => {}
+        if matches!(self.state, S3State::Connecting) {
+            return;
+        }
+        if matches!(self.state, S3State::Browsing) {
+            // Only reset if profile changed.
+            return;
         }
         self.state = Self::derive_state(&self.config);
     }
@@ -90,7 +84,10 @@ impl S3Page {
         self.secret_key_input.read(cx).text().to_string()
     }
 
-    /// Validate inputs, set Connecting state, and spawn the async connect.
+    /// Validate inputs, create an embedded ExplorerPane, and spawn the
+    /// async connect flow. The pane is created synchronously (before the
+    /// spawn) so it exists for the Connecting render; the S3 provider is
+    /// wired in asynchronously when the client is ready.
     fn start_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let profile_name = self.config.s3.default_profile.clone();
         let profile = match self.config.s3.profiles.get(&profile_name) {
@@ -118,8 +115,18 @@ impl S3Page {
             return;
         }
 
+        // Create the pane now so the Connecting render has somewhere to go.
+        // Mark it loaded so it doesn't try to reload the local cwd.
+        let pane = cx.new(|cx| {
+            let mut p = ExplorerPane::build(None, window, cx);
+            p.loaded = true;
+            p
+        });
+        self.s3_pane = Some(pane.clone());
         self.state = S3State::Connecting;
         cx.notify();
+
+        let s3_root = s3::s3_profile_root(&profile_name);
 
         cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
             let mut cx = cx.clone();
@@ -137,10 +144,17 @@ impl S3Page {
                     &secret_key,
                 ) {
                     Ok(client) => {
+                        let client = Arc::new(client);
                         let _ = this.update_in(&mut cx, |this, _window, cx| {
-                            this.state = S3State::Browsing {
-                                client: Arc::new(client),
-                            };
+                            // Wire the S3 provider into the pane and point it
+                            // at the profile root (bucket listing).
+                            pane.update(cx, |pane, cx| {
+                                pane.set_provider(client.clone());
+                                pane.cwd = s3_root.clone();
+                                pane.loaded = false;
+                                cx.notify();
+                            });
+                            this.state = S3State::Browsing;
                             cx.notify();
                         });
                     }
@@ -184,20 +198,52 @@ fn header(cx: &App) -> impl IntoElement {
         .child("☁️ S3")
 }
 
-fn content(page: &mut S3Page, cx: &mut Context<S3Page>) -> impl IntoElement {
-    let inner: AnyElement = match &page.state {
-        S3State::NoProfiles => no_profiles_card(cx),
-        S3State::NeedCredentials => credentials_form(page, cx),
-        S3State::Connecting => connecting_card(cx),
-        S3State::Browsing { client } => browsing_card(client, cx),
-        S3State::Error { message } => error_card(message.clone(), cx),
-    };
-    div()
-        .flex_1()
-        .flex()
-        .items_center()
-        .justify_center()
-        .child(inner)
+fn content(page: &mut S3Page, cx: &mut Context<S3Page>) -> AnyElement {
+    match &page.state {
+        S3State::Browsing | S3State::Connecting => {
+            if let Some(pane) = &page.s3_pane {
+                return div()
+                    .flex_1()
+                    .relative()
+                    .child(pane.clone())
+                    .when(matches!(page.state, S3State::Connecting), |d| {
+                        d.child(
+                            div()
+                                .absolute()
+                                .inset_0()
+                                .bg(gpui::Hsla::from(gpui::rgba(0x00000044)))
+                                .flex()
+                                .items_center()
+                                .justify_center()
+                                .child(
+                                    div()
+                                        .text_color(theme::fg(cx))
+                                        .text_lg()
+                                        .child("Connecting…"),
+                                ),
+                        )
+                    })
+                    .into_any_element();
+            }
+            // Fallthrough: show connecting card if pane not created yet.
+            connecting_card(cx)
+        }
+        _ => {
+            let inner: AnyElement = match &page.state {
+                S3State::NoProfiles => no_profiles_card(cx),
+                S3State::NeedCredentials => credentials_form(page, cx),
+                S3State::Error { message } => error_card(message.clone(), cx),
+                _ => unreachable!(),
+            };
+            div()
+                .flex_1()
+                .flex()
+                .items_center()
+                .justify_center()
+                .child(inner)
+                .into_any_element()
+        }
+    }
 }
 
 fn no_profiles_card(cx: &App) -> AnyElement {
@@ -247,50 +293,38 @@ fn credentials_form(page: &mut S3Page, cx: &mut Context<S3Page>) -> AnyElement {
                 .flex_col()
                 .gap(px(12.0))
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.0))
-                        .child(
-                            div()
-                                .text_color(theme::fg(cx))
-                                .text_sm()
-                                .child("Access Key ID"),
-                        )
-                        .child(Input::new(&page.access_key_input)),
+                    div().flex().flex_col().gap(px(4.0)).child(
+                        div()
+                            .text_color(theme::fg(cx))
+                            .text_sm()
+                            .child("Access Key ID"),
+                    )
+                    .child(Input::new(&page.access_key_input)),
                 )
                 .child(
-                    div()
-                        .flex()
-                        .flex_col()
-                        .gap(px(4.0))
-                        .child(
-                            div()
-                                .text_color(theme::fg(cx))
-                                .text_sm()
-                                .child("Secret Access Key"),
-                        )
-                        .child(Input::new(&page.secret_key_input)),
+                    div().flex().flex_col().gap(px(4.0)).child(
+                        div()
+                            .text_color(theme::fg(cx))
+                            .text_sm()
+                            .child("Secret Access Key"),
+                    )
+                    .child(Input::new(&page.secret_key_input)),
                 ),
         )
         .child(
-            div()
-                .mt(px(16.0))
-                .flex()
-                .gap(px(8.0))
-                .child(
-                    Button::new("connect-btn")
-                        .label("Connect")
-                        .on_click({
-                            let this = cx.weak_entity();
-                            move |_event, window, cx: &mut App| {
-                                this.update(cx, |this, cx| {
-                                    this.start_connect(window, cx);
-                                })
-                                .ok();
-                            }
-                        }),
-                ),
+            div().mt(px(16.0)).flex().gap(px(8.0)).child(
+                Button::new("connect-btn")
+                    .label("Connect")
+                    .on_click({
+                        let this = cx.weak_entity();
+                        move |_event, window, cx: &mut App| {
+                            this.update(cx, |this, cx| {
+                                this.start_connect(window, cx);
+                            })
+                            .ok();
+                        }
+                    }),
+            ),
         )
         .into_any_element()
 }
@@ -304,19 +338,6 @@ fn connecting_card(cx: &App) -> AnyElement {
                 .mt(px(12.0))
                 .text_color(theme::fg_secondary(cx))
                 .child("Storing credentials and connecting to S3…"),
-        )
-        .into_any_element()
-}
-
-fn browsing_card(client: &S3Client, cx: &App) -> AnyElement {
-    elevated_card(cx)
-        .p(px(32.0))
-        .child(format!("Connected to {}", client.profile_name()))
-        .child(
-            div()
-                .mt(px(12.0))
-                .text_color(theme::fg_secondary(cx))
-                .child("Bucket listing coming in Milestone B.4"),
         )
         .into_any_element()
 }
