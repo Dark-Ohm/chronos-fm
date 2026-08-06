@@ -5,6 +5,8 @@
 //! `FileSystemProvider` trait can remain sync. Each `S3Client` owns a
 //! single-threaded Tokio runtime on which all network calls are dispatched.
 
+pub mod provider;
+
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::{BehaviorVersion, Region};
 use aws_sdk_s3::primitives::ByteStream;
