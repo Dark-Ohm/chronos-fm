@@ -129,6 +129,14 @@ pub fn patch_config_file(path: &Path, field: &ConfigField) -> Result<()> {
     std::fs::write(path, patched).with_context(|| format!("writing {}", path.display()))
 }
 
+/// The `config.toml` path the Settings tab writes to — the same path
+/// the app's config loader/watcher already reads from and hot-reloads
+/// (see `root.rs::start_config_watch`). Delegates to [`super::paths::config_file`]
+/// rather than duplicating XDG-path handling.
+pub fn default_config_path() -> Result<std::path::PathBuf> {
+    Ok(super::paths::config_file())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
@@ -177,6 +185,13 @@ icon_pack = "default"
         let patched =
             patch_config_text(SAMPLE, &ConfigField::UiShowHidden(true)).unwrap();
         assert!(patched.contains("show_hidden = true"));
+    }
+
+    #[test]
+    fn default_config_path_ends_with_expected_filename() {
+        let path = default_config_path().unwrap();
+        assert_eq!(path.file_name().unwrap(), "config.toml");
+        assert!(path.to_string_lossy().contains("chronos-fm"));
     }
 
     #[test]
