@@ -218,6 +218,26 @@ icon_pack = "default"
     }
 
     #[test]
+    fn patches_explorer_split_direction() {
+        // The Settings tab's split-direction buttons write through this
+        // variant — both spellings must round-trip to config.toml keys.
+        let base = "schema_version = 1\n[explorer]\n";
+        let vertical = patch_config_text(
+            base,
+            &ConfigField::ExplorerSplitDirection(crate::config::SplitDirection::Vertical),
+        )
+        .unwrap();
+        assert!(vertical.contains("split_direction = \"vertical\""));
+
+        let horizontal = patch_config_text(
+            base,
+            &ConfigField::ExplorerSplitDirection(crate::config::SplitDirection::Horizontal),
+        )
+        .unwrap();
+        assert!(horizontal.contains("split_direction = \"horizontal\""));
+    }
+
+    #[test]
     fn patches_missing_section_by_creating_it() {
         // A config.toml with no [explorer] section at all — patching an
         // Explorer field must add the section, not error.

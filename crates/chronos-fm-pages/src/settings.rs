@@ -4,7 +4,7 @@
 //! search/launcher — spec's explicit "show, don't hide" decision).
 
 use chronos_fm_core::config::patch::{ConfigField, default_config_path, patch_config_file};
-use chronos_fm_core::config::{Config, SortOrder, ThemeMode};
+use chronos_fm_core::config::{Config, SortOrder, SplitDirection, ThemeMode};
 use chronos_fm_ui::patterns::{elevated_card, section_header};
 use chronos_fm_ui::theme::theme;
 use gpui::{AnyElement, Context, Render, Window, div, prelude::*, px};
@@ -169,9 +169,54 @@ fn sort_button(
         .child(label)
 }
 
+fn split_button(
+    label: &'static str,
+    direction: SplitDirection,
+    current: SplitDirection,
+    cx: &gpui::App,
+) -> impl IntoElement {
+    let active = direction == current;
+    div()
+        .id(label)
+        .px(px(10.))
+        .py(px(4.))
+        .rounded(px(6.))
+        .cursor_pointer()
+        .when(active, |d| d.bg(theme::accent(cx)).text_color(theme::bg(cx)))
+        .when(!active, |d| d.text_color(theme::fg_secondary(cx)))
+        .on_click(move |_event, _window, _cx| {
+            SettingsPage::write_field(ConfigField::ExplorerSplitDirection(direction));
+        })
+        .child(label)
+}
+
 fn explorer_section(config: &Config, cx: &gpui::App) -> impl IntoElement {
     elevated_card(cx)
         .child(section_header(cx, "Explorer", "split view"))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(div().text_color(theme::fg(cx)).child("New split orientation"))
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(8.))
+                        .child(split_button(
+                            "Side by side",
+                            SplitDirection::Vertical,
+                            config.explorer.split_direction,
+                            cx,
+                        ))
+                        .child(split_button(
+                            "Stacked",
+                            SplitDirection::Horizontal,
+                            config.explorer.split_direction,
+                            cx,
+                        )),
+                ),
+        )
         .child(
             div()
                 .flex()
