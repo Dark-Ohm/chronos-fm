@@ -1,5 +1,6 @@
-use super::super::types::ViewMode;
+use super::super::types::{StatusLevel, ViewMode};
 use crate::explorer::ExplorerPane;
+use chronos_fm_ui::theme::theme;
 use gpui::*;
 
 /// Grid-mode rendering of the listing.
@@ -25,17 +26,55 @@ pub fn render(
         ViewMode::Grid => grid::render(page, window, cx),
     };
 
+    // Surface provider listing failures inside the pane itself (T021):
+    // without this, an S3 error (e.g. server unreachable) is indistinguishable
+    // from an empty bucket — the app footer only reflects the main explorer's
+    // status, never an embedded pane's. Gated to provider-backed panes: local
+    // filesystem errors already surface through the footer, so this banner
+    // intentionally changes nothing in the plain explorer. Mirrors T016's
+    // inline availability banner in the search bar.
+    let mut column = div().size_full().flex().flex_col().min_h(px(0.0));
+    if page.provider.is_some() {
+        if let Some(status) = page.status_message.as_ref() {
+            if status.level == StatusLevel::Error {
+                column = column.child(render_status_banner(status.text.clone(), cx));
+            }
+        }
+    }
+    column = column.child(file_list);
+
     if page.search_visible {
         div()
             .size_full()
             .flex()
             .flex_col()
             .child(search_bar::render(page, cx))
-            .child(file_list)
+            .child(column)
             .into_any_element()
     } else {
-        file_list
+        column.into_any_element()
     }
+}
+
+/// A slim danger-colored strip shown above the listing while the pane has an
+/// error status, so load failures reach the user instead of showing as a bare
+/// empty list.
+fn render_status_banner(text: String, cx: &Context<ExplorerPane>) -> impl IntoElement {
+    div()
+        .w_full()
+        .flex_shrink_0()
+        .flex()
+        .items_center()
+        .gap(px(8.0))
+        .px(px(12.0))
+        .py(px(6.0))
+        .bg(theme::bg_secondary(cx))
+        .border_b_1()
+        .border_color(theme::danger(cx))
+        .text_xs()
+        .text_color(theme::danger(cx))
+        .child("⚠ ")
+        .child(text)
 }
 
 /// Truncates `text` to at most `max_len` characters by eliding the middle,

@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use chronos_fm_core::config::Config;
 use chronos_fm_core::config::s3_credentials::S3CredentialsManager;
+use chronos_fm_core::telemetry::LogErr;
 use chronos_fm_services::s3::{self, S3Client};
 use chronos_fm_ui::patterns::elevated_card;
 use chronos_fm_ui::theme::theme;
@@ -146,14 +147,22 @@ impl S3Page {
                     Ok(client) => {
                         let client = Arc::new(client);
                         let _ = this.update_in(&mut cx, |this, _window, cx| {
-                            // Wire the S3 provider into the pane and point it
-                            // at the profile root (bucket listing).
-                            pane.update(cx, |pane, cx| {
-                                pane.set_provider(client.clone());
-                                pane.cwd = s3_root.clone();
-                                pane.loaded = false;
-                                cx.notify();
-                            });
+                            // Wire the S3 provider into the pane, point it at
+                            // the profile root (bucket listing), and load it
+                            // **immediately**. `reload()` is a no-op for
+                            // provider-backed panes (B.1), so deferring to the
+                            // render path via `loaded = false` would show an
+                            // empty list forever — the async listing must be
+                            // kicked off here, where window+cx are available
+                            // (T021).
+                            pane.downgrade()
+                                .update_in(cx, |pane, window, cx| {
+                                    pane.set_provider(client.clone());
+                                    pane.cwd = s3_root.clone();
+                                    pane.reload_provider(window, cx);
+                                    cx.notify();
+                                })
+                                .log_err();
                             this.state = S3State::Browsing;
                             cx.notify();
                         });

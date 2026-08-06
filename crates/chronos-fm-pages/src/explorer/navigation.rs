@@ -19,8 +19,18 @@ impl ExplorerPane {
         self.provider = Some(provider);
     }
 
-    pub(crate) fn ensure_loaded(&mut self) {
-        if !self.loaded {
+    pub(crate) fn ensure_loaded(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.loaded {
+            return;
+        }
+        if self.provider.is_some() {
+            // Provider-backed panes have no synchronous listing — `reload()`
+            // short-circuits when a provider is set — so route through the
+            // async path instead of silently marking the pane loaded with an
+            // empty list (T021). This keeps the `loaded = false` contract safe
+            // for any caller, not just the S3 connect flow.
+            self.reload_provider(window, cx);
+        } else {
             self.reload();
         }
     }

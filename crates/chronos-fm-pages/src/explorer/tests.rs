@@ -11,14 +11,17 @@
 
 use std::path::PathBuf;
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
 use gpui::{AppContext, TestAppContext, WindowHandle, point, px};
 use gpui_component::input::InputState;
 use gpui_component::resizable::ResizableState;
 use chronos_fm_core::config;
+use chronos_fm_core::errors::{Error, Result};
 use chronos_fm_services::devices::{Device, DeviceBackend};
-use chronos_fm_services::fs::listing::FileEntryDto;
+use chronos_fm_services::fs::listing::{FileEntryDto, ListResult};
+use chronos_fm_services::fs::provider::FileSystemProvider;
 use chronos_fm_store::{KvStore, RedbKvStore, StoreLogConfig};
 
 use chronos_fm_core::config::SplitDirection;
@@ -1130,4 +1133,194 @@ fn context_menu_for_file_sets_path_and_index() {
     );
     assert_eq!(state.file_path.as_deref(), Some("/tmp/a.txt"));
     assert_eq!(state.index, Some(3));
+}
+
+/// In-memory `FileSystemProvider` for the T021 regression tests: counts
+/// `list_dir` invocations and returns a fixed listing, so a test can assert
+/// that a provider-backed pane actually polls its provider after being wired
+/// up — the bug was exactly "provider connected but never asked".
+struct CountingProvider {
+    list_dir_calls: AtomicUsize,
+    entries: Vec<FileEntryDto>,
+    fail: bool,
+}
+
+impl CountingProvider {
+    fn new(entries: Vec<FileEntryDto>) -> Self {
+        Self {
+            list_dir_calls: AtomicUsize::new(0),
+            entries,
+            fail: false,
+        }
+    }
+
+    fn failing() -> Self {
+        Self {
+            list_dir_calls: AtomicUsize::new(0),
+            entries: Vec::new(),
+            fail: true,
+        }
+    }
+
+    fn call_count(&self) -> usize {
+        self.list_dir_calls.load(Ordering::SeqCst)
+    }
+}
+
+impl FileSystemProvider for CountingProvider {
+    fn root_label(&self) -> String {
+        "fake".into()
+    }
+
+    fn list_dir(&self, _path: &str, _limit: usize, _cursor: Option<&str>) -> Result<ListResult> {
+        self.list_dir_calls.fetch_add(1, Ordering::SeqCst);
+        if self.fail {
+            return Err(Error::Other("fake list_dir failed".into()));
+        }
+        Ok(ListResult {
+            entries: self.entries.clone(),
+            next_cursor: None,
+        })
+    }
+
+    fn read_file(&self, _path: &str) -> Result<Vec<u8>> {
+        Ok(Vec::new())
+    }
+
+    fn metadata(&self, _path: &str) -> Result<FileEntryDto> {
+        self.entries
+            .first()
+            .cloned()
+            .ok_or_else(|| Error::Other("no entries".into()))
+    }
+
+    fn create_dir(&self, _parent: &str, _name: &str) -> Result<()> {
+        Ok(())
+    }
+
+    fn delete(&self, _path: &str, _is_dir: bool) -> Result<()> {
+        Ok(())
+    }
+
+    fn rename(&self, _from: &str, _to: &str) -> Result<()> {
+        Ok(())
+    }
+
+    fn write_file(&self, _path: &str, _content: &[u8]) -> Result<()> {
+        Ok(())
+    }
+
+    fn is_read_only(&self) -> bool {
+        false
+    }
+
+    fn scheme(&self) -> &str {
+        "fake"
+    }
+}
+
+#[gpui::test]
+async fn provider_backed_pane_lists_immediately_after_set_provider(cx: &mut TestAppContext) {
+    // T021 regression: wiring a provider and setting `cwd` must poll the
+    // provider right away (the S3 connect callback now calls `reload_provider`
+    // explicitly), instead of leaving `loaded = false` for a render path that
+    // no-ops for provider-backed panes.
+    let window = new_explorer(cx);
+    let provider = Arc::new(CountingProvider::new(vec![
+        file("bucket-a", "dir", 0),
+        file("bucket-b", "dir", 0),
+    ]));
+    window
+        .update(cx, |page, window, cx| {
+            page.set_provider(provider.clone());
+            page.cwd = "s3://rustfs@".to_string();
+            page.reload_provider(window, cx);
+        })
+        .unwrap();
+
+    cx.background_executor
+        .timer(Duration::from_millis(50))
+        .await;
+    cx.run_until_parked();
+
+    assert_eq!(provider.call_count(), 1, "provider polled exactly once");
+    window
+        .read_with(cx, |page, _cx| {
+            assert!(page.loaded);
+            assert_eq!(page.entries.len(), 2);
+            assert!(page.entries.iter().any(|e| e.name == "bucket-a"));
+        })
+        .unwrap();
+
+    // `loaded` is set synchronously by `reload_provider`, so a subsequent
+    // render's `ensure_loaded` must not poll again (no double-load).
+    window
+        .update(cx, |page, window, cx| {
+            page.ensure_loaded(window, cx);
+        })
+        .unwrap();
+    assert_eq!(
+        provider.call_count(),
+        1,
+        "ensure_loaded after a completed load must not re-poll"
+    );
+}
+
+#[gpui::test]
+async fn ensure_loaded_routes_provider_pane_to_reload_provider(cx: &mut TestAppContext) {
+    // T021: `loaded = false` on a provider-backed pane must not silently
+    // short-circuit through `reload()` (which returns early when a provider is
+    // set); the render path's `ensure_loaded` has to route into the async
+    // provider load.
+    let window = new_explorer(cx);
+    let provider = Arc::new(CountingProvider::new(vec![]));
+    window
+        .update(cx, |page, window, cx| {
+            page.set_provider(provider.clone());
+            page.cwd = "s3://rustfs@".to_string();
+            page.loaded = false;
+            page.ensure_loaded(window, cx);
+        })
+        .unwrap();
+
+    cx.background_executor
+        .timer(Duration::from_millis(50))
+        .await;
+    cx.run_until_parked();
+
+    assert_eq!(
+        provider.call_count(),
+        1,
+        "ensure_loaded polls the provider instead of no-oping"
+    );
+}
+
+#[gpui::test]
+async fn provider_listing_error_surfaces_in_status(cx: &mut TestAppContext) {
+    // T021: a provider `list_dir` failure must reach the UI as an error status
+    // (rendered as an inline banner by the listing) rather than looking like
+    // an empty directory.
+    let window = new_explorer(cx);
+    let provider = Arc::new(CountingProvider::failing());
+    window
+        .update(cx, |page, window, cx| {
+            page.set_provider(provider.clone());
+            page.cwd = "s3://rustfs@".to_string();
+            page.reload_provider(window, cx);
+        })
+        .unwrap();
+
+    cx.background_executor
+        .timer(Duration::from_millis(50))
+        .await;
+    cx.run_until_parked();
+
+    window
+        .read_with(cx, |page, _cx| {
+            let (text, is_error) = page.status_for_footer().expect("error status set");
+            assert!(is_error);
+            assert!(text.contains("fake list_dir failed"));
+            assert!(page.entries.is_empty());
+        })
+        .unwrap();
 }

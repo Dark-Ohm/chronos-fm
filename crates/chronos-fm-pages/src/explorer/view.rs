@@ -18,7 +18,7 @@ pub fn render(
     window: &mut Window,
     cx: &mut Context<ExplorerPane>,
 ) -> impl IntoElement + use<> {
-    page.ensure_loaded();
+    page.ensure_loaded(window, cx);
     page.update_editor_search(window, cx);
     if !page.focus_requested {
         page.focus_requested = true;
