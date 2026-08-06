@@ -2,6 +2,8 @@ use anyhow::{Context, Result};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
+
+use super::exclusions::Excludes;
 use tantivy::TantivyDocument;
 use tantivy::schema::{FAST, Field, STORED, STRING, Schema, TEXT, Term, Value};
 use tantivy::{Index, IndexWriter}; // Import trait for add_text etc? No, TantivyDocument implements it.
@@ -11,26 +13,31 @@ pub struct IndexManager {
     index: Index,
     _index_path: PathBuf,
     content_root: PathBuf,
+    excludes: Excludes,
     writer: Arc<Mutex<IndexWriter>>,
 }
 
 impl IndexManager {
     /// Opens (or creates) the default index under `~/.chronos-fm/index` rooted at `~/Documents`.
-    pub fn new() -> Result<Self> {
+    pub fn new(excludes: Excludes) -> Result<Self> {
         let home_dir = dirs::home_dir().context("Could not determine home directory")?;
         let chronos_fm_dir = home_dir.join(".chronos-fm");
         let index_path = chronos_fm_dir.join("index");
 
         let documents_dir = home_dir.join("Documents");
-        Self::new_internal(index_path, documents_dir)
+        Self::new_internal(index_path, documents_dir, excludes)
     }
 
     /// Internal constructor for testing or custom paths
-    pub fn new_with_path(index_path: PathBuf, content_root: PathBuf) -> Result<Self> {
-        Self::new_internal(index_path, content_root)
+    pub fn new_with_path(
+        index_path: PathBuf,
+        content_root: PathBuf,
+        excludes: Excludes,
+    ) -> Result<Self> {
+        Self::new_internal(index_path, content_root, excludes)
     }
 
-    fn new_internal(index_path: PathBuf, content_root: PathBuf) -> Result<Self> {
+    fn new_internal(index_path: PathBuf, content_root: PathBuf, excludes: Excludes) -> Result<Self> {
         fs::create_dir_all(&index_path)?;
 
         let schema = Self::create_schema();
@@ -67,6 +74,7 @@ impl IndexManager {
             index,
             _index_path: index_path,
             content_root,
+            excludes,
             writer: Arc::new(Mutex::new(writer)),
         })
     }
@@ -118,9 +126,11 @@ impl IndexManager {
         let mut total_files = 0;
         if let Some(tx) = &mut progress_tx {
             *tx.borrow_mut() = 0.0;
+            let excl = self.excludes.clone();
             let walker = ignore::WalkBuilder::new(&self.content_root)
                 .hidden(false)
                 .git_ignore(true)
+                .filter_entry(move |e| !excl.matches(e.path()))
                 .build();
             for entry in walker.flatten() {
                 // Count both files and directories
@@ -131,9 +141,11 @@ impl IndexManager {
         }
 
         // 2. Index files
+        let excl = self.excludes.clone();
         let walker = ignore::WalkBuilder::new(&self.content_root)
             .hidden(false)
             .git_ignore(true)
+            .filter_entry(move |e| !excl.matches(e.path()))
             .build();
 
         let mut processed = 0;
@@ -432,4 +444,58 @@ fn find_all_match_lines(path: &Path, query: &str) -> Vec<(usize, String)> {
         );
     }
     matches
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::search::backend::SearchBackend;
+    use std::fs;
+    use std::os::unix::fs::PermissionsExt;
+
+    #[cfg(unix)]
+    #[test]
+    fn index_home_tolerates_unreadable_subdir() {
+        // Skip under root: chmod 000 does not restrict root (see T016).
+        let probe = std::env::temp_dir().join(format!("cfm_root_probe_{}", std::process::id()));
+        let _ = fs::create_dir_all(&probe);
+        let _ = fs::set_permissions(&probe, fs::Permissions::from_mode(0o000));
+        let can_still_read = fs::read_dir(&probe).is_ok();
+        let _ = fs::set_permissions(&probe, fs::Permissions::from_mode(0o755));
+        let _ = fs::remove_dir_all(&probe);
+        if can_still_read {
+            return;
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        fs::write(root.join("a.txt"), b"alpha content here").unwrap();
+        fs::create_dir_all(root.join("sub")).unwrap();
+        fs::write(root.join("sub/b.txt"), b"beta content").unwrap();
+
+        // Unreadable branch: must be skipped, not abort indexing.
+        let locked = root.join("locked");
+        fs::create_dir_all(&locked).unwrap();
+        fs::write(locked.join("secret.txt"), b"secret content").unwrap();
+        fs::set_permissions(&locked, fs::Permissions::from_mode(0o000)).unwrap();
+
+        let index_path = tmp.path().join("idx");
+        let mgr =
+            IndexManager::new_with_path(index_path, root.clone(), Excludes::default()).unwrap();
+        let res = mgr.index_home(None);
+        assert!(
+            res.is_ok(),
+            "index_home must not fail on an unreadable subdir"
+        );
+
+        // Accessible files are present in the index.
+        let hits = mgr.search("alpha").unwrap();
+        assert!(
+            hits.iter().any(|r| r.path.ends_with("a.txt")),
+            "accessible file should be present in the index"
+        );
+
+        // Restore perms for cleanup.
+        let _ = fs::set_permissions(&locked, fs::Permissions::from_mode(0o755));
+    }
 }

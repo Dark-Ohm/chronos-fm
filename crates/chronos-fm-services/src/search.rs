@@ -13,6 +13,8 @@ pub mod ripgrep;
 pub mod spotlight;
 /// Filesystem change watcher feeding incremental index updates.
 pub mod watcher;
+/// Skip-lists (built-in defaults + user `[indexing.exclude]` config).
+pub mod exclusions;
 
 use std::path::PathBuf;
 
@@ -42,6 +44,8 @@ pub use engine::InitialIndexingJob;
 use anyhow::Result;
 use std::sync::Arc;
 
+use crate::search::exclusions::Excludes;
+
 /// Entry point for performing searches and managing the index lifecycle.
 pub struct SearchService {
     engine: Arc<engine::SearchEngine>,
@@ -49,8 +53,8 @@ pub struct SearchService {
 
 impl SearchService {
     /// Builds the service, initializing the index, file watcher, and root backend.
-    pub fn new() -> Result<Self> {
-        let engine = Arc::new(engine::SearchEngine::new()?);
+    pub fn new(excludes: Excludes) -> Result<Self> {
+        let engine = Arc::new(engine::SearchEngine::new(excludes)?);
         Ok(Self { engine })
     }
 

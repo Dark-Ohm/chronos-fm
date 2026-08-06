@@ -15,6 +15,7 @@ use chronos_fm_core::config::{self, ConfigOverride};
 use chronos_fm_core::telemetry::logging::init_logging;
 use chronos_fm_pages::RootView;
 use chronos_fm_services::devices::UDisks2Backend;
+use chronos_fm_services::search::exclusions::Excludes;
 use chronos_fm_services::search::SearchService;
 use chronos_fm_store::{KvStore, RedbKvStore, StoreLogConfig};
 use chronos_fm_ui::assets::Assets;
@@ -88,7 +89,11 @@ impl ChronosFmApp {
                 move |window, cx| {
                     // Initialize SearchService. Failure is non-fatal: the app starts
                     // with full-text search disabled rather than crashing.
-                    let search_service: Option<Arc<SearchService>> = match SearchService::new() {
+                    let excludes = Excludes::from_config(
+                        config.indexing.exclude.paths.clone(),
+                        config.indexing.exclude.globs.clone(),
+                    );
+                    let search_service: Option<Arc<SearchService>> = match SearchService::new(excludes) {
                         Ok(service) => Some(Arc::new(service)),
                         Err(e) => {
                             tracing::error!(

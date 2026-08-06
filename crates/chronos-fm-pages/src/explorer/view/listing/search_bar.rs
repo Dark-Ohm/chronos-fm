@@ -202,6 +202,21 @@ pub fn render(page: &mut ExplorerPane, cx: &mut Context<ExplorerPane>) -> impl I
                                 .text_color(theme::muted(cx))
                                 .child("×"),
                         ),
+                )
+                .child(
+                    // Search-availability indicator (T016): if the index service
+                    // failed to come up we say so loudly instead of failing
+                    // silently. The filename filter still works without it.
+                    div().when(page.search_service.is_none(), |this| {
+                        this.flex()
+                            .items_center()
+                            .gap(px(4.0))
+                            .px(px(12.0))
+                            .pb(px(4.0))
+                            .text_xs()
+                            .text_color(theme::danger(cx))
+                            .child("⚠ Full-text search unavailable — index failed to load")
+                    }),
                 ),
         )
 }

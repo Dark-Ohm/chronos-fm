@@ -1,3 +1,4 @@
+use super::exclusions::Excludes;
 use super::indexer::IndexManager;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
@@ -79,8 +80,8 @@ pub struct SearchEngine {
 
 impl SearchEngine {
     /// Builds the engine, opening the index and starting the file watcher.
-    pub fn new() -> Result<Self> {
-        let index_manager = Arc::new(IndexManager::new()?);
+    pub fn new(excludes: Excludes) -> Result<Self> {
+        let index_manager = Arc::new(IndexManager::new(excludes.clone())?);
 
         #[cfg(target_os = "macos")]
         let root_backend: Arc<dyn SearchBackend> =
@@ -96,7 +97,7 @@ impl SearchEngine {
 
         let home_dir = dirs::home_dir().context("Home directory not found")?;
         use std::time::Duration;
-        let watcher = FileWatcher::new(home_dir, tx, Duration::from_secs(2))?;
+        let watcher = FileWatcher::new(home_dir, tx, Duration::from_secs(2), excludes)?;
 
         // The watcher consumer does blocking index updates, so it runs on a
         // dedicated std::thread rather than an async task (async-runtime.md §4).
