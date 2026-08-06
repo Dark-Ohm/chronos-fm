@@ -92,7 +92,7 @@ impl RootView {
         });
         let git = cx.new(|cx| GitPage::new(explorer.downgrade(), window, cx));
         let s3 = cx.new(|cx| S3Page::new(config.clone(), window, cx));
-        let extensions = cx.new(|_cx| ExtensionsPage::new());
+        let extensions = cx.new(|cx| ExtensionsPage::new(config.clone(), window, cx));
         let settings = cx.new(|_cx| SettingsPage::new(config.clone()));
 
         let mut view = RootView {
@@ -196,6 +196,10 @@ impl RootView {
             page.set_config(config.clone());
         });
         self.s3.update(cx, |page, _cx| {
+            page.set_config(config.clone());
+        });
+
+        self.extensions.update(cx, |page, _cx| {
             page.set_config(config.clone());
         });
 
