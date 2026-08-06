@@ -7,3 +7,5 @@ pub mod listing;
 pub mod ops;
 /// Pure batch-rename pattern DSL and preview computation (T006).
 pub mod batch_rename;
+/// Abstract filesystem backend trait + local-filesystem adapter (T011).
+pub mod provider;
