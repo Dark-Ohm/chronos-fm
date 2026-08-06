@@ -47,6 +47,10 @@ expression: parsed
                 log_redb_ops: false,
             },
         },
+        s3: S3Config {
+            default_profile: "",
+            profiles: {},
+        },
     },
     [
         Diagnostic {

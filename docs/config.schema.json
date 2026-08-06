@@ -164,6 +164,46 @@
       },
       "type": "object"
     },
+    "S3Config": {
+      "description": "S3-compatible object storage settings (see `docs/superpowers/specs/2026-08-06-s3-tab-live.md`).",
+      "properties": {
+        "default_profile": {
+          "default": "",
+          "description": "Which profile to use by default.",
+          "type": "string"
+        },
+        "profiles": {
+          "additionalProperties": {
+            "$ref": "#/$defs/S3Profile"
+          },
+          "default": {},
+          "description": "Named connection profiles, keyed by profile name.",
+          "type": "object"
+        }
+      },
+      "type": "object"
+    },
+    "S3Profile": {
+      "description": "One named S3-compatible endpoint.",
+      "properties": {
+        "endpoint": {
+          "default": "https://s3.amazonaws.com",
+          "description": "Endpoint URL, e.g. `https://s3.amazonaws.com`.",
+          "type": "string"
+        },
+        "force_path_style": {
+          "default": false,
+          "description": "Whether to use path-style addressing (`bucket/` in the path instead of a\nvirtual-host subdomain). Required for MinIO and some S3-compatible stores.",
+          "type": "boolean"
+        },
+        "region": {
+          "default": "us-east-1",
+          "description": "AWS region, e.g. `us-east-1`.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
     "Search": {
       "description": "Search backend selection.",
       "properties": {
@@ -352,6 +392,14 @@
         "core": []
       },
       "description": "Plugin selection (reserved; full support in P4)."
+    },
+    "s3": {
+      "$ref": "#/$defs/S3Config",
+      "default": {
+        "default_profile": "",
+        "profiles": {}
+      },
+      "description": "S3-compatible object storage settings."
     },
     "schema_version": {
       "default": 1,

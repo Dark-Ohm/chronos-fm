@@ -179,7 +179,7 @@ impl PropertiesDialog {
 /// Convert a Unix mode to an rwx string like "rwxr-xr-x".
 fn mode_to_rwx(mode: u32) -> String {
     let mut s = String::with_capacity(9);
-    let bits = [(0o400, 'r'), (0o200, 'w'), (0o100, 'x')];
+    let bits = [(0o4, 'r'), (0o2, 'w'), (0o1, 'x')];
     for shift in [6u32, 3, 0] {
         for (bit, ch) in &bits {
             s.push(if mode & (bit << shift) != 0 { *ch } else { '-' });
