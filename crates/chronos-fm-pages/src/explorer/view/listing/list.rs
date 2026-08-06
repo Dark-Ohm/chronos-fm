@@ -56,7 +56,18 @@ fn render_table_with_header(
     let all_sizes = Rc::new(all_sizes);
     let scroll_handle = page.virtual_scroll_handle.clone();
 
-    div().flex_1().overflow_hidden().child(
+    div()
+        .id("listing-empty-area")
+        .flex_1()
+        .overflow_hidden()
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _window, cx| {
+                this.open_context_menu_for_directory(event.position, cx);
+                cx.stop_propagation();
+            }),
+        )
+        .child(
         v_virtual_list(
             entity,
             "file-table",

@@ -5,3 +5,5 @@
 pub mod listing;
 /// Synchronous file mutation operations with cross-volume and conflict handling.
 pub mod ops;
+/// Pure batch-rename pattern DSL and preview computation (T006).
+pub mod batch_rename;

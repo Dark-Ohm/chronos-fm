@@ -53,6 +53,8 @@ impl ChronosFmApp {
             .with_assets(Assets)
             .run(move |app: &mut App| {
             gpui_component::init(app);
+            // Register the explorer clipboard global before any window opens.
+            chronos_fm_pages::explorer::clipboard::init(app);
             activate_chronos_theme(app);
 
             // Initialize the removable-media device store global and start the

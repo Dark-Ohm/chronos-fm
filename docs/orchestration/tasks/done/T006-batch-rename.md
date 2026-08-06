@@ -2,10 +2,27 @@
 
 **Приоритет:** P3 — b1 уже даёт single inline rename как временную
 замену, это не блокер daily-driver, но нужно для полного Dolphin-паритета.
-**Статус:** ТРЕКИНГ-ТИКЕТ, не начинать код. Нет ни design spec, ни
-implementation plan — backlog-пункт #3 из `docs/superpowers/specs/2026
--08-06-removable-media-mount.md` (низ файла), только приоритет одной
-строкой, не проработано.
+**Статус:** реализация закрыта (2026-08-06), на приёмку архитектора.
+Прогресс процесса:
+
+- ✅ **Brainstorm (2026-08-06)** — решения зафиксированы: свой мини-DSL
+  (Dolphin-стиль `{name}`/`{ext}`/`{n}`/`{n:W}`), живой preview
+  «было → станет» ДО применения (критично, тикет), коллизии
+  авто-резолвятся (`ops::unique_name`/`would_conflict`) и видны в preview.
+- ✅ **Design spec** → `docs/superpowers/specs/2026-08-06-batch-rename-design.md`.
+- ✅ **Implementation plan** → `docs/superpowers/plans/2026-08-06-batch-rename.md`
+  (написан против уже сданного API b1 — блокер снят).
+- ✅ **b1–b4 (context-menu chain)** разблокированы и реализованы слитым
+  способом (см. `docs/orchestration/tasks/report-log/T006-unblock-b1-b4-chain-report.md`).
+- ✅ **Task 1** (чистая DSL `services/fs/batch_rename.rs`) —
+  `docs/orchestration/tasks/report-log/T006-task1-batch-rename-dsl-report.md`.
+- ✅ **Tasks 2–5** (диалог/проводка/overlay/entry point) —
+  `docs/orchestration/tasks/report-log/T006-tasks2-5-batch-rename-dialog-report.md`.
+- ✅ **Task 6** (verification pass) — прогнан внутри отчёта Tasks 2–5
+  (`cargo test --workspace` 218/218, clippy чисто, build чисто).
+
+Все отчёты приняты архитектором с оговоркой (live-смоук не проводился —
+headless-окружение); детали — в соответствующих `report-log/`-файлах.
 
 ## Что нужно ПЕРЕД кодом
 

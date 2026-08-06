@@ -43,6 +43,13 @@ pub fn render(
                 cx.stop_propagation();
                 return;
             }
+            // Escape closes the batch-rename dialog before doing anything else
+            // (the properties dialog has no Escape handler of its own).
+            if key_lc == "escape" && this.batch_rename.is_some() {
+                this.close_batch_rename(cx);
+                cx.stop_propagation();
+                return;
+            }
             // Selection model (§5). Escape while searching is handled above, so
             // here it only clears the selection.
             match key_lc.as_str() {
@@ -148,7 +155,44 @@ pub fn render(
             ),
         )
         .child(render_properties_dialog(page, cx))
+        .child(render_batch_rename_dialog(page, cx))
         .child(render_context_menu(page, window, cx))
+}
+
+fn render_batch_rename_dialog(
+    page: &mut ExplorerPane,
+    cx: &mut Context<ExplorerPane>,
+) -> impl IntoElement {
+    if let Some(dialog) = &page.batch_rename {
+        return div()
+            .absolute()
+            .inset_0()
+            .bg(gpui::hsla(0.0, 0.0, 0.0, 0.4))
+            .flex()
+            .items_center()
+            .justify_center()
+            // Click-outside closes. The card itself stops propagation so a
+            // click inside (focusing an input, pressing a button) never reaches
+            // this scrim — otherwise the dialog would close on mouse-down and
+            // `Button::on_click` (mouse-up) would never fire.
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _event, _window, cx| {
+                    this.close_batch_rename(cx);
+                }),
+            )
+            .child(
+                div().on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|_this, _event, _window, cx| {
+                        cx.stop_propagation();
+                    }),
+                )
+                .child(dialog.clone()),
+            )
+            .into_any_element();
+    }
+    div().into_any_element()
 }
 
 fn render_context_menu(
@@ -184,10 +228,22 @@ fn render_properties_dialog(
             .flex()
             .items_center()
             .justify_center()
+            // Click-outside closes. The card stops propagation so a click inside
+            // (selecting text, hovering a row) never reaches this scrim — same
+            // guard as the batch-rename dialog, which needs it for its inputs
+            // and buttons.
             .on_mouse_down(gpui::MouseButton::Left, cx.listener(|this, _event, _window, cx| {
                 this.close_properties(cx);
             }))
-            .child(dialog.clone())
+            .child(
+                div().on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|_this, _event, _window, cx| {
+                        cx.stop_propagation();
+                    }),
+                )
+                .child(dialog.clone()),
+            )
             .into_any_element();
     }
     div().into_any_element()

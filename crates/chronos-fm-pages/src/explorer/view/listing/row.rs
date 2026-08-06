@@ -1,8 +1,10 @@
 use super::truncate_middle;
 
 use crate::explorer::ExplorerPane;
+use crate::explorer::clipboard::{self, ClipboardMode};
 use gpui::prelude::*;
 use gpui::*;
+use gpui_component::input::Input;
 use gpui_component::list::ListItem;
 use gpui_component::{Icon, IconName};
 use chronos_fm_services::fs::listing::FileEntryDto;
@@ -34,6 +36,9 @@ pub fn render(
         theme::gray_50(cx)
     };
 
+    let clip = clipboard::current(cx);
+    let is_cut = clip.mode == Some(ClipboardMode::Cut) && clip.paths.contains(&item.path);
+
     let file_type = get_file_type(&item.name, &item.kind);
 
     let max_chars = (page.col_name_width / 8.0) as usize;
@@ -42,6 +47,7 @@ pub fn render(
     let total_width = page.total_table_width();
     let item_for_preview = item.clone();
     let item_for_activate = item.clone();
+    let context_menu_path = item_for_preview.path.clone();
 
     // Check if query matches filename (for highlighting)
     let query_lower = page.search_query.to_lowercase();
@@ -103,9 +109,28 @@ pub fn render(
     // I'll copy the logic.
 
     div()
+        .id(("file-row-menu", ix))
         .flex()
         .flex_col()
         .w(px(total_width))
+        .when(is_cut, |el| el.opacity(0.5))
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _window, cx| {
+                // Normalize selection to the right-clicked row (b3/b4
+                // convention): single-select unless it is already selected.
+                if !this.is_selected(ix) {
+                    this.select_single(ix);
+                }
+                this.open_context_menu(
+                    context_menu_path.clone(),
+                    ix,
+                    event.position,
+                    cx,
+                );
+                cx.stop_propagation();
+            }),
+        )
         .child(
             ListItem::new(("file-row", ix))
                 .w(px(total_width))
@@ -115,22 +140,6 @@ pub fn render(
                 .on_click(
                     cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
                         if let gpui::ClickEvent::Mouse(mouse) = event {
-                            if mouse.up.button == gpui::MouseButton::Right {
-                                // Normalize selection to the right-clicked row
-                                // (b3/b4 convention): if it is not part of the
-                                // current selection, replace the selection with
-                                // just this row; otherwise keep it as-is.
-                                if !this.is_selected(ix) {
-                                    this.select_single(ix);
-                                }
-                                this.open_context_menu(
-                                    item_for_preview.path.clone(),
-                                    mouse.up.position,
-                                    cx,
-                                );
-                                cx.stop_propagation();
-                                return;
-                            }
                             if mouse.up.button == gpui::MouseButton::Left {
                                 this.record_click(ix, mouse.up.click_count);
                                 let modifiers = mouse.up.modifiers;
@@ -200,16 +209,38 @@ pub fn render(
                                 })
                                 .when(!has_content_matches, |this| this.child(div().w(px(20.0))))
                                 .child(Icon::new(icon_name).size_4().text_color(icon_color))
-                                .child(
-                                    div()
-                                        .text_sm()
-                                        .font_weight(gpui::FontWeight::MEDIUM)
-                                        .text_color(theme::fg(cx))
-                                        .overflow_hidden()
-                                        .text_ellipsis()
-                                        .whitespace_nowrap()
-                                        .child(styled_name),
-                                ),
+                                .child({
+                                    let renaming_input = page
+                                        .renaming
+                                        .as_ref()
+                                        .filter(|(renaming_ix, _)| *renaming_ix == ix)
+                                        .map(|(_, input)| input.clone());
+                                    if let Some(input) = renaming_input {
+                                        div()
+                                            .flex_1()
+                                            .on_key_down(cx.listener(
+                                                move |this, event: &gpui::KeyDownEvent, _window, cx| {
+                                                    if event.keystroke.key == "enter" {
+                                                        this.commit_rename(cx);
+                                                    } else if event.keystroke.key == "escape" {
+                                                        this.cancel_rename(cx);
+                                                    }
+                                                },
+                                            ))
+                                            .child(Input::new(&input))
+                                            .into_any_element()
+                                    } else {
+                                        div()
+                                            .text_sm()
+                                            .font_weight(gpui::FontWeight::MEDIUM)
+                                            .text_color(theme::fg(cx))
+                                            .overflow_hidden()
+                                            .text_ellipsis()
+                                            .whitespace_nowrap()
+                                            .child(styled_name)
+                                            .into_any_element()
+                                    }
+                                }),
                         )
                         .child(
                             div()

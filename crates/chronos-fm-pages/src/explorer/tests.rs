@@ -32,8 +32,11 @@ use super::{ExplorerPage, ExplorerPane};
 /// views whose dependencies need a `Window`.
 fn new_explorer(cx: &mut TestAppContext) -> WindowHandle<ExplorerPane> {
     // gpui-component installs the `Theme` global and input/list subsystems its
-    // widgets rely on; initialize it once before building any window.
+    // widgets rely on; initialize it once before building any window. The
+    // clipboard global is registered too: the row/grid renderers consult it
+    // for cut-row dimming (b3/b4), and the app registers it at startup.
     cx.update(gpui_component::init);
+    cx.update(super::clipboard::init);
     cx.add_window(|window, cx| {
         let resizable = cx.new(|_| ResizableState::default());
         let search_input = cx.new(|cx| InputState::new(window, cx));
@@ -41,10 +44,41 @@ fn new_explorer(cx: &mut TestAppContext) -> WindowHandle<ExplorerPane> {
     })
 }
 
+/// Builds an `ExplorerPane` rooted at `cwd` (a real directory, typically a
+/// `tempfile::tempdir()`), for tests that exercise filesystem operations
+/// (rename, copy/cut/paste, delete). Also registers the `FileClipboard`
+/// global, which those operations read — note this **resets** the clipboard
+/// to its empty default, so tests must set copy/cut state after calling it.
+///
+/// **Harness limitation:** the window's root is the pane itself, not a
+/// `gpui_component::Root`. Rendering a live `Input` (inline rename, visible
+/// search bar) across an `update` boundary panics in `Root::read`, because
+/// the input element's `paint` requires a Root on the window. Tests that
+/// start an inline rename must clear it (`commit_rename`/`cancel_rename`)
+/// within the same `window.update` closure (see the rename and file_ops
+/// tests); the production app wraps its window root in `Root::new`, so this
+/// is purely a test-harness constraint.
+pub(crate) fn new_explorer_for_tests(
+    cx: &mut TestAppContext,
+    cwd: &std::path::Path,
+) -> WindowHandle<ExplorerPane> {
+    cx.update(gpui_component::init);
+    cx.update(super::clipboard::init);
+    let cwd = cwd.to_string_lossy().to_string();
+    cx.add_window(move |window, cx| {
+        let resizable = cx.new(|_| ResizableState::default());
+        let search_input = cx.new(|cx| InputState::new(window, cx));
+        let mut pane = ExplorerPane::new(resizable, search_input, None, cx.focus_handle());
+        pane.cwd = cwd;
+        pane
+    })
+}
+
 /// Build the split-view container (`ExplorerPage`), which owns its panes. No KV
 /// store, so session save/restore is inert.
 fn new_explorer_page(cx: &mut TestAppContext) -> WindowHandle<ExplorerPage> {
     cx.update(gpui_component::init);
+    cx.update(super::clipboard::init);
     cx.add_window(|window, cx| {
         let resizable = cx.new(|_| ResizableState::default());
         ExplorerPage::new(resizable, None, None, false, window, cx)
@@ -59,6 +93,7 @@ fn new_explorer_page_with_store(
     restore_tabs: bool,
 ) -> WindowHandle<ExplorerPage> {
     cx.update(gpui_component::init);
+    cx.update(super::clipboard::init);
     cx.add_window(|window, cx| {
         let resizable = cx.new(|_| ResizableState::default());
         ExplorerPage::new(resizable, None, Some(store), restore_tabs, window, cx)
@@ -1075,4 +1110,24 @@ async fn device_mount_then_navigate_moves_pane_into_mount_path(cx: &mut TestAppC
             assert_eq!(page.cwd, mount_path, "pane follows the mounted volume");
         })
         .unwrap();
+}
+
+#[test]
+fn context_menu_for_directory_has_no_file_target() {
+    let state = super::context_menu::ContextMenuState::for_directory(point(px(10.0), px(10.0)));
+    assert!(state.file_path.is_none());
+    assert!(state.index.is_none());
+    assert!(state.apps.is_empty());
+    assert!(state.mime_type.is_empty());
+}
+
+#[test]
+fn context_menu_for_file_sets_path_and_index() {
+    let state = super::context_menu::ContextMenuState::for_file(
+        "/tmp/a.txt",
+        3,
+        point(px(10.0), px(10.0)),
+    );
+    assert_eq!(state.file_path.as_deref(), Some("/tmp/a.txt"));
+    assert_eq!(state.index, Some(3));
 }

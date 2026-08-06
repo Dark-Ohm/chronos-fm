@@ -80,6 +80,8 @@ pub struct ExplorerPane {
     pub col_modified_width: f32,
     /// Properties dialog, if open.
     pub properties_dialog: Option<gpui::Entity<crate::explorer::properties::PropertiesDialog>>,
+    /// Batch-rename dialog, if open (T006).
+    pub batch_rename: Option<gpui::Entity<crate::explorer::batch_rename::BatchRenameDialog>>,
     /// Right-click context menu, if open.
     pub context_menu: Option<crate::explorer::context_menu::ContextMenuState>,
     /// Width of the action column.
@@ -134,6 +136,10 @@ pub struct ExplorerPane {
     // Transient message shown in the footer status bar.
     /// Transient message shown in the footer status bar.
     pub status_message: Option<StatusMessage>,
+    /// The row currently being renamed inline (an index into
+    /// `filtered_entries`) and the input state backing its text field, or
+    /// `None` when no row is being renamed.
+    pub renaming: Option<(usize, Entity<InputState>)>,
 }
 
 impl Focusable for ExplorerPane {
@@ -177,6 +183,7 @@ impl ExplorerPane {
     ) -> Self {
         Self {
             properties_dialog: None,
+            batch_rename: None,
             context_menu: None,
             cwd: std::env::current_dir()
                 .map(|p| p.to_string_lossy().to_string())
@@ -233,6 +240,7 @@ impl ExplorerPane {
             preview_image_path: None,
             preview_message: None,
             status_message: None,
+            renaming: None,
         }
     }
 
@@ -388,6 +396,15 @@ impl ExplorerPane {
             .collect()
     }
 
+    /// The selected entries in row order, for operations that need the full
+    /// `FileEntryDto` (Batch Rename's "was" side, T006).
+    pub fn filtered_entries_for_selection(&self) -> Vec<FileEntryDto> {
+        self.selection
+            .iter()
+            .filter_map(|&ix| self.filtered_entries.get(ix).cloned())
+            .collect()
+    }
+
     pub(crate) fn update_item_sizes(&mut self) {
         let total_width = self.total_table_width();
 
@@ -430,8 +447,12 @@ impl ExplorerPane {
     pub(crate) fn apply_filter(&mut self) {
         // Rebuilding the visible row set (here or via the search path) invalidates
         // the row indices the selection is expressed in, so reset it rather than
-        // risk acting on unrelated rows after a sort/filter/reload/search.
+        // risk acting on unrelated rows after a sort/filter/reload/search. The
+        // inline-rename index is expressed the same way, so it is reset too —
+        // committing against a stale row after a listing change would rename the
+        // wrong entry.
         self.clear_selection();
+        self.renaming = None;
 
         // When explicit search results are displayed, `filtered_entries` is owned
         // by the search path; only refresh row sizes here.

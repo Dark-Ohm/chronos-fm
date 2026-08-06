@@ -62,6 +62,14 @@ impl ExplorerPane {
         cx.notify();
     }
 
+    /// Test-only: sets `cwd` directly without navigation history, search
+    /// reset, or emitting `PaneEvent::Navigated` — for tests that only need
+    /// `paste_clipboard`/`new_folder` to act on a different directory.
+    #[cfg(test)]
+    pub(crate) fn change_dir_for_test(&mut self, path: String) {
+        self.cwd = path;
+    }
+
     // Records a forward navigation in the back/forward history, seeding the
     // starting directory on first use and dropping any forward entries.
     fn push_history(&mut self, path: String) {
@@ -189,14 +197,28 @@ impl ExplorerPane {
         cx.notify();
     }
 
-    /// Open the context menu for a file at the given click position.
+    /// Open the context menu for a file row at the given click position.
+    /// `index` is the row's position in `filtered_entries`, used by Rename.
     pub(crate) fn open_context_menu(
         &mut self,
         file_path: String,
+        index: usize,
         position: gpui::Point<gpui::Pixels>,
         cx: &mut gpui::Context<Self>,
     ) {
-        let state = super::context_menu::ContextMenuState::for_file(&file_path, position);
+        let state = super::context_menu::ContextMenuState::for_file(&file_path, index, position);
+        self.context_menu = Some(state);
+        cx.notify();
+    }
+
+    /// Open the empty-area context menu (New Folder / Paste / Refresh) at the
+    /// given click position.
+    pub(crate) fn open_context_menu_for_directory(
+        &mut self,
+        position: gpui::Point<gpui::Pixels>,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let state = super::context_menu::ContextMenuState::for_directory(position);
         self.context_menu = Some(state);
         cx.notify();
     }
