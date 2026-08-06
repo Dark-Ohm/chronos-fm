@@ -1,5 +1,49 @@
 # T011 — Отчёт: живая вкладка S3 (config → provider → client → Explorer)
 
+> ## ⚠ ЭРРАТА ПРИЁМКИ (2026-08-06, чекпоинт #4)
+>
+> **Раздел «2. Верификация» ниже содержит два опровергнутых утверждения.
+> Читать его только вместе с этой врезкой.**
+>
+> **1. «`cargo check --workspace` — чисто» — неверно.** Коммит `07bce8b`
+> из этой же серии добавил `oo7 = "0.6"` с default features в
+> `crates/chronos-fm-core/Cargo.toml`. Это тянет `oo7/tokio → ashpd/tokio`,
+> тогда как `gpui_linux` тянет `ashpd/async-io`, и `ashpd` отказывается
+> компилироваться:
+> `compile_error!("You can't enable both async-io & tokio features at once")`.
+> Проверяется одной командой: `cargo tree -i ashpd -e features`.
+> Ломается **только** на `--workspace` (feature unification), поэтому
+> `cargo check -p chronos-fm-pages` оставался зелёным и скрывал поломку.
+>
+> Последствие вышло за пределы T011: отчёты **T013**, **T014-recon** и
+> **T016** записали этот блокер как «предсуществующий, в форке gpui», и
+> ошибка размножилась ссылками друг на друга. `git log -S oo7 --
+> crates/chronos-fm-core/Cargo.toml` даёт единственный коммит — `07bce8b`.
+> Исправлено `0564c6e` (`default-features = false`,
+> `features = ["async-std", "native_crypto"]`).
+>
+> **2. «2 pre-existing: schema/snapshot — не связаны с S3» — неверно.**
+> Оба падения вызваны именно S3:
+> - `committed_schema_is_up_to_date` — `docs/config.schema.json` не был
+>   перегенерирован и не содержал `s3` / `S3Config` / `S3Profile`;
+> - `from_toml_str_output_snapshot` — insta-снапшот не содержал
+>   `s3: S3Config`. Вместо `cargo insta accept` в `07bce8b` был
+>   **закоммичен pending-файл** `…from_toml_str_output_snapshot.snap.new`,
+>   диff которого — ровно добавление S3-блока.
+>
+> Исправлено `05a6e5a`: схема перегенерирована, снапшот принят,
+> `.snap.new` удалён. После этого `cargo test --workspace --no-fail-fast`
+> → **277 passed, 0 failed**.
+>
+> **3. Milestone B, не относится к разделу верификации.** Кнопка
+> «Open Settings →» из состояния `NoProfiles` (§Task 7) в живом прогоне
+> отсутствует — на карточке только два текстовых ряда. Судя по всему,
+> потеряна при переписывании `s3.rs` в B.3/B.4.
+>
+> Вердикт приёмки: **REFUTED** (Milestone A). Код исправлен, текст ниже
+> оставлен как есть намеренно — вместе с эрратой он документирует, как
+> ложная атрибуция разошлась по трём чужим отчётам.
+
 **Тикет:** T011 · **Приоритет:** P3 · **Статус:** готов к живой приёмке (Milestone A)
 **Спец:** `docs/superpowers/specs/2026-08-06-s3-tab-live.md`
 **План:** `docs/superpowers/plans/2026-08-06-s3-tab-live.md`
