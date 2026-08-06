@@ -26,7 +26,7 @@ notify                       = "8"
 dirs                         = "6"
 anyhow.workspace             = true
 toml_edit = "0.25.13"
-oo7 = "0.6"
+oo7 = { version = "0.6", default-features = false, features = ["async-std", "native_crypto"] }
 
 [dev-dependencies]
 tempfile = "3"
