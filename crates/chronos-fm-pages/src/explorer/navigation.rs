@@ -2,7 +2,7 @@ use chronos_fm_core::config;
 use chronos_fm_services::fs::listing::{FileEntryDto, ListParams, list_dir_sync};
 use chronos_fm_services::fs::provider::FileSystemProvider;
 
-use gpui::{AppContext, Context, Window};
+use gpui::{AppContext, AsyncWindowContext, Context, WeakEntity, Window};
 
 use super::ExplorerPane;
 use super::entries;
@@ -25,19 +25,25 @@ impl ExplorerPane {
         }
     }
 
+    /// Load the current directory from the local filesystem.
+    /// When a provider is set, this is a no-op — the async path
+    /// ([`reload_provider`]) handles loading to avoid blocking the UI.
     pub(crate) fn reload(&mut self) {
+        if self.provider.is_some() {
+            // S3/remote: don't block the UI thread. `reload_provider`
+            // will be called from navigation methods (change_dir, go_back,
+            // go_forward) which have window+cx for spawning.
+            self.loaded = true;
+            return;
+        }
         // Mark as loaded regardless of outcome so an empty or unreadable
         // directory is not re-read on every subsequent render.
         self.loaded = true;
-        let result = if let Some(provider) = &self.provider {
-            provider.list_dir(&self.cwd, config::DIR_LISTING_LIMIT as usize, None)
-        } else {
-            list_dir_sync(ListParams {
-                path: &self.cwd,
-                limit: config::DIR_LISTING_LIMIT,
-                cursor: None,
-            })
-        };
+        let result = list_dir_sync(ListParams {
+            path: &self.cwd,
+            limit: config::DIR_LISTING_LIMIT,
+            cursor: None,
+        });
         match result {
             Ok(res) => {
                 let mut e = res.entries;
@@ -65,6 +71,71 @@ impl ExplorerPane {
         }
     }
 
+    /// Async directory load for remote providers (S3). Spawns the provider
+    /// call on the background executor to avoid blocking the UI thread.
+    /// No-op when no provider is set.
+    pub(crate) fn reload_provider(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(provider) = &self.provider else {
+            return;
+        };
+        let provider = provider.clone();
+        let cwd = self.cwd.clone();
+        let sort_key = self.sort_key;
+        let sort_asc = self.sort_asc;
+        self.loaded = true;
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        provider.list_dir(
+                            &cwd,
+                            config::DIR_LISTING_LIMIT as usize,
+                            None,
+                        )
+                    })
+                    .await;
+                let update = this.update_in(&mut cx, |this, _window, cx| {
+                    match result {
+                        Ok(res) => {
+                            let mut e = res.entries;
+                            entries::sort_entries(&mut e, sort_key, sort_asc);
+                            this.entries = e;
+                            this.apply_filter();
+                            this.update_item_sizes();
+                            this.preview_text = None;
+                            this.preview_path = None;
+                            this.preview_editor = None;
+                            this.preview_image_path = None;
+                            this.preview_message = None;
+                            this.clear_status();
+                        }
+                        Err(e) => {
+                            tracing::error!(
+                                "Failed to list directory '{}': {}",
+                                this.cwd,
+                                e
+                            );
+                            this.entries = Vec::new();
+                            this.filtered_entries = Vec::new();
+                            this.update_item_sizes();
+                            this.set_status(
+                                StatusLevel::Error,
+                                format!("Cannot open '{}': {}", this.cwd, e),
+                            );
+                        }
+                    }
+                    cx.notify();
+                });
+                if update.is_err() {
+                    // Pane was dropped before the load completed.
+                }
+            }
+        })
+        .detach();
+    }
+
     pub(crate) fn change_dir(&mut self, path: String, window: &mut Window, cx: &mut Context<Self>) {
         if path == self.cwd {
             return;
@@ -74,6 +145,7 @@ impl ExplorerPane {
         self.cwd = path;
         self.entries.clear();
         self.reload();
+        self.reload_provider(window, cx);
         cx.emit(PaneEvent::Navigated(self.cwd.clone()));
         cx.notify();
     }
@@ -121,6 +193,10 @@ impl ExplorerPane {
         self.cwd = path;
         self.entries.clear();
         self.reload();
+        // Navigate_without_window has no Window, so it can't spawn. But
+        // this path is only used by mirror-sync and T008 device mount —
+        // both are local-FS only. S3 panes reach here only through
+        // change_dir (which has Window) or direct reload_provider.
         if emit {
             cx.emit(PaneEvent::Navigated(self.cwd.clone()));
         }
@@ -149,6 +225,7 @@ impl ExplorerPane {
                 self.entries.clear();
                 self.close_search(window, cx);
                 self.reload();
+                self.reload_provider(window, cx);
                 cx.emit(PaneEvent::Navigated(self.cwd.clone()));
                 cx.notify();
             }
@@ -163,6 +240,7 @@ impl ExplorerPane {
                 self.entries.clear();
                 self.close_search(window, cx);
                 self.reload();
+                self.reload_provider(window, cx);
                 cx.emit(PaneEvent::Navigated(self.cwd.clone()));
                 cx.notify();
             }
