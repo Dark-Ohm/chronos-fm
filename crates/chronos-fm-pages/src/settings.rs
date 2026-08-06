@@ -105,12 +105,11 @@ fn accent_swatch(
         .rounded(px(6.))
         .cursor_pointer()
         .bg(fill)
-        .when(active, |d| d.border_2().border_color(theme::fg(cx)))
-        .when(!active, |d| {
-            d.border_1()
-                .border_color(gpui::Hsla::transparent_black())
-                .hover(|style| style.border_color(hover_border))
-        })
+        // Same border width for both states so selecting a swatch doesn't
+        // shift the row by 1px; only the border colour varies.
+        .border_1()
+        .border_color(if active { theme::fg(cx) } else { gpui::Hsla::transparent_black() })
+        .hover(|style| style.border_color(hover_border))
         .on_click(move |_event, _window, _cx| {
             SettingsPage::write_field(ConfigField::ThemeAccent(name.to_string()));
         })

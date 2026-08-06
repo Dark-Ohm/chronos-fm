@@ -142,8 +142,10 @@ impl RootView {
         // Accent: re-seed the active theme configs' accent-derived colours so
         // the whole UI re-colors (buttons, selection, caret, links). Both modes
         // are seeded so a later mode switch keeps the chosen accent.
-        if config.theme.accent != self.config.theme.accent {
+        if config.theme.accent != self.config.theme.accent && cx.has_global::<Theme>() {
             let hex = config::accent_hex(&config.theme.accent);
+            // Translucent selection, matching the default `#007acc38`.
+            let selection = format!("{hex}33");
             let mode = Theme::global(cx).mode;
             {
                 let theme = Theme::global_mut(cx);
@@ -151,13 +153,24 @@ impl RootView {
                 let dark = Rc::make_mut(&mut theme.dark_theme);
                 for theme_config in [light, dark] {
                     let colors = &mut theme_config.colors;
+                    // Solid accent keys.
                     colors.accent = Some(hex.clone().into());
                     colors.primary = Some(hex.clone().into());
                     colors.caret = Some(hex.clone().into());
                     colors.link = Some(hex.clone().into());
                     colors.ring = Some(hex.clone().into());
                     colors.progress_bar = Some(hex.clone().into());
-                    colors.selection = Some(hex.clone().into());
+                    colors.drag_border = Some(hex.clone().into());
+                    colors.selection = Some(selection.clone().into());
+                    // Clear hover/active shades so the theme's own fallbacks
+                    // derive them from the new primary/link, instead of leaving
+                    // the JSON's hardcoded blue variants clashing with a
+                    // non-blue accent.
+                    colors.primary_hover = None;
+                    colors.primary_active = None;
+                    colors.link_hover = None;
+                    colors.link_active = None;
+                    colors.drop_target = None;
                 }
             }
             Theme::change(mode, Some(window), cx);
