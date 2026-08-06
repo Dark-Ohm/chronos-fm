@@ -1,5 +1,6 @@
 use chronos_fm_core::config;
 use chronos_fm_services::fs::listing::FileEntryDto;
+use chronos_fm_services::fs::provider::FileSystemProvider;
 use chronos_fm_services::search::{SearchScope, SearchService};
 use chronos_fm_services::syntax::SyntaxService;
 use chronos_fm_ui::components::file_list::FileListDelegate;
@@ -140,6 +141,10 @@ pub struct ExplorerPane {
     /// `filtered_entries`) and the input state backing its text field, or
     /// `None` when no row is being renamed.
     pub renaming: Option<(usize, Entity<InputState>)>,
+    /// Optional virtual FS provider. When `Some`, all filesystem operations
+    /// (listing, reading, writing) are dispatched through the provider
+    /// instead of the local filesystem (T011).
+    pub provider: Option<std::sync::Arc<dyn FileSystemProvider>>,
 }
 
 impl Focusable for ExplorerPane {
@@ -241,6 +246,7 @@ impl ExplorerPane {
             preview_message: None,
             status_message: None,
             renaming: None,
+            provider: None,
         }
     }
 

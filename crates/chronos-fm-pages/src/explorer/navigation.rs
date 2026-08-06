@@ -1,5 +1,6 @@
 use chronos_fm_core::config;
 use chronos_fm_services::fs::listing::{FileEntryDto, ListParams, list_dir_sync};
+use chronos_fm_services::fs::provider::FileSystemProvider;
 
 use gpui::{AppContext, Context, Window};
 
@@ -8,6 +9,16 @@ use super::entries;
 use super::types::{PaneEvent, StatusLevel};
 
 impl ExplorerPane {
+    /// Set the virtual filesystem provider (T011). When `Some`, all
+    /// directory listing and file reading is dispatched through the
+    /// provider instead of the local filesystem.
+    pub fn set_provider(
+        &mut self,
+        provider: std::sync::Arc<dyn FileSystemProvider>,
+    ) {
+        self.provider = Some(provider);
+    }
+
     pub(crate) fn ensure_loaded(&mut self) {
         if !self.loaded {
             self.reload();
@@ -18,11 +29,16 @@ impl ExplorerPane {
         // Mark as loaded regardless of outcome so an empty or unreadable
         // directory is not re-read on every subsequent render.
         self.loaded = true;
-        match list_dir_sync(ListParams {
-            path: &self.cwd,
-            limit: config::DIR_LISTING_LIMIT,
-            cursor: None,
-        }) {
+        let result = if let Some(provider) = &self.provider {
+            provider.list_dir(&self.cwd, config::DIR_LISTING_LIMIT as usize, None)
+        } else {
+            list_dir_sync(ListParams {
+                path: &self.cwd,
+                limit: config::DIR_LISTING_LIMIT,
+                cursor: None,
+            })
+        };
+        match result {
             Ok(res) => {
                 let mut e = res.entries;
                 entries::sort_entries(&mut e, self.sort_key, self.sort_asc);
