@@ -18,9 +18,13 @@ pub fn render(
     cx: &mut Context<ExplorerPane>,
 ) -> impl IntoElement + use<> {
     let fg = theme::fg(cx);
-    let hover_bg = theme::bg_hover(cx);
 
-    let mut card = elevated_card(cx).child(section_header(cx, "Places", "quick access"));
+    // `h_full` makes the single Places card fill the whole sidebar column so
+    // the panel doesn't end mid-sidebar with empty space below (T015 open
+    // item #4): the card reads as one cohesive Places panel, Dolphin-style.
+    let mut card = elevated_card(cx)
+        .h_full()
+        .child(section_header(cx, "Places", "quick access"));
 
     // ---- Folders (cached shortcuts) ----
     for (i, (label, path)) in page.shortcuts.iter().enumerate() {
@@ -107,19 +111,51 @@ pub fn render(
                                     .size_4()
                                     .text_color(theme::gray_600(cx)),
                             )
-                            .child(if is_mounted {
-                                let mp = mount_point
-                                    .as_ref()
-                                    .map(|p| p.to_string_lossy().to_string())
-                                    .unwrap_or_default();
+                            .child(
+                                // `flex_1` + `min_w(0)` let this column shrink so
+                                // long mount paths ellipsize instead of pushing the
+                                // action icons off the card edge (T019).
                                 div()
+                                    .flex_1()
+                                    .min_w(px(0.0))
                                     .flex()
                                     .flex_col()
-                                    .child(div().text_sm().text_color(fg).child(label))
-                                    .child(div().text_xs().text_color(theme::muted(cx)).child(mp))
-                            } else {
-                                div().text_sm().text_color(fg).child(label)
-                            }),
+                                    .child(if is_mounted {
+                                        let mp = mount_point
+                                            .as_ref()
+                                            .map(|p| p.to_string_lossy().to_string())
+                                            .unwrap_or_default();
+                                        div()
+                                            .flex()
+                                            .flex_col()
+                                            .child(
+                                                div()
+                                                    .text_sm()
+                                                    .text_color(fg)
+                                                    .whitespace_nowrap()
+                                                    .overflow_hidden()
+                                                    .text_ellipsis()
+                                                    .child(label),
+                                            )
+                                            .child(
+                                                div()
+                                                    .text_xs()
+                                                    .text_color(theme::muted(cx))
+                                                    .whitespace_nowrap()
+                                                    .overflow_hidden()
+                                                    .text_ellipsis()
+                                                    .child(mp),
+                                            )
+                                    } else {
+                                        div()
+                                            .text_sm()
+                                            .text_color(fg)
+                                            .whitespace_nowrap()
+                                            .overflow_hidden()
+                                            .text_ellipsis()
+                                            .child(label)
+                                    }),
+                            )
                     )
                     .child(if is_mounted || can_eject {
                         let muted = theme::muted(cx);
