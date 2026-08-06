@@ -94,3 +94,15 @@ codegen-units = 1
 panic = "abort"
 opt-level = 3
 strip = "debuginfo"
+
+# Dev builds must stay interactive: gpui, wgpu/blade, font shaping and the
+# layout engine are unusable at opt-level 0 (~20 fps on a listing that a
+# release build renders effortlessly). Our own crates stay at opt-level 1 so
+# incremental rebuilds remain fast; dependencies are compiled once at full
+# optimization, and without debug info they stop bloating the binary.
+[profile.dev]
+opt-level = 1
+
+[profile.dev.package."*"]
+opt-level = 3
+debug = false
