@@ -94,7 +94,13 @@ impl ConfigField {
 pub fn patch_config_text(source: &str, field: &ConfigField) -> Result<String> {
     let mut doc: DocumentMut = source.parse().context("parsing config.toml")?;
 
-    if doc.get(field.section()).is_none() {
+    // Missing section, or a hand-edited non-table at that key (e.g. a
+    // top-level `theme = "dark"` string) — replace it with a table
+    // before indexing, or toml_edit would panic on the non-table item.
+    // The old item is removed first: replacing it in place would leak its
+    // decor into the header (rendering `[theme ]` instead of `[theme]`).
+    if doc.get(field.section()).is_none_or(|item| !item.is_table()) {
+        doc.as_table_mut().remove(field.section());
         doc[field.section()] = toml_edit::table();
     }
     let section = field.section();
@@ -189,9 +195,26 @@ icon_pack = "default"
 
     #[test]
     fn default_config_path_ends_with_expected_filename() {
+        // Reads `XDG_CONFIG_HOME`, so it must serialize with the mutating
+        // XDG tests in `paths.rs` (same convention as `paths::tests`).
+        let _guard = crate::config::test_env::env_lock();
         let path = default_config_path().unwrap();
         assert_eq!(path.file_name().unwrap(), "config.toml");
         assert!(path.to_string_lossy().contains("chronos-fm"));
+    }
+
+    #[test]
+    fn patches_non_table_section_by_replacing_it() {
+        // A hand-edited top-level `theme = "dark"` string (malformed but
+        // loadable) must not panic: the section is replaced with a table.
+        let malformed = "schema_version = 1\ntheme = \"dark\"\n";
+        let patched = patch_config_text(
+            malformed,
+            &ConfigField::ThemeMode(crate::config::ThemeMode::Light),
+        )
+        .unwrap();
+        assert!(patched.contains("[theme]"));
+        assert!(patched.contains("mode = \"light\""));
     }
 
     #[test]

@@ -151,6 +151,12 @@ impl RootView {
             page.apply_config_ui(&ui, cx);
             page.apply_config_explorer(&explorer_cfg, cx);
         });
+        // Keep the Settings page's controls in sync with the on-disk config:
+        // without this its active mode/sort/switch states stay frozen at the
+        // construction snapshot after the first hot reload.
+        self.settings.update(cx, |page, _cx| {
+            page.set_config(config.clone());
+        });
 
         self.config = config;
         cx.notify();

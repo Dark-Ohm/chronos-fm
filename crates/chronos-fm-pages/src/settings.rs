@@ -24,6 +24,16 @@ impl SettingsPage {
         Self { config }
     }
 
+    /// Re-seed the page with a freshly-loaded config.
+    ///
+    /// Called by `RootView::apply_config` on every hot reload (including
+    /// writes the page itself triggers), so the active mode/sort/switch
+    /// states always reflect the on-disk `config.toml` rather than the
+    /// snapshot taken at construction.
+    pub fn set_config(&mut self, config: Config) {
+        self.config = config;
+    }
+
     /// Re-reads `config.toml`, patches one field, and writes it back.
     /// The app's existing config-watcher (`root.rs`) picks up the file
     /// change and re-applies it — this function does not mutate
