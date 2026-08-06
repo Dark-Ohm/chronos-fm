@@ -63,6 +63,7 @@ impl Render for SettingsPage {
             .child(theme_section(&self.config, cx))
             .child(ui_section(&self.config, cx))
             .child(explorer_section(&self.config, cx))
+            .child(s3_section(&self.config, cx))
             .child(draft_sections(cx))
     }
 }
@@ -291,6 +292,100 @@ fn explorer_section(config: &Config, cx: &gpui::App) -> impl IntoElement {
 
 /// Draft sections not yet wired to any subsystem (P3/P4) — shown, not
 /// hidden, per spec's decision. Visually muted, no interactive controls.
+fn s3_section(config: &Config, cx: &gpui::App) -> impl IntoElement {
+    let default_profile = if config.s3.default_profile.is_empty() {
+        "none".to_string()
+    } else {
+        config.s3.default_profile.clone()
+    };
+
+    let mut card = elevated_card(cx)
+        .child(section_header(cx, "S3", "object storage"))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(div().text_color(theme::fg(cx)).child("Default profile"))
+                .child(
+                    div()
+                        .text_color(if config.s3.default_profile.is_empty() {
+                            theme::muted(cx)
+                        } else {
+                            theme::fg(cx)
+                        })
+                        .child(default_profile),
+                ),
+        );
+
+    if config.s3.profiles.is_empty() {
+        card = card.child(
+            div()
+                .mt(px(8.))
+                .text_color(theme::muted(cx))
+                .text_sm()
+                .child("No profiles configured. Add them in config.toml:")
+                .child(
+                    div()
+                        .mt(px(4.))
+                        .px(px(8.))
+                        .py(px(4.))
+                        .rounded(px(4.))
+                        .bg(theme::bg_secondary(cx))
+                        .font_family("monospace")
+                        .text_xs()
+                        .child("[s3.profiles.personal]\nendpoint = \"https://s3.amazonaws.com\"\nregion = \"us-east-1\"\nforce_path_style = false"),
+                ),
+        );
+    } else {
+        for (name, profile) in &config.s3.profiles {
+            card = card.child(profile_card(name.clone(), profile, cx));
+        }
+    }
+
+    card
+}
+
+fn profile_card(name: String, profile: &chronos_fm_core::config::S3Profile, cx: &gpui::App) -> impl IntoElement {
+    div()
+        .mt(px(8.))
+        .px(px(12.))
+        .py(px(8.))
+        .rounded(px(6.))
+        .bg(theme::bg_secondary(cx))
+        .child(
+            div()
+                .text_sm()
+                .font_weight(gpui::FontWeight::MEDIUM)
+                .text_color(theme::fg(cx))
+                .mb(px(4.))
+                .child(name),
+        )
+        .child(field_row("Endpoint", profile.endpoint.clone(), cx))
+        .child(field_row("Region", profile.region.clone(), cx))
+        .child(field_row(
+            "Force path style",
+            if profile.force_path_style { "on".to_string() } else { "off".to_string() },
+            cx,
+        ))
+}
+
+fn field_row(label: &'static str, value: String, cx: &gpui::App) -> impl IntoElement {
+    div()
+        .flex()
+        .items_center()
+        .justify_between()
+        .py(px(2.))
+        .child(div().text_color(theme::muted(cx)).text_xs().child(label))
+        .child(
+            div()
+                .text_color(theme::fg(cx))
+                .text_xs()
+                .font_family("monospace")
+                .child(value),
+        )
+}
+
 fn draft_sections(cx: &gpui::App) -> impl IntoElement {
     div()
         .opacity(0.5)
