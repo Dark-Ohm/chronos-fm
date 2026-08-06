@@ -68,33 +68,95 @@ pub(crate) fn reload(&mut self) {
 Проверяется двумя грепами: `grep -rn "reload_provider" crates/` и
 `grep -rn "ensure_loaded" crates/`.
 
+## Заход №1 (коммит `32cb1ac`) — не сработал, и почему
+
+Первая правка сделана, закоммичена как `wip` и **проверена живьём: не
+работает**. Разбор обязателен к прочтению — вторая попытка по тем же
+граблям недопустима.
+
+Что было сделано: `pane.loaded = false` заменён на
+
+```rust
+pane.downgrade()
+    .update_in(cx, |pane, window, cx| { … })
+    .log_err();
+```
+
+Что наблюдалось живьём против RustFS: `0 items`, **ноль запросов** к
+серверу, ноль строк модуля `chronos_fm_services::s3`. В логе — ровно
+одна строка, объясняющая всё:
+
+```
+WARN chronos_fm_core::telemetry: crates/chronos-fm-pages/src/s3.rs:165:
+     entity has no current window
+```
+
+Причина: `WeakEntity::update_in` (`../Source/gpui/src/app/entity_map.rs:792`)
+резолвит окно через `cx.with_window(entity_id)` →
+`current_window_by_entity.get(&entity_id)?` (`app.rs:1717`). Эта карта
+заполняется **только** из `ensure_window`, который зовётся из трёх мест —
+`defer_in`, `observe_in`, `subscribe_in` (`app/context.rs:312/335/368`),
+причём для собственного `entity_id` того контекста. Панель создаётся
+через `cx.new(...)` в контексте `S3Page`; ни один из трёх методов на её
+контексте не вызывается, значит её id в карте нет и `update_in`
+возвращает `Err`.
+
+**Стена, в которую упёрся исполнитель (мой пробел в первом брифе):**
+`Entity::update_in` (`entity_map.rs:502`) требует `C: VisualContext`,
+а `Context<S3Page>` им не является — прямой вызов не компилируется.
+Отсюда и поиск обхода. Обход через `WeakEntity` компилируется, но
+молча не работает.
+
+**Правильный выход — не искать окно, а не терять его.** Внешний колбэк
+уже получает окно из `spawn_in` и выбрасывает его подчёркиванием:
+
+```rust
+let _ = this.update_in(&mut cx, |this, _window, cx| {   // ← вот здесь
+```
+
 ## Что нужно
 
-1. Вызывать загрузку сразу после `set_provider` — в том же
-   async-колбэке `s3.rs` есть `update_in`, то есть доступен `window`:
+1. Принять `window` во внешнем колбэке (`|this, window, cx|`) и
+   прокинуть его в обычный `pane.update(cx, …)`:
    ```rust
-   pane.update(cx, |pane, cx| {
-       pane.set_provider(client.clone());
-       pane.cwd = s3_root.clone();
-       pane.reload_provider(window, cx);
+   let _ = this.update_in(&mut cx, |this, window, cx| {
+       pane.update(cx, |pane, cx| {
+           pane.set_provider(client.clone());
+           pane.cwd = s3_root.clone();
+           pane.reload_provider(window, cx);
+       });
+       this.state = S3State::Browsing;
+       cx.notify();
    });
    ```
-   Альтернатива — научить `ensure_loaded` уходить в provider-ветку, но
-   у него нет `window`; тогда придётся менять сигнатуру. Выбрать
-   осознанно, а не по пути наименьшего сопротивления.
-2. **Убрать молчаливый отказ.** Сейчас пустой список неотличим от
-   «бакетов нет» и от «сервер недоступен». Ошибка `list_dir` в
-   provider-ветке должна попадать в UI, как это сделано для поиска в
-   T016 (`⚠ Full-text search unavailable`).
-3. Проверить остальные точки, где `loaded = false` выставляется в
-   расчёте на рендер, — контракт B.1 ломает их все одинаково.
+   Если компилятор возразит по заимствованиям — **решать по месту, не
+   подменяя механизм**. Возврат к `WeakEntity::update_in` в любом виде
+   означает повтор `32cb1ac`.
+2. **Не полагаться на `.log_err()` как на сигнал.** Он пишет через
+   `log::Level::Error`, мост `log → tracing` есть (`try_init` +
+   `tracing-log`), но выходит это на уровне **WARN** с таргетом
+   `chronos_fm_core::telemetry`. Греп по `ERROR` его не находит — на
+   этом потерял время и я. Ошибка соединения S3Page ↔ панель должна
+   идти через `tracing::error!` с внятным текстом.
+3. Уже сделано в `32cb1ac` и **сохранить**: `ensure_loaded` уходит в
+   provider-ветку, инлайн-баннер ошибки листинга, `CountingProvider`.
+   Переделывать не нужно.
 
 ## Тесты
 
-Юнит на `ExplorerPane` с фейковым `FileSystemProvider` (in-memory,
-считает вызовы `list_dir`): после `set_provider` + `cwd` + пути,
-которым идёт connect, счётчик `list_dir` должен стать `1`. Именно этот
-тест ловит класс дефекта — «provider подключён, но не опрошен».
+Три теста из `32cb1ac` зелёные и дефект не поймали — они дёргают панель
+напрямую, а сломано звено `S3Page → панель`. Нужен тест **через
+S3Page**, а не через панель:
+
+- построить `S3Page`, довести до состояния connect с фейковым клиентом
+  (или замокать `S3Client::from_profile`), выполнить тот же колбэк и
+  проверить, что `CountingProvider::list_dir` вызван **1 раз** и
+  `pane.cwd` стал `s3://<profile>@`.
+- если поднять `S3Page` в тесте дорого — минимум негативный тест:
+  панель, созданная как в `start_connect` (через `cx.new` без
+  `defer_in`/`observe_in`/`subscribe_in`), и ассерт, что
+  `WeakEntity::update_in` на ней возвращает `Err`. Это фиксирует
+  ловушку в коде, а не в отчёте.
 
 ## Зона файлов
 
@@ -121,6 +183,26 @@ podman run -d --name chronos-rustfs -p 9000:9000 -p 9001:9001 \
 
 Критерий: после connect список бакетов виден **без** навигации; заход в
 бакет показывает префиксы `data/` и `notes/` и ключ `readme.txt`.
+
+**Приёмка считается пройденной только при всех трёх подтверждениях —
+скриншот сам по себе не доказательство, `32cb1ac` тоже «показывал
+панель»:**
+
+1. Бакеты видны на экране (`grim`).
+2. `podman logs chronos-rustfs` содержит запросы от приложения — сервер
+   реально опрошен.
+3. В логе приложения при `RUST_LOG=chronos_fm_services=debug` есть
+   строки модуля `chronos_fm_services::s3`, и **нет** ни одной строки
+   `entity has no current window` (грепать по `WARN`, не только `ERROR`).
+
+Пункты 2 и 3 обязательны: именно они, а не картинка, отличают
+работающий листинг от `32cb1ac`, где UI выглядел правдоподобно при
+нулевой сетевой активности.
+
+**Сборка:** голый `cargo build --release` бинарь не собирает — GUI-крейты
+вне `default-members`. Нужен `cargo build --release -p chronos-fm`, и
+перед прогоном сверить `stat -c '%y' target/release/chronos-fm` с mtime
+правленых исходников.
 
 ## Отчёт
 
