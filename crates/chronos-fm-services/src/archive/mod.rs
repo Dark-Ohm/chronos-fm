@@ -197,3 +197,71 @@ pub fn write_file(archive_path: &Path, path_in_archive: &str, data: &[u8]) -> Re
 pub fn commit(archive_path: &Path) -> Result<(), ArchiveError> {
     with_archive_mut(archive_path, |archive| archive.commit())
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn archive_format_from_path_all_extensions() {
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("a.zip")),
+            Some(ArchiveFormat::Zip)
+        );
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("a.tar")),
+            Some(ArchiveFormat::Tar)
+        );
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("a.tar.gz")),
+            Some(ArchiveFormat::TarGz)
+        );
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("a.tgz")),
+            Some(ArchiveFormat::TarGz)
+        );
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("a.tar.zst")),
+            Some(ArchiveFormat::TarZst)
+        );
+        assert_eq!(
+            ArchiveFormat::from_path(Path::new("a.tar.zstd")),
+            Some(ArchiveFormat::TarZst)
+        );
+        // Negative cases
+        assert_eq!(ArchiveFormat::from_path(Path::new("a.txt")), None);
+        assert_eq!(ArchiveFormat::from_path(Path::new("a")), None);
+        assert_eq!(ArchiveFormat::from_path(Path::new("a.tar.xz")), None);
+    }
+
+    #[test]
+    fn split_make_archive_path_roundtrip() {
+        let made = make_archive_path(Path::new("/home/u/docs.zip"), "inner/file.txt");
+        assert_eq!(made, "/home/u/docs.zip::inner/file.txt");
+        let (archive, inner) = split_archive_path(&made).unwrap();
+        assert_eq!(archive, Path::new("/home/u/docs.zip"));
+        assert_eq!(inner, "inner/file.txt");
+    }
+
+    #[test]
+    fn make_archive_path_strips_leading_slash() {
+        let made = make_archive_path(Path::new("/x/a.zip"), "/root.txt");
+        assert_eq!(made, "/x/a.zip::root.txt");
+        assert_eq!(split_archive_path(&made).unwrap().1, "root.txt");
+    }
+
+    #[test]
+    fn split_archive_path_no_separator() {
+        assert_eq!(split_archive_path("/home/u/normal/file.txt"), None);
+    }
+
+    #[test]
+    fn split_archive_path_nested_separator_in_inner() {
+        // The inner path may itself contain "::" — only the first "::" splits.
+        let made = make_archive_path(Path::new("/x/a.zip"), "a::b/c.txt");
+        assert_eq!(made, "/x/a.zip::a::b/c.txt");
+        let (archive, inner) = split_archive_path(&made).unwrap();
+        assert_eq!(archive, Path::new("/x/a.zip"));
+        assert_eq!(inner, "a::b/c.txt");
+    }
+}

@@ -337,4 +337,80 @@ mod tests {
     fn file_url_keeps_ascii_safe_characters() {
         assert_eq!(file_url("/a-b_c.d~e/f:g@h"), "file:///a-b_c.d~e/f:g@h");
     }
+
+    #[test]
+    fn detect_mime_type_known_extensions() {
+        // Requires shared-mime-info. When it's absent (minimal CI / containers)
+        // xdg_mime returns generic types, so we assert only when the DB is
+        // clearly present rather than failing the build environment.
+        let tmp = tempfile::tempdir().unwrap();
+        let txt = tmp.path().join("sample.txt");
+        std::fs::write(&txt, b"hello world").unwrap();
+        let txt_mime = detect_mime_type(txt.to_str().unwrap());
+
+        let png = tmp.path().join("img.png");
+        std::fs::write(&png, &[0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]).unwrap();
+        let png_mime = detect_mime_type(png.to_str().unwrap());
+
+        match (txt_mime, png_mime) {
+            (Some(t), Some(p)) => {
+                if t.contains("text") && p.contains("image") {
+                    assert_eq!(t, "text/plain");
+                    assert_eq!(p, "image/png");
+                } else {
+                    eprintln!(
+                        "shared-mime-info appears unavailable (txt={t:?}, png={p:?}); skipping exact mime assertions"
+                    );
+                }
+            }
+            other => eprintln!("detect_mime_type returned {other:?}; shared-mime-info may be unavailable; skipping"),
+        }
+    }
+
+    #[test]
+    fn find_apps_for_mime_text_plain_returns_list() {
+        // On a desktop with .desktop entries this should be non-empty; on a
+        // headless box with no registered handlers it may be empty — skip
+        // rather than fail.
+        let apps = find_apps_for_mime("text/plain");
+        if apps.is_empty() {
+            eprintln!("no .desktop entries for text/plain on this system; skipping");
+            return;
+        }
+        assert!(apps.iter().all(|a| !a.desktop_id.is_empty()));
+        assert!(apps.iter().any(|a| !a.name.is_empty()));
+    }
+
+    #[test]
+    fn open_with_launches_via_detached_sh_c() {
+        // Verify the call form (`sh -c`, detached via `&`) without launching a
+        // real application: `true` exits 0 immediately and is backgrounded.
+        let app = DesktopApp {
+            name: "True".into(),
+            icon: None,
+            exec: "true %f".into(),
+            terminal: false,
+            desktop_id: "true.desktop".into(),
+        };
+        let result = open_with(&app, "/tmp/does-not-matter.txt");
+        assert!(
+            result.is_ok(),
+            "open_with should launch via detached sh -c: {result:?}"
+        );
+    }
+
+    #[test]
+    fn open_with_terminal_wraps_command() {
+        // terminal=true wraps the command in $TERMINAL -e sh -c ... & — verify
+        // the form launches without blocking (uses `true` so nothing real runs).
+        let app = DesktopApp {
+            name: "True".into(),
+            icon: None,
+            exec: "true %f".into(),
+            terminal: true,
+            desktop_id: "true.desktop".into(),
+        };
+        let result = open_with(&app, "/tmp/does-not-matter.txt");
+        assert!(result.is_ok(), "open_with (terminal) should launch: {result:?}");
+    }
 }

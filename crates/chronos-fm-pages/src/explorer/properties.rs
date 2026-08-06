@@ -27,7 +27,6 @@ enum SizeStatus {
         dirs: u64,
         errors: u64,
     },
-    Error(String),
 }
 
 /// The Properties modal dialog.
@@ -227,7 +226,6 @@ impl Render for PropertiesDialog {
                     }
                     s
                 }
-                SizeStatus::Error(e) => e.clone(),
             }
         };
 
@@ -275,5 +273,65 @@ fn human_size(bytes: u64) -> String {
         format!("{} B", bytes)
     } else {
         format!("{:.1} {}", size, UNITS[unit_idx])
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn mode_to_rwx_known_modes() {
+        assert_eq!(mode_to_rwx(0o755), "rwxr-xr-x");
+        assert_eq!(mode_to_rwx(0o644), "rw-r--r--");
+        assert_eq!(mode_to_rwx(0o000), "---------");
+        assert_eq!(mode_to_rwx(0o777), "rwxrwxrwx");
+        assert_eq!(mode_to_rwx(0o700), "rwx------");
+    }
+
+    #[test]
+    fn human_size_rounds_to_units() {
+        assert_eq!(human_size(0), "0 B");
+        assert_eq!(human_size(512), "512 B");
+        assert_eq!(human_size(1024), "1.0 KB");
+        assert_eq!(human_size(1536), "1.5 KB");
+        assert_eq!(human_size(1024 * 1024), "1.0 MB");
+        assert_eq!(human_size(1024 * 1024 * 1024), "1.0 GB");
+    }
+
+    #[test]
+    fn metadata_formatters_handle_missing_metadata() {
+        assert_eq!(
+            PropertiesDialog::resolve_owner_group(&None),
+            ("unknown".to_string(), "unknown".to_string())
+        );
+        assert_eq!(
+            PropertiesDialog::format_times(&None),
+            ("unknown".to_string(), "unknown".to_string())
+        );
+        assert_eq!(
+            PropertiesDialog::format_permissions(&None),
+            ("---------".to_string(), "0000".to_string())
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn format_permissions_reads_real_mode() {
+        use std::os::unix::fs::PermissionsExt;
+        let base = std::env::temp_dir().join(format!("chrono-props-test-{}", std::process::id()));
+        let _ = std::fs::create_dir_all(&base);
+        let p = base.join("sample.txt");
+        std::fs::write(&p, b"hi").unwrap();
+        let mut perms = std::fs::metadata(&p).unwrap().permissions();
+        perms.set_mode(0o755);
+        std::fs::set_permissions(&p, perms).unwrap();
+        let md = std::fs::metadata(&p).ok();
+        assert_eq!(
+            PropertiesDialog::format_permissions(&md),
+            ("rwxr-xr-x".to_string(), "0755".to_string())
+        );
+        let _ = std::fs::remove_file(&p);
+        let _ = std::fs::remove_dir(&base);
     }
 }

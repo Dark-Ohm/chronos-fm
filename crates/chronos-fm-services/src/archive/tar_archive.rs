@@ -282,3 +282,69 @@ impl ArchiveFs for TarArchive {
         Ok(())
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn make_tar_bytes(files: &[(&str, &[u8])]) -> Vec<u8> {
+        let mut buf = Vec::new();
+        {
+            let mut builder = tar::Builder::new(&mut buf);
+            for (name, data) in files {
+                let mut header = tar::Header::new_gnu();
+                header.set_size(data.len() as u64);
+                header.set_entry_type(tar::EntryType::Regular);
+                header.set_mode(0o644);
+                header.set_cksum();
+                builder.append_data(&mut header, name, &**data).unwrap();
+            }
+            builder.finish().unwrap();
+        }
+        buf
+    }
+
+    fn write_file(path: &Path, data: &[u8]) {
+        let mut f = std::fs::File::create(path).unwrap();
+        f.write_all(data).unwrap();
+    }
+
+    #[test]
+    fn tararchive_list_and_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tpath = tmp.path().join("test.tar");
+        write_file(
+            &tpath,
+            &make_tar_bytes(&[("hello.txt", b"hello tar"), ("dir/nested.txt", b"nested tar")]),
+        );
+
+        let ta = TarArchive::open(&tpath, ArchiveFormat::Tar).unwrap();
+        let entries = ta.list("").unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.iter().any(|n| *n == "hello.txt"),
+            "file present: {names:?}"
+        );
+        assert_eq!(ta.read_file("hello.txt").unwrap(), b"hello tar");
+        assert_eq!(ta.read_file("dir/nested.txt").unwrap(), b"nested tar");
+        assert!(matches!(
+            ta.read_file("missing.txt"),
+            Err(ArchiveError::NotFound(_))
+        ));
+    }
+
+    #[test]
+    fn tararchive_gz_list_and_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let tpath = tmp.path().join("test.tar.gz");
+        let raw = make_tar_bytes(&[("a.txt", b"gzipped content")]);
+        let mut gz = flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::default());
+        gz.write_all(&raw).unwrap();
+        let compressed = gz.finish().unwrap();
+        write_file(&tpath, &compressed);
+
+        let ta = TarArchive::open(&tpath, ArchiveFormat::TarGz).unwrap();
+        assert_eq!(ta.read_file("a.txt").unwrap(), b"gzipped content");
+    }
+}

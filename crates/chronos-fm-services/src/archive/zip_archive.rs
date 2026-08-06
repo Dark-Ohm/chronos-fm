@@ -77,7 +77,7 @@ impl ArchiveFs for ZipFs {
                     // Filter entries whose archive path contains the prefix
                     // but are not in deeper subdirectories
                     if let Some(rel) = e.path.strip_prefix(&format!(
-                        "{}::/",
+                        "{}::",
                         self.path.display()
                     )) {
                         rel.starts_with(&prefix) || rel == inner_dir
@@ -202,7 +202,7 @@ impl ArchiveFs for ZipFs {
 /// Synthesize directory entries from file paths inside the archive.
 /// E.g. if `reports/report.txt` exists, create a `reports/` dir entry.
 fn synthetic_dirs(entries: &[FileEntryDto], archive_path: &Path) -> Vec<FileEntryDto> {
-    let prefix = format!("{}::/", archive_path.display());
+    let prefix = format!("{}::", archive_path.display());
     let mut dirs = std::collections::HashSet::new();
 
     for e in entries {
@@ -236,4 +236,66 @@ fn synthetic_dirs(entries: &[FileEntryDto], archive_path: &Path) -> Vec<FileEntr
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::Write;
+
+    fn make_zip(path: &Path, files: &[(&str, &[u8])]) {
+        let file = std::fs::File::create(path).unwrap();
+        let mut writer = zip::ZipWriter::new(file);
+        let opts = zip::write::SimpleFileOptions::default()
+            .compression_method(zip::CompressionMethod::Deflated);
+        for (name, data) in files {
+            writer.start_file(*name, opts).unwrap();
+            writer.write_all(data).unwrap();
+        }
+        writer.finish().unwrap();
+    }
+
+    #[test]
+    fn zipfs_list_and_read() {
+        let tmp = tempfile::tempdir().unwrap();
+        let zpath = tmp.path().join("test.zip");
+        make_zip(
+            &zpath,
+            &[("hello.txt", b"hello zip"), ("dir/nested.txt", b"nested content")],
+        );
+
+        let zfs = ZipFs::open(&zpath).unwrap();
+        let entries = zfs.list("").unwrap();
+        let names: Vec<&str> = entries.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            names.iter().any(|n| *n == "hello.txt"),
+            "file entry present: {names:?}"
+        );
+        // synthetic directory entry is synthesized from the nested path
+        assert!(
+            names.iter().any(|n| *n == "dir"),
+            "synthetic dir entry present: {names:?}"
+        );
+
+        // listing a subdirectory returns only its direct children
+        let sub = zfs.list("dir").unwrap();
+        let sub_names: Vec<&str> = sub.iter().map(|e| e.name.as_str()).collect();
+        assert!(
+            sub_names.iter().any(|n| *n == "nested.txt"),
+            "nested file present under dir: {sub_names:?}"
+        );
+        assert!(
+            !sub_names.iter().any(|n| *n == "hello.txt"),
+            "sibling file excluded from subdir: {sub_names:?}"
+        );
+
+        assert_eq!(zfs.read_file("hello.txt").unwrap(), b"hello zip");
+        assert_eq!(zfs.read_file("dir/nested.txt").unwrap(), b"nested content");
+
+        // reading a missing entry reports NotFound
+        assert!(matches!(
+            zfs.read_file("missing.txt"),
+            Err(ArchiveError::NotFound(_))
+        ));
+    }
 }
