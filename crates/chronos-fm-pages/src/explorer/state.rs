@@ -145,6 +145,10 @@ pub struct ExplorerPane {
     /// (listing, reading, writing) are dispatched through the provider
     /// instead of the local filesystem (T011).
     pub provider: Option<std::sync::Arc<dyn FileSystemProvider>>,
+    /// Cached sidebar shortcuts (Home, Desktop, Downloads, …). Computed once
+    /// at construction; the set of existing user directories does not change
+    /// at runtime (T015).
+    pub shortcuts: Vec<(String, String)>,
 }
 
 impl Focusable for ExplorerPane {
@@ -247,6 +251,7 @@ impl ExplorerPane {
             status_message: None,
             renaming: None,
             provider: None,
+            shortcuts: compute_shortcuts(),
         }
     }
 
@@ -533,6 +538,37 @@ fn sort_key_from_config(order: config::SortOrder) -> SortKey {
         config::SortOrder::Size => SortKey::Size,
         config::SortOrder::Kind => SortKey::Type,
     }
+}
+
+/// Build the quick-access folder list (Home + common user directories that
+/// exist). Called once at pane construction; the filesystem is only touched
+/// at startup, not on every render (T015).
+fn compute_shortcuts() -> Vec<(String, String)> {
+    let mut v = Vec::new();
+    let home = std::env::var("HOME").ok();
+    #[cfg(target_os = "windows")]
+    let home = home.or_else(|| std::env::var("USERPROFILE").ok());
+    if let Some(h) = home {
+        let p = |s: &str| {
+            std::path::Path::new(&h)
+                .join(s)
+                .to_string_lossy()
+                .to_string()
+        };
+        v.push(("Home".into(), h.clone()));
+        for (label, sub) in [
+            ("Desktop", "Desktop"),
+            ("Downloads", "Downloads"),
+            ("Documents", "Documents"),
+            ("Pictures", "Pictures"),
+        ] {
+            let path = p(sub);
+            if std::path::Path::new(&path).exists() {
+                v.push((label.into(), path));
+            }
+        }
+    }
+    v
 }
 
 fn is_hidden(name: &str) -> bool {
