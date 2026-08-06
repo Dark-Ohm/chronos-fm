@@ -70,6 +70,9 @@ pub struct GitPage {
 }
 
 impl GitPage {
+    /// Create the live Git panel. `explorer` is followed for the directory to
+    /// display unless the user pins one; the commit-message input and the
+    /// refresh loop (`.git` watcher, 400 ms debounce) are started here.
     pub fn new(
         explorer: WeakEntity<ExplorerPage>,
         window: &mut Window,
@@ -102,6 +105,9 @@ impl GitPage {
         page
     }
 
+    /// Reload the repository status for the current directory (follow mode or
+    /// pin). Called by the refresh loop, the Refresh button, and after every
+    /// stage/unstage/commit.
     pub fn refresh(&mut self, cx: &mut Context<Self>) {
         let dir = self.current_dir(cx);
         self.last_dir = dir.clone();
@@ -126,7 +132,6 @@ impl GitPage {
         let generation = self.refresh_generation;
         cx.notify();
 
-        let this = cx.weak_entity();
         cx.spawn(move |this: WeakEntity<Self>, cx: &mut AsyncApp| {
             let mut cx = cx.clone();
             async move {
@@ -239,7 +244,6 @@ impl GitPage {
         let dir = self.current_dir(cx);
         let path = path.to_string();
         let err_path = path.clone();
-        let this = cx.weak_entity();
         cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
             let mut cx = cx.clone();
             async move {
@@ -263,7 +267,6 @@ impl GitPage {
         let dir = self.current_dir(cx);
         let path = path.to_string();
         let err_path = path.clone();
-        let this = cx.weak_entity();
         cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
             let mut cx = cx.clone();
             async move {
@@ -291,7 +294,6 @@ impl GitPage {
             cx.notify();
             return;
         }
-        let this = cx.weak_entity();
         cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
             let mut cx = cx.clone();
             async move {
@@ -351,8 +353,7 @@ impl GitPage {
             .p(px(24.))
             .bg(theme::bg(cx))
             .child(render_header(status.as_ref(), no_repo, error, refreshing, cx))
-            .when(status.is_some(), |el| {
-                let s = status.as_ref().unwrap();
+            .when_some(status.as_ref(), |el, s| {
                 el.child(render_file_section("Staged", &s.staged, false, theme::accent(cx), cx))
                     .child(render_file_section("Modified", &s.modified, true, theme::muted(cx), cx))
                     .child(render_file_section("Untracked", &s.untracked, true, theme::fg_secondary(cx), cx))
@@ -388,8 +389,8 @@ fn render_header(
                         .child(pin_button(cx)),
                 ),
         )
-        .when(error.is_some(), |el| {
-            el.child(div().text_sm().text_color(theme::danger(cx)).child(error.unwrap()))
+        .when_some(error, |el, error| {
+            el.child(div().text_sm().text_color(theme::danger(cx)).child(error))
         })
 }
 

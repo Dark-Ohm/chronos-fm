@@ -22,12 +22,11 @@
   watcher-обновление не прогонялись.
 - Deferred из отчёта: render-тест `git.rs` упирается в
   `recursion_limit = 128` у макроса `gpui::test`.
-- Из чекпоинта #3, **перепроверено 2026-08-07 и всё ещё в силе**: clippy
-  по `pages/src/git.rs` не гонялся — 4× неиспользуемый
-  `let this = cx.weak_entity()` и 2× `unwrap()` под guard'ом
-  (`git.rs:355`, `:392`) при workspace-линте `unwrap_used = "warn"`,
-  плюс missing docs. Долг мелкий; закрывать его тем же заходом, что
-  Milestone B, а не отдельным тикетом.
+- ~~Из чекпоинта #3: clippy по `pages/src/git.rs` не гонялся — 4×
+  неиспользуемый `let this = cx.weak_entity()`, 2× `unwrap()` под guard'ом,
+  плюс missing docs.~~ **Закрыто 2026-08-07**: все 8 пунктов исправлены,
+  `cargo clippy -p chronos-fm-pages --all-targets` по `git.rs` — 0 замечаний,
+  тесты 87/87 зелёные (изменения не закоммичены).
 
 **Приёмка живого прогона (уточнено после T017):** проверять сценарий
 целиком — stage → ввод сообщения → Commit → `git log` подтверждает
