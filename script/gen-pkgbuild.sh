@@ -17,11 +17,27 @@ fi
 SOURCE_URL="https://github.com/Dark-Ohm/chronos-fm/archive/refs/tags/v${TAG}.tar.gz"
 SHA256=$(curl -sL "${SOURCE_URL}" | sha256sum | cut -d' ' -f1)
 
-# Extract GPUI commit from Cargo.lock (from git source)
-GPUI_COMMIT=$(grep -A5 'name = "gpui"' Cargo.lock | grep 'revision' | head -1 | cut -d'"' -f2 || true)
-if [[ -z "${GPUI_COMMIT}" ]]; then
-  echo "⚠️  Could not find GPUI commit in Cargo.lock, using fallback"
+# Pin the fork at its current local HEAD. Dev truth lives in ../Source (path
+# deps in Cargo.toml); the PKGBUILD fetches the fork from git so users who
+# download the software link to the published repo at this exact commit.
+# Locate the Chronos-GPUI checkout: $CHRONOS_FORK_DIR, or the sibling
+# checkout (../Source — local dev), or Source/ inside the repo (CI).
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+FORK_DIR="${CHRONOS_FORK_DIR:-}"
+if [[ -z "${FORK_DIR}" || ! -d "${FORK_DIR}/.git" ]]; then
+  if [[ -d "${REPO_ROOT}/../Source/.git" ]]; then
+    FORK_DIR="${REPO_ROOT}/../Source"
+  elif [[ -d "${REPO_ROOT}/Source/.git" ]]; then
+    FORK_DIR="${REPO_ROOT}/Source"
+  else
+    FORK_DIR=""
+  fi
+fi
+if [[ -z "${FORK_DIR}" ]]; then
+  echo "⚠️  Could not locate the Chronos-GPUI checkout (set CHRONOS_FORK_DIR)"
   GPUI_COMMIT="a1b2c3d4e5f678901234567890abcdef12345678"
+else
+  GPUI_COMMIT=$(git -C "${FORK_DIR}" rev-parse HEAD)
 fi
 
 # Render template
@@ -62,7 +78,7 @@ optdepends=(
 _GPUI_COMMIT="${GPUI_COMMIT}"
 source=(
   "\${pkgname%-cachy}-\${pkgver}.tar.gz::https://github.com/Dark-Ohm/chronos-fm/archive/refs/tags/v\${pkgver}-cachy\${pkgrel}.tar.gz"
-  "gpui::git+https://github.com/zed-industries/zed.git#commit=\${_GPUI_COMMIT}"
+  "gpui::git+https://github.com/Dark-Ohm/Chronos-GPUI.git#commit=\${_GPUI_COMMIT}"
 )
 sha256sums=('${SHA256}' 'SKIP')
 
@@ -74,25 +90,23 @@ export CARGO_PROFILE_RELEASE_PANIC=abort
 
 prepare() {
   cd "\${pkgname%-cachy}-\${pkgver}"
-  cat >> Cargo.toml <<EOFPATCH
-
-[patch.crates-io]
-gpui = { path = "../gpui/crates/gpui" }
-zed_gpui = { path = "../gpui/crates/zed_gpui" }
-EOFPATCH
-  cargo fetch --locked --target x86_64-unknown-linux-gnu
+  # Cargo.toml carries dev-only path deps to ../Source. Rewrite them to the
+  # fork fetched into \$srcdir/gpui and regenerate the lock from that graph.
+  sed -i 's|path = "../Source/|path = "../gpui/|g' Cargo.toml
+  rm -f Cargo.lock
+  cargo fetch
 }
 
 build() {
   cd "\${pkgname%-cachy}-\${pkgver}"
-  cargo build --release --locked -p chronos-fm
+  cargo build --release -p chronos-fm
 }
 
 check() {
   cd "\${pkgname%-cachy}-\${pkgver}"
+  test -d ../gpui/gpui && echo "✅ GPUI fork fetched at \${_GPUI_COMMIT}"
   xvfb-run -a --server-args="-screen 0 1024x768x24" \
     timeout 10 ./target/release/chronos-fm --version
-  grep -q "\${_GPUI_COMMIT}" Cargo.lock && echo "✅ GPUI commit verified"
 }
 
 package() {

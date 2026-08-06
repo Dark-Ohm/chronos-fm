@@ -24,6 +24,12 @@ jobs:
         with:
           ssh-private-key: ${{ secrets.AUR_SSH_KEY }}
 
+      - name: Checkout fork
+        uses: actions/checkout@v4
+        with:
+          repository: Dark-Ohm/Chronos-GPUI
+          path: Source
+
       - name: Generate PKGBUILD
         run: ./script/gen-pkgbuild.sh ${{ github.ref_name }}
 
