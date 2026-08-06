@@ -9,6 +9,8 @@
 //! submodules and worktrees are out of scope for v1; staged blobs are hashed
 //! directly from the worktree file.
 
+pub mod watcher;
+
 use std::path::{Path, PathBuf};
 
 /// Errors surfaced to the Git page.

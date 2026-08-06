@@ -90,7 +90,7 @@ impl RootView {
                 cx,
             )
         });
-        let git = cx.new(|_cx| GitPage::new());
+        let git = cx.new(|cx| GitPage::new(explorer.downgrade(), window, cx));
         let s3 = cx.new(|_cx| S3Page::new());
         let extensions = cx.new(|_cx| ExtensionsPage::new());
         let settings = cx.new(|_cx| SettingsPage::new(config.clone()));
