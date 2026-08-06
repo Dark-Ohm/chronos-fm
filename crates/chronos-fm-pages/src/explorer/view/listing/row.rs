@@ -115,6 +115,22 @@ pub fn render(
                 .on_click(
                     cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
                         if let gpui::ClickEvent::Mouse(mouse) = event {
+                            if mouse.up.button == gpui::MouseButton::Right {
+                                // Normalize selection to the right-clicked row
+                                // (b3/b4 convention): if it is not part of the
+                                // current selection, replace the selection with
+                                // just this row; otherwise keep it as-is.
+                                if !this.is_selected(ix) {
+                                    this.select_single(ix);
+                                }
+                                this.open_context_menu(
+                                    item_for_preview.path.clone(),
+                                    mouse.up.position,
+                                    cx,
+                                );
+                                cx.stop_propagation();
+                                return;
+                            }
                             if mouse.up.button == gpui::MouseButton::Left {
                                 this.record_click(ix, mouse.up.click_count);
                                 let modifiers = mouse.up.modifiers;

@@ -8,6 +8,14 @@ use zbus::Connection;
 const SERVICE: &str = "org.freedesktop.UDisks2";
 const MANAGER_PATH: &str = "/org/freedesktop/UDisks2";
 
+/// Resolves the object path `Drive.Eject` must be called on: the
+/// `Block.Drive` path carried on [`Device::drive_object_path`] when known,
+/// otherwise the passed `object_path` (callers that already hold a drive
+/// path). Extracted so the fallback is unit-testable without D-Bus.
+fn eject_target<'a>(object_path: &'a str, drive_object_path: Option<&'a str>) -> &'a str {
+    drive_object_path.unwrap_or(object_path)
+}
+
 /// Storage backend for the Devices panel. `UDisks2Backend` is the real
 /// implementation; tests use an in-memory fake (see `tests::FakeBackend`)
 /// so `DeviceStore` logic (Task 3/4) never needs a live D-Bus connection.
@@ -16,7 +24,13 @@ pub trait DeviceBackend: Send + Sync {
     async fn list(&self) -> Result<Vec<Device>>;
     async fn mount(&self, object_path: &str) -> Result<PathBuf>;
     async fn unmount(&self, object_path: &str) -> Result<()>;
-    async fn eject(&self, object_path: &str) -> Result<()>;
+    /// Ejects the drive owning the volume at `object_path`.
+    ///
+    /// `drive_object_path` is the resolved `Block.Drive` path (carried on
+    /// [`Device::drive_object_path`]) — `Drive.Eject` lives on the *Drive*
+    /// object, not the Block/Filesystem object the panel holds. Falls back
+    /// to `object_path` itself when no drive path is known.
+    async fn eject(&self, object_path: &str, drive_object_path: Option<&str>) -> Result<()>;
 }
 
 /// Real `udisks2` backend over the system D-Bus.
@@ -148,11 +162,17 @@ impl DeviceBackend for UDisks2Backend {
         Ok(())
     }
 
-    async fn eject(&self, object_path: &str) -> Result<()> {
+    async fn eject(&self, object_path: &str, drive_object_path: Option<&str>) -> Result<()> {
+        // `Drive.Eject` is a method on the *Drive* object, but the Devices
+        // panel holds Block/Filesystem object paths. The drive path comes
+        // from the `Block.Drive` property (carried on `Device`); fall back to
+        // the passed path when it isn't known (callers that already hold a
+        // drive path).
+        let target = eject_target(object_path, drive_object_path);
         let proxy = zbus::Proxy::new(
             &self.connection,
             SERVICE,
-            object_path,
+            target,
             "org.freedesktop.UDisks2.Drive",
         )
         .await
@@ -210,9 +230,21 @@ mod tests {
             }
             Ok(())
         }
-        async fn eject(&self, _object_path: &str) -> anyhow::Result<()> {
+        async fn eject(&self, _object_path: &str, _drive_object_path: Option<&str>) -> anyhow::Result<()> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn eject_target_resolves_drive_path_with_fallback() {
+        // Known `Block.Drive` path wins (the panel holds Block/Filesystem
+        // object paths; `Drive.Eject` lives on the Drive object).
+        assert_eq!(
+            eject_target("/org/freedesktop/UDisks2/block_devices/sdb1", Some("/o/drives/USB")),
+            "/o/drives/USB"
+        );
+        // No drive reference (non-removable block) falls back to the block path.
+        assert_eq!(eject_target("/o/block/sdc1", None), "/o/block/sdc1");
     }
 
     #[tokio::test(flavor = "current_thread")]
@@ -225,6 +257,7 @@ mod tests {
                 mount_point: None,
                 is_removable: true,
                 size_bytes: 100,
+                drive_object_path: Some("/org/freedesktop/UDisks2/drives/USB_Stick".into()),
             }]),
             mount_result: Mutex::new(Ok(PathBuf::from("/run/media/neo/USB"))),
         };

@@ -138,7 +138,15 @@ fn get_shortcuts() -> Vec<(String, String)> {
 /// unavailable) — renders nothing rather than an empty card.
 /// Also returns nothing if the `DeviceStore` global hasn't been registered
 /// yet (e.g. in tests that don't initialise the full app startup path).
-pub(crate) fn render_devices_section(cx: &App) -> impl IntoElement {
+///
+/// Click wiring (T008): clicking a row navigates to the mount point when
+/// mounted, or mounts and then navigates when unmounted; a mounted row's
+/// right-hand "unmount" label is its own click target that unmounts without
+/// navigating, and removable volumes get an "eject" click target that ejects
+/// the owning drive (via the resolved `Block.Drive` path). Rows render without
+/// click handlers when no live backend is registered (headless/container —
+/// nothing to call).
+pub(crate) fn render_devices_section(cx: &mut Context<ExplorerPane>) -> impl IntoElement {
     let store = cx.try_global::<devices_store::DeviceStore>();
     let Some(store) = store else {
         return div().into_any_element();
@@ -146,38 +154,165 @@ pub(crate) fn render_devices_section(cx: &App) -> impl IntoElement {
     if store.devices.is_empty() {
         return div().into_any_element();
     }
+    let backend = store.backend.clone();
+    let devices = store.devices.clone();
+    let last_error = store.last_error.clone();
+
+    let hover_bg = theme::bg_hover(cx);
+    let fg = theme::fg(cx);
+    let muted = theme::muted(cx);
+    let danger = theme::danger(cx);
 
     let mut card = elevated_card(cx)
         .mt(px(16.0))
         .child(section_header(cx, "Devices", "removable media"));
 
-    if let Some(error) = &store.last_error {
+    if let Some(error) = &last_error {
         card = card.child(
             div()
-                .text_color(theme::danger(cx))
+                .text_color(danger)
                 .text_xs()
                 .child(error.clone()),
         );
     }
 
-    for device in &store.devices {
+    for device in &devices {
         let label = device.label.clone();
         let is_mounted = device.mount_point.is_some();
+        let object_path = device.object_path.clone();
+        let mount_point = device.mount_point.clone();
 
-        card = card.child(
-            div()
-                .flex()
-                .items_center()
-                .justify_between()
-                .gap(px(6.))
-                .child(div().text_color(theme::fg(cx)).child(label))
-                .child(
+        // The pane entity handle, so the mount callback (which only has
+        // `&mut App`, no `Window`) can navigate the pane after mounting.
+        let pane = cx.entity();
+
+        let row = div()
+            .id(SharedString::from(format!("device-row-{object_path}")))
+            .flex()
+            .items_center()
+            .justify_between()
+            .gap(px(6.))
+            .cursor_pointer()
+            .hover(move |this| this.bg(hover_bg));
+
+        // Whole row: navigate when mounted, mount+navigate when unmounted.
+        let row = if let Some(backend) = &backend {
+            let backend = backend.clone();
+            let object_path = object_path.clone();
+            let mount_point = mount_point.clone();
+            let pane = pane.clone();
+            row.on_click(
+                cx.listener(move |this, _, window, cx| {
+                    if let Some(mp) = &mount_point {
+                        this.change_dir(mp.to_string_lossy().to_string(), window, cx);
+                    } else {
+                        let pane = pane.clone();
+                        devices_store::DeviceStore::mount_and_navigate(
+                            cx,
+                            backend.clone(),
+                            object_path.clone(),
+                            move |cx, path| {
+                                let path = path.to_string_lossy().to_string();
+                                pane.update(cx, |pane, cx| pane.navigate_to_path(path, cx));
+                            },
+                        );
+                    }
+                }),
+            )
+        } else {
+            row
+        };
+
+        // Right-hand zones: separate click targets for unmount (mounted only)
+        // and eject (removable drives only), so they don't double as the
+        // navigate/mount click on the row itself.
+        let mut zones = div().flex().items_center().gap(px(8.));
+
+        // Mount/unmount target.
+        zones = zones.child(if is_mounted {
+            match &backend {
+                Some(backend) => {
+                    let backend = backend.clone();
+                    let object_path = object_path.clone();
                     div()
-                        .text_color(theme::muted(cx))
+                        .id(SharedString::from(format!("device-unmount-{object_path}")))
+                        .text_color(muted)
                         .text_xs()
-                        .child(if is_mounted { "unmount" } else { "mount" }),
-                ),
-        );
+                        .cursor_pointer()
+                        .hover(move |this| this.text_color(danger))
+                        .child("unmount")
+                        .on_click(cx.listener(move |_this, _, _window, cx| {
+                            devices_store::DeviceStore::unmount(
+                                cx,
+                                backend.clone(),
+                                object_path.clone(),
+                            );
+                            cx.stop_propagation();
+                        }))
+                }
+                // No live backend: render the label as-is (no click target).
+                // The `.id()` here exists only to match the `Some` arm's
+                // `Stateful<Div>` type so the match arms unify — it carries no
+                // interactivity.
+                None => div()
+                    .id(SharedString::from(format!("device-unmount-{object_path}")))
+                    .text_color(muted)
+                    .text_xs()
+                    .child("unmount"),
+            }
+        } else {
+            // Passive "mount" label (the row click itself mounts). The `.id()`
+            // matches the `is_mounted` arm's `Stateful<Div>` type so the if/else
+            // arms unify — it carries no interactivity.
+            div()
+                .id(SharedString::from(format!("device-mount-{object_path}")))
+                .text_color(muted)
+                .text_xs()
+                .child("mount")
+        });
+
+        // Eject target: only for removable volumes that reference a Drive
+        // object (`Drive.Eject` operates on the drive; internal non-removable
+        // disks are left alone — T008: foreign internal partitions are off
+        // limits without an explicit user request).
+        let can_eject = device.is_removable && device.drive_object_path.is_some();
+        if can_eject {
+            let drive_object_path = device.drive_object_path.clone();
+            zones = zones.child(match &backend {
+                Some(backend) => {
+                    let backend = backend.clone();
+                    let object_path = object_path.clone();
+                    let drive_object_path = drive_object_path.clone();
+                    div()
+                        .id(SharedString::from(format!("device-eject-{object_path}")))
+                        .text_color(muted)
+                        .text_xs()
+                        .cursor_pointer()
+                        .hover(move |this| this.text_color(danger))
+                        .child("eject")
+                        .on_click(cx.listener(move |_this, _, _window, cx| {
+                            devices_store::DeviceStore::eject(
+                                cx,
+                                backend.clone(),
+                                object_path.clone(),
+                                drive_object_path.clone(),
+                            );
+                            cx.stop_propagation();
+                        }))
+                }
+                // No live backend: passive label (id matches the `Some` arm's
+                // `Stateful<Div>` type so the match arms unify).
+                None => div()
+                    .id(SharedString::from(format!("device-eject-{object_path}")))
+                    .text_color(muted)
+                    .text_xs()
+                    .child("eject"),
+            });
+        }
+
+        let row = row.child(div().text_color(fg).child(label)).child(zones);
+
+        card = card.child(row);
     }
 
     card.into_any_element()

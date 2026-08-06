@@ -270,10 +270,20 @@ impl ExplorerPage {
     }
 
     // Subscribes to a tab's navigation events, keyed by its entity id so the map
-    // stays consistent regardless of pane/tab position.
+    // stays consistent regardless of pane/tab position. Also registers a
+    // `DeviceStore` global observer on the tab so the Devices sidebar repaints
+    // when mount/unmount updates the store asynchronously (T008) — without it,
+    // only the initial listing (which beats first paint) would ever show.
     fn subscribe_tab(&mut self, tab: &Entity<ExplorerPane>, cx: &mut Context<Self>) {
         let subscription = cx.subscribe(tab, Self::on_pane_event);
         self.tab_subscriptions.insert(tab.entity_id(), subscription);
+        tab.update(cx, |pane, cx| {
+            pane.subs.push(
+                cx.observe_global::<chronos_fm_ui::devices_store::DeviceStore>(|_pane, cx| {
+                    cx.notify();
+                }),
+            );
+        });
     }
 
     // Replays the active `[ui]` config onto a freshly built tab and, when given,

@@ -76,17 +76,20 @@ impl ExplorerPane {
         self.history_index += 1;
     }
 
-    /// Mirrors a path requested by a sibling pane while `synced_panes` is on
-    /// (§3.2). Unlike [`change_dir`], it does not re-emit a navigation event, so
-    /// the originating pane is not driven back into an update loop.
-    pub(crate) fn navigate_to_synced(&mut self, path: String, cx: &mut Context<Self>) {
+    /// Window-less navigation shared by [`navigate_to_path`] and
+    /// [`navigate_to_synced`]: clears search state, records history, and
+    /// reloads the listing. `emit` controls whether `PaneEvent::Navigated` is
+    /// raised — the devices mount callback emits so synced panes follow and the
+    /// session saves; mirrored sync navigation does not, to avoid driving the
+    /// originating pane back into an update loop.
+    fn navigate_without_window(&mut self, path: String, emit: bool, cx: &mut Context<Self>) {
         if path == self.cwd {
             return;
         }
-        // Clear search state so mirrored navigation doesn't leave a stale filter
-        // or full-text results from the previous directory visible. This mirrors
-        // the `close_search` reset on `change_dir`, minus the window-bound editor
-        // sync (the subscription that drives sync has no `Window`).
+        // Clear search state so the destination doesn't show a stale filter or
+        // full-text results from the previous directory (mirrors the
+        // `close_search` reset on `change_dir`, minus the window-bound editor
+        // sync — these callers have no `Window`).
         self.search_visible = false;
         self.search_results = None;
         self.search_query.clear();
@@ -94,7 +97,24 @@ impl ExplorerPane {
         self.cwd = path;
         self.entries.clear();
         self.reload();
+        if emit {
+            cx.emit(PaneEvent::Navigated(self.cwd.clone()));
+        }
         cx.notify();
+    }
+
+    /// Navigates to `path` from an async completion callback that has no
+    /// `Window` (the Devices panel's mount-then-navigate, T008). Emits
+    /// `PaneEvent::Navigated` so synced panes follow and the session saves.
+    pub(crate) fn navigate_to_path(&mut self, path: String, cx: &mut Context<Self>) {
+        self.navigate_without_window(path, true, cx);
+    }
+
+    /// Mirrors a path requested by a sibling pane while `synced_panes` is on
+    /// (§3.2). Unlike [`navigate_to_path`], it does not re-emit a navigation
+    /// event, so the originating pane is not driven back into an update loop.
+    pub(crate) fn navigate_to_synced(&mut self, path: String, cx: &mut Context<Self>) {
+        self.navigate_without_window(path, false, cx);
     }
 
     pub(crate) fn go_back(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -139,7 +159,7 @@ impl ExplorerPane {
     }
 
     /// Open the Properties dialog for the currently selected entry.
-    pub(crate) fn show_properties(&mut self, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) {
+    pub(crate) fn show_properties(&mut self, cx: &mut gpui::Context<Self>) {
         let selected = self.active_index
             .and_then(|idx| self.filtered_entries.get(idx).cloned());
         let Some(item) = selected else {
@@ -151,9 +171,46 @@ impl ExplorerPane {
         cx.notify();
     }
 
+    /// Open the Properties dialog for the entry at `path` (used by the context
+    /// menu, which is built for the right-clicked file rather than the
+    /// currently active row). No-op if the path is not in the current listing.
+    pub(crate) fn show_properties_for(&mut self, path: &str, cx: &mut gpui::Context<Self>) {
+        let Some(item) = self.filtered_entries.iter().find(|e| e.path == path).cloned() else {
+            return;
+        };
+        let dialog = cx.new(|cx| super::properties::PropertiesDialog::new(item, cx));
+        self.properties_dialog = Some(dialog);
+        cx.notify();
+    }
+
     /// Close the Properties dialog.
     pub(crate) fn close_properties(&mut self, cx: &mut gpui::Context<Self>) {
         self.properties_dialog = None;
         cx.notify();
+    }
+
+    /// Open the context menu for a file at the given click position.
+    pub(crate) fn open_context_menu(
+        &mut self,
+        file_path: String,
+        position: gpui::Point<gpui::Pixels>,
+        cx: &mut gpui::Context<Self>,
+    ) {
+        let state = super::context_menu::ContextMenuState::for_file(&file_path, position);
+        self.context_menu = Some(state);
+        cx.notify();
+    }
+
+    /// Close the context menu.
+    pub(crate) fn close_context_menu(&mut self, cx: &mut gpui::Context<Self>) {
+        self.context_menu = None;
+        cx.notify();
+    }
+
+    /// Launch the default handler for a file (xdg-open equivalent).
+    pub(crate) fn open_with_default(&mut self, file_path: &str) {
+        if let Err(error) = chronos_fm_services::mime::open_default(file_path) {
+            tracing::error!("Failed to open {}: {}", file_path, error);
+        }
     }
 }

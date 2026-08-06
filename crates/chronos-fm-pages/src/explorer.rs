@@ -10,6 +10,8 @@ mod state;
 mod types;
 /// Rendering of a single explorer pane: header, sidebar, listing, and preview.
 pub mod view;
+/// Right-click context menu with "Open With" submenu (T007).
+pub mod context_menu;
 
 #[cfg(test)]
 mod tests;

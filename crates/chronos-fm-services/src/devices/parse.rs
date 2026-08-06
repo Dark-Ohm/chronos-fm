@@ -33,6 +33,12 @@ pub struct Device {
     pub mount_point: Option<PathBuf>,
     pub is_removable: bool,
     pub size_bytes: u64,
+    /// Object path of the owning `org.freedesktop.UDisks2.Drive` object
+    /// (from the `Block.Drive` property). `Drive.Eject` lives on the Drive
+    /// object, not the Block object the panel holds, so this is what `eject`
+    /// must target (T008). `None` when the block device has no Drive
+    /// reference (non-removable, no owning drive).
+    pub drive_object_path: Option<String>,
 }
 
 fn as_bool(v: Option<&DeviceValue>) -> bool {
@@ -125,6 +131,7 @@ pub fn parse_managed_objects(raw: &ManagedObjects) -> Vec<Device> {
             mount_point,
             is_removable,
             size_bytes: as_u64(block.get("Size")),
+            drive_object_path: drive_path,
         });
     }
 
@@ -224,6 +231,75 @@ mod tests {
         );
 
         assert!(parse_managed_objects(&raw).is_empty());
+    }
+
+    #[test]
+    fn drive_object_path_populates_from_block_drive_property() {
+        let mut raw: ManagedObjects = HashMap::new();
+        raw.insert(
+            "/org/freedesktop/UDisks2/block_devices/sdb1".to_string(),
+            {
+                let mut ifaces = HashMap::new();
+                ifaces.insert(
+                    "org.freedesktop.UDisks2.Block".to_string(),
+                    props(&[
+                        ("Device", DeviceValue::Bytes(b"/dev/sdb1\0".to_vec())),
+                        ("IdLabel", DeviceValue::Str("MY_USB".to_string())),
+                        ("Size", DeviceValue::U64(8_000_000_000)),
+                        ("HintSystem", DeviceValue::Bool(false)),
+                        (
+                            "Drive",
+                            DeviceValue::ObjectPath(
+                                "/org/freedesktop/UDisks2/drives/USB_Stick".to_string(),
+                            ),
+                        ),
+                    ]),
+                );
+                ifaces.insert(
+                    "org.freedesktop.UDisks2.Filesystem".to_string(),
+                    props(&[("MountPoints", DeviceValue::Str(String::new()))]),
+                );
+                ifaces
+            },
+        );
+        // No drive object needed for this test — we only assert the resolved
+        // drive path carried on the Device.
+
+        let devices = parse_managed_objects(&raw);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(
+            devices[0].drive_object_path.as_deref(),
+            Some("/org/freedesktop/UDisks2/drives/USB_Stick")
+        );
+    }
+
+    #[test]
+    fn drive_object_path_is_none_when_block_has_no_drive() {
+        let mut raw: ManagedObjects = HashMap::new();
+        raw.insert(
+            "/org/freedesktop/UDisks2/block_devices/sdc1".to_string(),
+            {
+                let mut ifaces = HashMap::new();
+                ifaces.insert(
+                    "org.freedesktop.UDisks2.Block".to_string(),
+                    props(&[
+                        ("Device", DeviceValue::Bytes(b"/dev/sdc1\0".to_vec())),
+                        ("IdLabel", DeviceValue::Str("BACKUP".to_string())),
+                        ("Size", DeviceValue::U64(1_000_000_000)),
+                        ("HintSystem", DeviceValue::Bool(false)),
+                    ]),
+                );
+                ifaces.insert(
+                    "org.freedesktop.UDisks2.Filesystem".to_string(),
+                    props(&[("MountPoints", DeviceValue::Str(String::new()))]),
+                );
+                ifaces
+            },
+        );
+
+        let devices = parse_managed_objects(&raw);
+        assert_eq!(devices.len(), 1);
+        assert_eq!(devices[0].drive_object_path, None);
     }
 
     #[test]

@@ -52,7 +52,7 @@ pub fn render(
                     cx.notify();
                 }
                 "i" if with_modifier => {
-                    this.show_properties(window, cx);
+                    this.show_properties(cx);
                     cx.stop_propagation();
                     cx.notify();
                 }
@@ -148,6 +148,28 @@ pub fn render(
             ),
         )
         .child(render_properties_dialog(page, cx))
+        .child(render_context_menu(page, window, cx))
+}
+
+fn render_context_menu(
+    page: &mut ExplorerPane,
+    window: &mut Window,
+    cx: &mut Context<ExplorerPane>,
+) -> impl IntoElement {
+    if let Some(menu) = &page.context_menu.clone() {
+        return div()
+            .absolute()
+            .inset_0()
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _event, _window, cx| {
+                    this.close_context_menu(cx);
+                }),
+            )
+            .child(crate::explorer::context_menu::render(menu, window, cx))
+            .into_any_element();
+    }
+    div().into_any_element()
 }
 
 fn render_properties_dialog(

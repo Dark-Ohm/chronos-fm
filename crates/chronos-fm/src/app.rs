@@ -57,7 +57,9 @@ impl ChronosFmApp {
 
             // Initialize the removable-media device store global and start the
             // background hotplug watcher (non-blocking — if udisks2 is unreachable,
-            // the Devices section just renders nothing).
+            // the Devices section just renders nothing). The watcher also
+            // registers the live backend as a global (T008) so sidebar clicks
+            // can mount/unmount without a new D-Bus connection.
             chronos_fm_ui::devices_store::init(app);
             spawn_device_hotplug_watcher(app);
 
@@ -149,6 +151,15 @@ fn spawn_device_hotplug_watcher(cx: &mut App) {
 
         let backend_for_list: Arc<dyn chronos_fm_services::devices::DeviceBackend> =
             backend.clone();
+
+        // Expose the backend to the UI layer (T008): the sidebar's click
+        // handlers call `DeviceStore::mount_and_navigate`/`unmount` with this
+        // handle instead of creating a fresh D-Bus connection per click.
+        cx.update(|cx| {
+            cx.update_global::<chronos_fm_ui::devices_store::DeviceStore, _>(|store, _cx| {
+                store.backend = Some(backend_for_list.clone());
+            });
+        });
 
         // Initial snapshot.
         refresh_devices(cx, backend_for_list.clone()).await;

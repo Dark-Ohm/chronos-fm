@@ -9,6 +9,7 @@
 // Test fixtures write files directly; the synchronous-fs ban targets app code.
 #![allow(clippy::disallowed_methods)]
 
+use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -16,6 +17,7 @@ use gpui::{AppContext, TestAppContext, WindowHandle, point, px};
 use gpui_component::input::InputState;
 use gpui_component::resizable::ResizableState;
 use chronos_fm_core::config;
+use chronos_fm_services::devices::{Device, DeviceBackend};
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_store::{KvStore, RedbKvStore, StoreLogConfig};
 
@@ -960,6 +962,117 @@ async fn apply_filter_resets_stale_selection(cx: &mut TestAppContext) {
             page.apply_filter();
             assert!(page.selection.is_empty());
             assert_eq!(page.active_index, None);
+        })
+        .unwrap();
+}
+
+/// In-memory `DeviceBackend` for the Devices panel click-chain tests (T008):
+/// `mount` always succeeds with a fixed path, so the wiring the sidebar row
+/// click runs (mount → navigate) is exercised against a mock instead of a
+/// live D-Bus connection (ticket verification: `FakeBackend`-style coverage).
+struct DevicesFakeBackend {
+    mounted_at: PathBuf,
+}
+
+#[async_trait::async_trait]
+impl DeviceBackend for DevicesFakeBackend {
+    async fn list(&self) -> anyhow::Result<Vec<Device>> {
+        Ok(vec![])
+    }
+    async fn mount(&self, _object_path: &str) -> anyhow::Result<PathBuf> {
+        Ok(self.mounted_at.clone())
+    }
+    async fn unmount(&self, _object_path: &str) -> anyhow::Result<()> {
+        Ok(())
+    }
+    async fn eject(&self, _object_path: &str, _drive_object_path: Option<&str>) -> anyhow::Result<()> {
+        Ok(())
+    }
+}
+
+#[gpui::test]
+async fn navigate_to_path_moves_pane_and_clears_search_without_window(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("a");
+    let b = dir.path().join("b");
+    std::fs::create_dir(&a).unwrap();
+    std::fs::create_dir(&b).unwrap();
+    let a = a.to_string_lossy().to_string();
+    let b = b.to_string_lossy().to_string();
+
+    let window = new_explorer(cx);
+    window
+        .update(cx, |page, _window, cx| {
+            page.cwd = a.clone();
+            page.search_query = "stale".to_string();
+            page.search_visible = true;
+            page.search_results = Some(Vec::new());
+
+            // `navigate_to_path` is the target of the devices mount callback
+            // (T008): it navigates without a `Window` and clears search state.
+            page.navigate_to_path(b.clone(), cx);
+            assert_eq!(page.cwd, b);
+            assert!(page.search_query.is_empty(), "stale filter cleared");
+            assert!(!page.search_visible);
+            assert!(page.search_results.is_none());
+
+            // Same-path navigation is a no-op (no duplicate history entry).
+            let len = page.history.len();
+            page.navigate_to_path(b.clone(), cx);
+            assert_eq!(page.history.len(), len);
+        })
+        .unwrap();
+}
+
+#[gpui::test]
+async fn device_mount_then_navigate_moves_pane_into_mount_path(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().to_string();
+    let mount_dir = dir.path().join("mnt");
+    std::fs::create_dir(&mount_dir).unwrap();
+    let mount_path = mount_dir.to_string_lossy().to_string();
+
+    // Register the live backend on the store, as `spawn_device_hotplug_watcher`
+    // does in the real app; the sidebar click handler reads it from there.
+    let backend: Arc<dyn DeviceBackend> = Arc::new(DevicesFakeBackend {
+        mounted_at: mount_dir.clone(),
+    });
+    cx.update(|cx| {
+        let store = chronos_fm_ui::devices_store::DeviceStore {
+            devices: Vec::new(),
+            last_error: None,
+            backend: Some(backend.clone()),
+            mounting: std::collections::HashSet::new(),
+            unmounting: std::collections::HashSet::new(),
+            ejecting: std::collections::HashSet::new(),
+        };
+        cx.set_global(store);
+    });
+
+    let window = new_explorer(cx);
+    window
+        .update(cx, |page, _window, cx| {
+            page.cwd = root.clone();
+            // Exactly what `render_devices_section`'s unmounted-row `.on_click`
+            // runs: mount via the store, then navigate the pane into the mount
+            // point. The callback has only `&mut App` (no `Window`).
+            let pane = cx.entity();
+            chronos_fm_ui::devices_store::DeviceStore::mount_and_navigate(
+                cx,
+                backend.clone(),
+                "/org/freedesktop/UDisks2/block_devices/sdb1".to_string(),
+                move |cx, path| {
+                    let path = path.to_string_lossy().to_string();
+                    pane.update(cx, |pane, cx| pane.navigate_to_path(path, cx));
+                },
+            );
+        })
+        .unwrap();
+
+    cx.run_until_parked();
+    window
+        .read_with(cx, |page, _cx| {
+            assert_eq!(page.cwd, mount_path, "pane follows the mounted volume");
         })
         .unwrap();
 }

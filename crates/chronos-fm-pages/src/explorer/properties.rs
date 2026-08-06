@@ -7,7 +7,7 @@ use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_ui::patterns::{elevated_card, section_header};
 use chronos_fm_ui::theme::theme;
 use gpui::{
-    prelude::*, App, AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, Render,
+    prelude::*, App, AppContext, Context, EventEmitter, FocusHandle, Focusable, Render,
     Styled, Window, div, px,
 };
 use std::path::Path;

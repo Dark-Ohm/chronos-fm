@@ -60,6 +60,7 @@ fn render_grid_item(
     let modified_text = format_date(&item.modified);
     let activation_item = item.clone();
     let preview_item = item.clone();
+    let context_menu_path = item.path.clone();
 
     let bg_color = if selected {
         theme::bg_hover(cx)
@@ -87,6 +88,21 @@ fn render_grid_item(
         .flex_col()
         .items_start()
         .gap_3()
+        .on_mouse_down(
+            gpui::MouseButton::Right,
+            cx.listener(move |this, event: &gpui::MouseDownEvent, _window, cx| {
+                // Normalize selection to the right-clicked tile (b3/b4
+                // convention): single-select unless it is already selected.
+                if !this.is_selected(ix) {
+                    this.select_single(ix);
+                }
+                this.open_context_menu(
+                    context_menu_path.clone(),
+                    event.position,
+                    cx,
+                );
+            }),
+        )
         .on_mouse_down(
             gpui::MouseButton::Left,
             cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
