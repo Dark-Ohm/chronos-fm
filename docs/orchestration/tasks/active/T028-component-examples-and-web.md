@@ -58,17 +58,16 @@
 | std под wasm32 | ✅ **поставлен** — `rust-wasm 1:1.97.1-1.1` из `cachyos-extra-v3`, версия совпадает с установленным rust. В `/usr/lib/rustlib/` появились `wasm32-unknown-unknown`, `wasm32v1-none`, `wasm32-wasip1/-threads`, `wasm32-wasip2` |
 | `wasm-component-ld` | ✅ поставлен, `0.5.28-1.1`, `/usr/bin/wasm-component-ld` (нужен для `wasip2`, для нашего `wasm32-unknown-unknown` не обязателен) |
 | `bun` | ✅ установлен (`~/.bun/bin/bun`) |
-| `wasm-bindgen` CLI | ❌ **всё ещё отсутствует** — ни в `PATH`, ни в `~/.cargo/bin` |
-| `wasm-bindgen` в локе | **0.2.121** |
+| `wasm-bindgen` CLI | ✅ **поставлен** — `wasm-bindgen-cli v0.2.121` через `cargo install`, бинари в `~/.cargo/bin/`: `wasm-bindgen`, `wasm-bindgen-test-runner`, `wasm2es6js` |
+| `wasm-bindgen` в локе | **0.2.121** — совпадает с CLI |
 | `wasm-bindgen` в репозитории Arch | **0.2.126** — не брать, см. Стену 2.1 |
 
-Шаг 1 закрыт пользователем 2026-08-07. Начинать с шага 2.
+Шаги 1 и 2 закрыты 2026-08-07 до раздачи тикета. Начинать с шага 3.
 
 ### Шаги
 
 1. ~~Поставить std под wasm~~ — **сделано**, см. таблицу выше.
-2. Поставить CLI **строго под лок**:
-   `cargo install wasm-bindgen-cli --version 0.2.121`.
+2. ~~Поставить CLI под лок~~ — **сделано**, 0.2.121.
 3. `./scripts/build-wasm.sh` (debug) из `crates/story-web/`.
 4. `cd www && bun install && bun run dev`, открыть в браузере.
 5. Кадр работающей галереи в браузере плюс консоль.
