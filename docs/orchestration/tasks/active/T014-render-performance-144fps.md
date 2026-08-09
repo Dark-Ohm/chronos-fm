@@ -7,7 +7,9 @@
 > **T014-A GO:** main-thread taffy ~47–53% of UI self samples.
 > merge_thread residual (33–54% process) — не loop, ортогонален A.
 >
-> **Следующий инженерный тикет:** T014-A layout memoization в форке gpui.
+> **T014-A код лендится** в Source/gpui (layout memo). Ждёт architect accept + live AFTER-A optional.
+>
+> **Следующий:** architect stamp T014-A; optional live hover perf.
 
 **Приоритет:** P1 — цель проекта («blazing fast gpui file manager»), сейчас
 не выполняется. Не блокер функционала, но блокер daily-driver-ощущения.
