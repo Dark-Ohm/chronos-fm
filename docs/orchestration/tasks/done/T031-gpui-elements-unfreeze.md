@@ -1,5 +1,11 @@
 # T031 — Форк: расконсервировать `gpui_elements`
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> Unfreeze investigation → **delete crate**. Not used; 6× API drift to
+> gpui-ce. Source commit `fa2d64f`. Report:
+> `report-log/T031-gpui-elements-unfreeze-report.md`.
+
 **Приоритет:** P3 — ниже остальных: крейт сейчас никому не нужен, но он
 единственный **зафиксированный** случай API-дрейфа между форком и
 вендоренным кодом, и потому полезен как мерка расхождения.
