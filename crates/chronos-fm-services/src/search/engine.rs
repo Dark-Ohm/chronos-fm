@@ -4,6 +4,25 @@ use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
 use anyhow::{Context, Result};
 use std::sync::{Arc, Mutex};
+use std::time::Duration;
+
+/// Debounce window for the home-directory file watcher (T022 Part D).
+///
+/// Bumped from the original 2 s to 5 s after the T014 perf measurement showed
+/// the notify-rs debouncer eating ~30 % of the idle frame budget hashing paths
+/// (`hash<PathBuf>`, `write<Sip13Rounds>` in the perf profile). Longer batching
+/// reduces the number of times `process_changes` → tantivy commit wakes up,
+/// at the cost of the search index trailing filesystem reality by up to the
+/// window. The cost is named explicitly in the T022 report so it isn't
+/// presented as a free win — typical file managers that ship an indexed search
+/// pick 2–5 s for home-relative debouncing; we choose the conservative end.
+///
+/// **Pause-on-unfocus lever** (second lever from T014's option list) was
+/// explicitly considered and **deferred** in this commit: it requires a focus
+/// signal from the GPUI layer into the search service, which would add a new
+/// `Service` boundary. The ticket's "либо сделать, либо явно отказаться"
+/// rule is honoured here by writing this comment, not by omitting it.
+const WATCHER_DEBOUNCE: Duration = Duration::from_secs(5);
 
 /// Deferred initial-indexing work handed to the caller so it can run on GPUI's
 /// background executor (`cx.background_spawn`) instead of a `tokio::task::
@@ -96,8 +115,7 @@ impl SearchEngine {
         let (tx, rx) = async_channel::bounded(100);
 
         let home_dir = dirs::home_dir().context("Home directory not found")?;
-        use std::time::Duration;
-        let watcher = FileWatcher::new(home_dir, tx, Duration::from_secs(2), excludes)?;
+        let watcher = FileWatcher::new(home_dir, tx, WATCHER_DEBOUNCE, excludes)?;
 
         // The watcher consumer does blocking index updates, so it runs on a
         // dedicated std::thread rather than an async task (async-runtime.md §4).

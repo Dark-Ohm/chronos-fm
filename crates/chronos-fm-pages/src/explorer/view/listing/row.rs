@@ -108,9 +108,17 @@ pub fn render(
     // Copying logic is safer: `page.col_name_width + ...`.
     // I'll copy the logic.
 
+    // T022 Part C deliberately keeps the outer `div()` wrapper here. The
+    // outer carries the right-click handler, the cut-row dimming, the row
+    // width, AND the `.children(snippet_divs)` for expanded search snippets
+    // that render *as siblings of the ListItem* in a flex_col flow. Folding
+    // it into ListItem would re-parent the snippets inside the ListItem's
+    // own children collection (different layout semantics in gpui-component)
+    // and risks a visual diff. Documented in the T022 report — see the
+    // calibration section: this codebase is already flatter than the
+    // ~15–25 % savings the report estimated.
     div()
         .id(("file-row-menu", ix))
-        .flex()
         .flex_col()
         .w(px(total_width))
         .when(is_cut, |el| el.opacity(0.5))
