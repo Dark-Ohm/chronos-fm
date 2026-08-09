@@ -1,8 +1,9 @@
-//! Live Git status panel (T010, Milestone A).
+//! Live Git status panel (T010, Milestone A + B).
 //!
 //! Three sections (Staged / Modified / Untracked) with per-row stage/unstage
-//! actions, a commit bar, and a directory mode (follow the active explorer
-//! tab or pin to a specific path).
+//! actions, a commit bar, directory follow/pin, **local branch list /
+//! create / checkout**, and a **unified text diff** for the selected path
+//! (Milestone B).
 //!
 //! Repository status is computed on the background executor and refreshed by a
 //! `.git`-directory watcher (400 ms debounce), following the same channel +
@@ -45,6 +46,15 @@ fn should_refresh(
     changed || follow_dir != last_dir
 }
 
+/// Selection for the unified-diff panel (Milestone B).
+#[derive(Clone, Debug)]
+struct DiffSelection {
+    path: String,
+    /// True when the path is shown under Staged (index vs HEAD).
+    staged: bool,
+    text: String,
+}
+
 /// The live Git status panel.
 pub struct GitPage {
     explorer: WeakEntity<ExplorerPage>,
@@ -54,6 +64,12 @@ pub struct GitPage {
     error: Option<String>,
     refreshing: bool,
     message_input: Entity<InputState>,
+    /// Milestone B: new-branch name field.
+    branch_input: Entity<InputState>,
+    /// Local branch names (short).
+    branches: Vec<String>,
+    /// Selected file unified diff (if any).
+    selected_diff: Option<DiffSelection>,
     _watcher: Option<GitWatcher>,
     _shutdown_tx: Option<mpsc::Sender<()>>,
     refresh_tx: Option<mpsc::Sender<()>>,
@@ -83,6 +99,11 @@ impl GitPage {
             state.set_placeholder("Commit message", window, cx);
             state
         });
+        let branch_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_placeholder("New branch name", window, cx);
+            state
+        });
 
         let (tx, rx) = mpsc::channel::<()>();
         let refresh_tx = tx.clone();
@@ -95,6 +116,9 @@ impl GitPage {
             error: None,
             refreshing: false,
             message_input,
+            branch_input,
+            branches: Vec::new(),
+            selected_diff: None,
             _watcher: None,
             _shutdown_tx: Some(tx),
             refresh_tx: Some(refresh_tx),
@@ -137,7 +161,12 @@ impl GitPage {
             async move {
                 let result = cx
                     .background_executor()
-                    .spawn(async move { git::open_repo(&dir).and_then(|repo| git::status(&repo)) })
+                    .spawn(async move {
+                        let repo = git::open_repo(&dir)?;
+                        let status = git::status(&repo)?;
+                        let branches = git::list_branches(&repo).unwrap_or_default();
+                        Ok::<_, GitError>((status, branches))
+                    })
                     .await;
                 this.update(&mut cx, |page, cx| {
                     if page.refresh_generation != generation {
@@ -148,14 +177,17 @@ impl GitPage {
                     }
                     page.refreshing = false;
                     match result {
-                        Ok(status) => {
+                        Ok((status, branches)) => {
                             page.recreate_watcher(&status.git_dir);
                             page.status = Some(status);
+                            page.branches = branches;
                             page.no_repo = false;
                             page.error = None;
                         }
                         Err(GitError::NotARepository) => {
                             page.status = None;
+                            page.branches.clear();
+                            page.selected_diff = None;
                             page.no_repo = true;
                             page.error = None;
                             page._watcher = None;
@@ -322,6 +354,112 @@ impl GitPage {
         self._watcher = None;
         self.refresh(cx);
     }
+
+    // --- Milestone B -------------------------------------------------------
+
+    fn checkout_branch(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let dir = self.current_dir(cx);
+        let name = name.to_string();
+        let err_name = name.clone();
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::checkout_branch(&repo, &name).map_err(|e| e.to_string())
+                    })
+                    .await;
+                this.update_in(&mut cx, |page, _window, cx| {
+                    if let Err(msg) = result {
+                        page.error = Some(format!("checkout {err_name}: {msg}"));
+                    } else {
+                        page.selected_diff = None;
+                    }
+                    page.refresh(cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn create_branch(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let dir = self.current_dir(cx);
+        let name = self.branch_input.read(cx).text().to_string();
+        if name.trim().is_empty() {
+            self.error = Some("branch name is empty".to_string());
+            cx.notify();
+            return;
+        }
+        let err_name = name.clone();
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::create_branch(&repo, &name).map_err(|e| e.to_string())?;
+                        git::checkout_branch(&repo, &name).map_err(|e| e.to_string())
+                    })
+                    .await;
+                this.update_in(&mut cx, |page, window, cx| {
+                    if let Err(msg) = result {
+                        page.error = Some(format!("create branch {err_name}: {msg}"));
+                    } else {
+                        page.branch_input.update(cx, |input, cx| {
+                            input.set_value("", window, cx);
+                        });
+                        page.selected_diff = None;
+                    }
+                    page.refresh(cx);
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
+
+    fn show_diff(&mut self, path: &str, staged: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let dir = self.current_dir(cx);
+        let path = path.to_string();
+        let err_path = path.clone();
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx
+                    .background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::unified_diff(&repo, &path, staged).map_err(|e| e.to_string())
+                    })
+                    .await;
+                this.update_in(&mut cx, |page, _window, cx| {
+                    match result {
+                        Ok(text) => {
+                            page.selected_diff = Some(DiffSelection {
+                                path: err_path,
+                                staged,
+                                text,
+                            });
+                            page.error = None;
+                        }
+                        Err(msg) => {
+                            page.error = Some(format!("diff {err_path}: {msg}"));
+                        }
+                    }
+                    cx.notify();
+                })
+                .ok();
+            }
+        })
+        .detach();
+    }
 }
 
 // --- render ----------------------------------------------------------------
@@ -344,6 +482,13 @@ impl GitPage {
         let no_repo = self.no_repo;
         let error = self.error.clone();
         let refreshing = self.refreshing;
+        let branches = self.branches.clone();
+        let current_branch = status
+            .as_ref()
+            .map(|s| s.branch.clone())
+            .unwrap_or_default();
+        let selected_diff = self.selected_diff.clone();
+        let branch_input = self.branch_input.clone();
 
         div()
             .size_full()
@@ -354,10 +499,42 @@ impl GitPage {
             .bg(theme::bg(cx))
             .child(render_header(status.as_ref(), no_repo, error, refreshing, cx))
             .when_some(status.as_ref(), |el, s| {
-                el.child(render_file_section("Staged", &s.staged, false, theme::accent(cx), cx))
-                    .child(render_file_section("Modified", &s.modified, true, theme::muted(cx), cx))
-                    .child(render_file_section("Untracked", &s.untracked, true, theme::fg_secondary(cx), cx))
-                    .child(render_commit_bar(self.message_input.clone(), s.staged.is_empty(), cx))
+                el.child(render_branches(
+                    &branches,
+                    &current_branch,
+                    branch_input,
+                    cx,
+                ))
+                .child(render_file_section(
+                    "Staged",
+                    &s.staged,
+                    false,
+                    false,
+                    theme::accent(cx),
+                    cx,
+                ))
+                .child(render_file_section(
+                    "Modified",
+                    &s.modified,
+                    true,
+                    false,
+                    theme::muted(cx),
+                    cx,
+                ))
+                .child(render_file_section(
+                    "Untracked",
+                    &s.untracked,
+                    true,
+                    false,
+                    theme::fg_secondary(cx),
+                    cx,
+                ))
+                .child(render_commit_bar(
+                    self.message_input.clone(),
+                    s.staged.is_empty(),
+                    cx,
+                ))
+                .when_some(selected_diff.as_ref(), |el, d| el.child(render_diff_panel(d, cx)))
             })
     }
 }
@@ -421,10 +598,97 @@ fn pin_button(cx: &mut Context<GitPage>) -> impl IntoElement {
         .child("📌 Pin")
 }
 
+fn render_branches(
+    branches: &[String],
+    current: &str,
+    branch_input: Entity<InputState>,
+    cx: &mut Context<GitPage>,
+) -> impl IntoElement {
+    let current = current.to_string();
+    elevated_card(cx)
+        .child(section_header(cx, "Branches", &format!("{} local", branches.len())))
+        .child(
+            div()
+                .mt(px(6.))
+                .flex()
+                .flex_wrap()
+                .gap(px(6.))
+                .children(branches.iter().map(|name| {
+                    let name = name.clone();
+                    let is_current = name == current;
+                    div()
+                        .cursor_pointer()
+                        .px(px(10.))
+                        .py(px(4.))
+                        .rounded(px(6.))
+                        .text_sm()
+                        .when(is_current, |this| {
+                            this.bg(theme::accent(cx))
+                                .text_color(theme::bg(cx))
+                                .font_weight(gpui::FontWeight::BOLD)
+                        })
+                        .when(!is_current, |this| {
+                            this.bg(theme::bg_hover(cx))
+                                .text_color(theme::fg(cx))
+                                .hover(|this| this.bg(theme::border(cx)))
+                        })
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener({
+                                let name = name.clone();
+                                move |this, _ev, window, cx| {
+                                    if name != this
+                                        .status
+                                        .as_ref()
+                                        .map(|s| s.branch.as_str())
+                                        .unwrap_or("")
+                                    {
+                                        this.checkout_branch(&name, window, cx);
+                                    }
+                                }
+                            }),
+                        )
+                        .child(if is_current {
+                            format!("● {name}")
+                        } else {
+                            name
+                        })
+                })),
+        )
+        .child(
+            div()
+                .mt(px(10.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(div().flex_1().child(Input::new(&branch_input)))
+                .child(
+                    div()
+                        .cursor_pointer()
+                        .px(px(12.))
+                        .py(px(6.))
+                        .rounded(px(6.))
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .bg(theme::accent(cx))
+                        .text_color(theme::bg(cx))
+                        .hover(|this| this.bg(theme::accent_hover(cx)))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _ev, window, cx| {
+                                this.create_branch(window, cx);
+                            }),
+                        )
+                        .child("Create & switch"),
+                ),
+        )
+}
+
 fn render_file_section(
     label: &str,
     entries: &[chronos_fm_services::git::RepoEntry],
     show_stage: bool,
+    staged_section: bool,
     color: Hsla,
     cx: &mut Context<GitPage>,
 ) -> impl IntoElement {
@@ -432,17 +696,35 @@ fn render_file_section(
         return div().into_any_element();
     }
     let count = entries.len();
+    // Staged section: show_stage=false (unstage button); diff uses staged=true.
+    let diff_staged = !show_stage || staged_section;
     div()
         .child(section_header(cx, label, &format!("{count} file{}", if count == 1 { "" } else { "s" })))
         .child(
             div().mt(px(4.)).border_1().border_color(theme::border(cx)).rounded(px(8.)).overflow_x_hidden()
                 .children(entries.iter().map(|entry| {
                     let path = entry.path.clone();
+                    let path_for_diff = entry.path.clone();
                     div()
                         .flex().items_center().justify_between()
                         .px(px(12.)).py(px(6.))
                         .hover(|this| this.bg(theme::bg_hover(cx)))
-                        .child(div().text_sm().text_color(color).child(entry.path.clone()))
+                        .child(
+                            div()
+                                .cursor_pointer()
+                                .text_sm()
+                                .text_color(color)
+                                .child(entry.path.clone())
+                                .on_mouse_down(
+                                    MouseButton::Left,
+                                    cx.listener({
+                                        let path = path_for_diff.clone();
+                                        move |this, _ev, window, cx| {
+                                            this.show_diff(&path, diff_staged, window, cx);
+                                        }
+                                    }),
+                                ),
+                        )
                         .child(
                             div().flex().gap(px(6.)).child(
                                 div()
@@ -467,6 +749,52 @@ fn render_file_section(
                 })),
         )
         .into_any_element()
+}
+
+fn render_diff_panel(diff: &DiffSelection, cx: &mut Context<GitPage>) -> impl IntoElement {
+    let title = if diff.staged {
+        format!("Diff (staged) — {}", diff.path)
+    } else {
+        format!("Diff (worktree) — {}", diff.path)
+    };
+    elevated_card(cx)
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(section_header(cx, &title, "unified"))
+                .child(
+                    div()
+                        .cursor_pointer()
+                        .text_xs()
+                        .text_color(theme::muted(cx))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _ev, _w, cx| {
+                                this.selected_diff = None;
+                                cx.notify();
+                            }),
+                        )
+                        .child("Close"),
+                ),
+        )
+        .child(
+            div()
+                .id("git-diff-scroll")
+                .mt(px(6.))
+                .max_h(px(280.))
+                .overflow_scroll()
+                .p(px(10.))
+                .rounded(px(8.))
+                .bg(theme::bg_secondary(cx))
+                .border_1()
+                .border_color(theme::border(cx))
+                .font_family("monospace")
+                .text_xs()
+                .text_color(theme::fg(cx))
+                .child(diff.text.clone()),
+        )
 }
 
 fn render_commit_bar(

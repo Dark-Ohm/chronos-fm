@@ -13,8 +13,10 @@
 возвращает пустое состояние. Блокер снят, тикет разблокирован.
 
 **Открыто:**
-- Milestone B — ветки (список / переключение / создание), unified
-  diff-панель с syntect.
+- ~~Milestone B — ветки + unified diff~~ **код 2026-08-09** (list/create/checkout
+  branches; click file → unified text diff; syntect colouring deferred).
+  Service tests green; live acceptance pending.
+- Milestone B residual: syntect highlighting of the diff pane.
 - Milestone C — push/pull через системный credential-helper и
   SSH-agent, stash.
 - Живой прогон: сервисный слой подтверждён (ветка `main`, 6 modified +

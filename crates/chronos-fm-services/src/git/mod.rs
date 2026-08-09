@@ -289,6 +289,229 @@ fn symbolic_head_branch(repo: &gix::Repository) -> String {
     "refs/heads/main".to_string()
 }
 
+// --- Milestone B: branches + unified diff ---------------------------------
+
+/// Local branch names (short, without `refs/heads/`), sorted.
+pub fn list_branches(repo: &gix::Repository) -> Result<Vec<String>, GitError> {
+    let platform = repo
+        .references()
+        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let mut names = Vec::new();
+    for r in platform
+        .local_branches()
+        .map_err(|e| GitError::Operation(e.to_string()))?
+    {
+        let r = r.map_err(|e| GitError::Operation(e.to_string()))?;
+        names.push(r.name().shorten().to_string());
+    }
+    names.sort();
+    names.dedup();
+    Ok(names)
+}
+
+/// Create a local branch at the current `HEAD` tip (does not switch).
+///
+/// Name is validated: non-empty, no spaces/slashes that would form nested
+/// refs beyond a single segment, no `..`.
+pub fn create_branch(repo: &gix::Repository, name: &str) -> Result<(), GitError> {
+    let name = name.trim();
+    validate_branch_name(name)?;
+    let head_id = repo
+        .head_id()
+        .map_err(|e| GitError::Operation(format!("HEAD: {e}")))?
+        .detach();
+    let full = format!("refs/heads/{name}");
+    repo.reference(
+        full.as_str(),
+        head_id,
+        gix::refs::transaction::PreviousValue::MustNotExist,
+        "chronos-fm: create branch",
+    )
+    .map_err(|e| GitError::Operation(format!("create branch: {e}")))?;
+    Ok(())
+}
+
+fn validate_branch_name(name: &str) -> Result<(), GitError> {
+    if name.is_empty() {
+        return Err(GitError::Operation("branch name is empty".into()));
+    }
+    if name.contains("..")
+        || name.contains(' ')
+        || name.contains('\\')
+        || name.starts_with('-')
+        || name.contains('\0')
+    {
+        return Err(GitError::Operation(format!(
+            "invalid branch name: {name:?}"
+        )));
+    }
+    // Allow a single path segment only (no nested `feature/x` in v1 UI — still
+    // accept `/` for power users who type full short names like `feat/foo`).
+    Ok(())
+}
+
+/// Switch `HEAD` to an existing local branch and update the worktree via the
+/// system `git checkout` binary. gix checkout is still incomplete for dirty
+/// trees; shelling out keeps Milestone B correct and testable.
+pub fn checkout_branch(repo: &gix::Repository, name: &str) -> Result<(), GitError> {
+    let name = name.trim();
+    validate_branch_name(name)?;
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    // Ensure the branch exists as a local ref.
+    let full = format!("refs/heads/{name}");
+    repo.find_reference(full.as_str())
+        .map_err(|_| GitError::Operation(format!("branch not found: {name}")))?;
+    let out = std::process::Command::new("git")
+        .args(["checkout", "-q", name])
+        .current_dir(workdir)
+        .output()
+        .map_err(|e| GitError::Operation(format!("git checkout: {e}")))?;
+    if !out.status.success() {
+        return Err(GitError::Operation(format!(
+            "git checkout: {}",
+            String::from_utf8_lossy(&out.stderr).trim()
+        )));
+    }
+    Ok(())
+}
+
+/// Unified-style text diff of a repository-relative path.
+///
+/// - **Modified / untracked:** worktree vs index (or empty blob for untracked).
+/// - **Staged:** index vs `HEAD` tree (empty blob if unborn / not in HEAD).
+///
+/// Binary files return a short notice instead of a byte dump. No syntect here —
+/// the page may colour the text; services stay GUI-free on the default feature
+/// set.
+pub fn unified_diff(
+    repo: &gix::Repository,
+    rela_path: &str,
+    staged: bool,
+) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let full = workdir.join(rela_path);
+
+    let (old_label, new_label, old_bytes, new_bytes) = if staged {
+        let head_blob = blob_from_head(repo, rela_path)?;
+        let index_blob = blob_from_index(repo, rela_path)?;
+        (
+            format!("a/{rela_path}"),
+            format!("b/{rela_path}"),
+            head_blob,
+            index_blob,
+        )
+    } else {
+        let index_blob = blob_from_index(repo, rela_path).unwrap_or_default();
+        let worktree = if full.exists() {
+            std::fs::read(&full).map_err(|e| GitError::Operation(format!("read: {e}")))?
+        } else {
+            Vec::new()
+        };
+        (
+            format!("a/{rela_path}"),
+            format!("b/{rela_path}"),
+            index_blob,
+            worktree,
+        )
+    };
+
+    if looks_binary(&old_bytes) || looks_binary(&new_bytes) {
+        return Ok(format!("Binary file {rela_path} differs\n"));
+    }
+
+    let old_text = String::from_utf8_lossy(&old_bytes);
+    let new_text = String::from_utf8_lossy(&new_bytes);
+    Ok(render_unified_diff(&old_label, &new_label, &old_text, &new_text))
+}
+
+fn looks_binary(bytes: &[u8]) -> bool {
+    bytes.contains(&0) || bytes.iter().filter(|&&b| b < 9 || (b > 13 && b < 32)).count() > bytes.len() / 8
+}
+
+fn blob_from_index(repo: &gix::Repository, rela_path: &str) -> Result<Vec<u8>, GitError> {
+    let index = repo
+        .index_or_empty()
+        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let path = gix::bstr::BStr::new(rela_path);
+    let entry = index
+        .entry_by_path_and_stage(path, gix::index::entry::Stage::Unconflicted)
+        .ok_or_else(|| GitError::Operation(format!("not in index: {rela_path}")))?;
+    let obj = repo
+        .find_object(entry.id)
+        .map_err(|e| GitError::Operation(e.to_string()))?;
+    Ok(obj.data.clone())
+}
+
+fn blob_from_head(repo: &gix::Repository, rela_path: &str) -> Result<Vec<u8>, GitError> {
+    let Ok(head) = repo.head_commit() else {
+        return Ok(Vec::new());
+    };
+    let tree = head
+        .tree()
+        .map_err(|e| GitError::Operation(e.to_string()))?;
+    // Walk path components.
+    let mut current = tree;
+    let parts: Vec<&str> = rela_path.split('/').filter(|p| !p.is_empty()).collect();
+    if parts.is_empty() {
+        return Ok(Vec::new());
+    }
+    for (i, part) in parts.iter().enumerate() {
+        let last = i + 1 == parts.len();
+        let entry = current
+            .lookup_entry(std::iter::once(*part))
+            .map_err(|e| GitError::Operation(e.to_string()))?
+            .ok_or_else(|| GitError::Operation(format!("not in HEAD: {rela_path}")))?;
+        if last {
+            let obj = entry
+                .object()
+                .map_err(|e| GitError::Operation(e.to_string()))?;
+            return Ok(obj.data.clone());
+        }
+        current = entry
+            .object()
+            .map_err(|e| GitError::Operation(e.to_string()))?
+            .try_into_tree()
+            .map_err(|e| GitError::Operation(e.to_string()))?;
+    }
+    Ok(Vec::new())
+}
+
+/// Minimal unified diff (no context-line algorithm libraries): full-file
+/// replacement hunk. Good enough for FM review of typical source files.
+fn render_unified_diff(old_label: &str, new_label: &str, old: &str, new: &str) -> String {
+    if old == new {
+        return format!("--- {old_label}\n+++ {new_label}\n(no textual changes)\n");
+    }
+    let old_lines: Vec<&str> = if old.is_empty() {
+        Vec::new()
+    } else {
+        old.lines().collect()
+    };
+    let new_lines: Vec<&str> = if new.is_empty() {
+        Vec::new()
+    } else {
+        new.lines().collect()
+    };
+    let mut out = String::new();
+    out.push_str(&format!("--- {old_label}\n+++ {new_label}\n"));
+    out.push_str(&format!(
+        "@@ -1,{} +1,{} @@\n",
+        old_lines.len(),
+        new_lines.len()
+    ));
+    for line in &old_lines {
+        out.push('-');
+        out.push_str(line);
+        out.push('\n');
+    }
+    for line in &new_lines {
+        out.push('+');
+        out.push_str(line);
+        out.push('\n');
+    }
+    out
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
@@ -533,5 +756,61 @@ mod tests {
             open_repo(&root),
             Err(GitError::NotARepository)
         ));
+    }
+
+    // --- Milestone B -------------------------------------------------------
+
+    #[test]
+    fn list_branches_includes_main() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        let branches = list_branches(&repo).unwrap();
+        assert_eq!(branches, vec!["main".to_string()]);
+    }
+
+    #[test]
+    fn create_and_checkout_branch() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        create_branch(&repo, "feature").unwrap();
+        let branches = list_branches(&repo).unwrap();
+        assert!(branches.contains(&"feature".to_string()));
+        assert!(branches.contains(&"main".to_string()));
+
+        checkout_branch(&repo, "feature").unwrap();
+        // Re-open so HEAD is re-read.
+        let repo = open_repo(&root).unwrap();
+        let s = status(&repo).unwrap();
+        assert_eq!(s.branch, "feature");
+    }
+
+    #[test]
+    fn create_branch_rejects_empty_name() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        assert!(create_branch(&repo, "  ").is_err());
+    }
+
+    #[test]
+    fn unified_diff_worktree_modification() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "two\n").unwrap();
+        let repo = open_repo(&root).unwrap();
+        let diff = unified_diff(&repo, "a.txt", false).unwrap();
+        assert!(diff.contains("--- a/a.txt"), "{diff}");
+        assert!(diff.contains("+++ b/a.txt"), "{diff}");
+        assert!(diff.contains("-one"), "{diff}");
+        assert!(diff.contains("+two"), "{diff}");
+    }
+
+    #[test]
+    fn unified_diff_staged_vs_head() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "staged\n").unwrap();
+        let repo = open_repo(&root).unwrap();
+        stage_path(&repo, "a.txt").unwrap();
+        let diff = unified_diff(&repo, "a.txt", true).unwrap();
+        assert!(diff.contains("-one"), "{diff}");
+        assert!(diff.contains("+staged"), "{diff}");
     }
 }
