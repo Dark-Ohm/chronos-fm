@@ -1,4 +1,10 @@
 [38;5;8m   1[0m [37m# T014-A — Layout memoization: implementation report[0m
+
+> ## ✅ ARCHITECT VERDICT: **ACCEPT** (2026-08-09)
+>
+> Stamp by architect. Code in Source/gpui `6c1c8c3`. Live AFTER-A
+> optional residual, not a reopen of T014-A.
+
 [38;5;8m   2[0m 
 [38;5;8m   3[0m [37m> **Рекомендация exec:** **ACCEPT** (awaiting architect stamp).[0m
 [38;5;8m   4[0m [37m>[0m

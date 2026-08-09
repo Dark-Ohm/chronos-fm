@@ -1,5 +1,10 @@
 # T014-A — GPUI layout memoization (skip taffy when layout tree unchanged)
 
+> ## ✅ ARCHITECT VERDICT: **ACCEPT** (2026-08-09)
+>
+> Layout memoization in Source/gpui (`6c1c8c3`). Unit tests green;
+> chronos-fm check green. Ticket → `done/`. Report → `report-log/`.
+
 **Приоритет:** P1 — следующий шаг umbrella T014 после AFTER-пакета.
 **Родитель:** T014. Разблокирован AFTER (main-thread taffy ~50% UI self).
 **Скоуп:** `../Source/gpui` (форк). Chronos-FM app code **не** трогать, кроме

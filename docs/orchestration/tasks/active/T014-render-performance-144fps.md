@@ -1,15 +1,13 @@
 # T014 — Рендер-перформанс: довести до 144 fps
 
-> ## Статус (2026-08-09, чекпоинт #7 — AFTER packet)
+> ## Статус (2026-08-09, чекпоинт #8)
 >
-> AFTER single packet **принят** (`report/T014-after-packet-T022-T033-report.md`).
-> T022+T033 в `done/`. Loop мёртв; notify-rs ~4–5% (было ~30%).
-> **T014-A GO:** main-thread taffy ~47–53% of UI self samples.
-> merge_thread residual (33–54% process) — не loop, ортогонален A.
+> **T014-A ACCEPT** (layout memoization in Source/gpui). T022/T033/T015 done.
+> AFTER packet accepted. Umbrella stays open until 144 fps or measure-proven
+> unreachable.
 >
-> **T014-A код лендится** в Source/gpui (layout memo). Ждёт architect accept + live AFTER-A optional.
->
-> **Следующий:** architect stamp T014-A; optional live hover perf.
+> **Next product:** T010-B (git branches/diff). **Next fork QA:** T029.
+> Optional: live hover AFTER-A on release binary.
 
 **Приоритет:** P1 — цель проекта («blazing fast gpui file manager»), сейчас
 не выполняется. Не блокер функционала, но блокер daily-driver-ощущения.
