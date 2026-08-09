@@ -1,13 +1,13 @@
-# T033 — Kill watcher ↔ self-index feedback loop: post-code report
+# T033 — Kill watcher ↔ self-index feedback loop: rollback report
 
-> **Статус (2026-08-09, ~13:35):** код по Пути 4 лендится и прошёл
-> quality gate: 89/89 unit + integration тестов зелёные, clippy по
-> services чистый. Live idle на этой же машине показывает
-> **5× сокращение merge rate** и **полное отсутствие вызовов
-> `process_changes` от watcher'а** в 4-минутном окне наблюдения —
-> architectural fix держит. Оставшаяся CPU на `merge_thread_0` —
-> это tantivy's own compaction leftover-segment backlog после серии
-> тестовых прогонов T014, не наш loop. См. §3 для разбора.
+> ## ✅ ARCHITECT VERDICT: **PARTIAL-ACCEPT** (2026-08-09)
+>
+> Stamp by architect (not exec). Path 4 landed; consumer-side loop
+> dead (`process_changes` from watcher = 0 / 4 min idle). Residual
+> merge_thread / meta.json mtime = tantivy cold segment consolidation,
+> not our pipeline. Literal merge→0 is AFTER-packet smoke on
+> stabilised index, not a T033 rework. Report → `report-log/`;
+> ticket → `done/`.
 
 ## 0. Что лендится (Path 4 per architect verdict)
 
@@ -208,7 +208,7 @@ docs/orchestration/tasks/active/T033-...md
 
 ## 6. Coordination по итогам
 
-- **T022** — закрыт partial-accept; T033 подхватил остаток.
+- **T022** — closed/partial-accept; T033 подхватил остаток.
 - **T010 (Git) / T011 (S3)** — пересечений нет (оба персистят свой state).
 - **T008 (devices panel) / T016 (search survive unreadable subdir)** —
   оба опираются на watcher-контракт. T033 contract (Recursive +
@@ -222,9 +222,9 @@ docs/orchestration/tasks/active/T033-...md
 
 ## 7. Recommendation исполнителю на следующий шаг (для архитектора)
 
-1. **Partial-accept T033** ✓ если архитектор видит то же, что видим
-   мы: watcher↔consumer loop мёртв, 5× merge rate reduction в
-   первые 4 минуты, требуется smoke AFTER на stabilised index для
+1. **Recommend PARTIAL-ACCEPT T033** ✓ если архитектор видит то же,
+   что видим мы: watcher↔consumer loop мёртв, 5× merge rate reduction
+   в первые 4 минуты, требуется smoke AFTER на stabilised index для
    финальной таблицы.
 2. **Чтобы получить «merge rate → 0» буквально:** пережить tantivy's
    cold-start consolidation (она закончится сама на stabilised
@@ -249,3 +249,11 @@ docs/orchestration/tasks/active/T033-...md
 - 📌 Если архитектор хочет **буквальный ноль** без ожидания — это
   новая задача «управлять tantivy merge policy» и должна идти
   отдельным тикетом, не апскейлом T033.
+
+## 9. Architect verdict: NOT done by exec
+
+This file's final move from `report/` → `report-log/` is **the
+architect's decision, not exec's**. Exec recommendation is in the
+top block of this report («PARTIAL-ACCEPT»). Final accept/reject
+stamp belongs to the architect, alongside the corresponding ticket
+move `active/T033-…md` → `done/T033-…md`.

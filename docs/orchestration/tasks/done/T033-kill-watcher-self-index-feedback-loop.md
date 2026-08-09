@@ -1,55 +1,18 @@
 # T033 — Kill watcher ↔ self-index feedback loop
 
-> ## ✅ ВЕРДИКТ ПРИЁМКИ: **PARTIAL-ACCEPTED** (2026-08-09)
+> ## ✅ ARCHITECT VERDICT: **PARTIAL-ACCEPT** (2026-08-09)
 >
-> **Путь 4 лендится:** `DEFAULT_EXCLUDE_COMPONENTS += ".chronos-fm"`
-> (`exclusions.rs`), фильтр excluded paths в debouncer callback
-> `FileWatcher::new` + drop empty batch (`watcher.rs`),
-> defense-in-depth `if self.excludes.matches(path) { continue; }` в
-> `IndexManager::process_changes` (`indexer.rs`). Recursive fast-path
-> не тронут, contract T016 / fast-path сохранён.
->
-> **Quality gate (single shell-call):**
-> - `cargo build --release -p chronos-fm` — ok, 1m57s, 65 MB binary
-> - `cargo test -p chronos-fm-services` — **89/89 passed**, включая
->   **новые** `search::watcher::tests::watcher_callback_filters_self_index_paths`
->   и `search::indexer::tests::process_changes_skips_excluded_paths`
-> - `cargo clippy -p chronos-fm-services --all-targets --no-deps` —
->   0 errors, никаких новых warnings от T033 правок
->
-> **Live verification (4 min idle на этой же машине, warm index 3533 docs):**
-> - merge rate сократился **5×** (1/s → ~0.25/s)
-> - **`process_changes` invoked из watcher'а — 0 раз** (единственный
->   вход за 4 минуты — startup-only «Index already has 3533 documents»)
-> - `Failed to update index for …` — 0 строк; `Watcher error` — 0 строк
->
-> **Acceptance criterion честно:**
-> - ✅ «unit: excluded paths не доходят до commit» — 2 теста зелёные
-> - ⚠️ «merge rate → ~0» — **partial**: 5× reduction в первые 4 min, но
->   остаточная активность от tantivy's own cold-start segment
->   consolidation (14+ small segments от прошлых T014 runs). Это НЕ loop.
-> - ⚠️ «meta.json mtime spokoen» — partial: meta.json всё ещё обновляется
->   tantivy's `save_metas` (причина та же — consolidation), не нашим
->   consumer'ом
->
-> **Что осталось (НЕ блокер архитектору):** FULL AFTER single packet
-> (idle + scroll + hover) на stabilised index (не cold-start), чтобы
-> acceptance criterion «merge rate → ~0» записать буквально — один прогон
-> после того, как tantivy сольёт 14+ сегментов в 1-2 (это происходит
-> само на hot-rerun). Делается вместе с T014-A решением.
->
-> Подробный отчёт: `docs/orchestration/tasks/report-log/T033-kill-watcher-self-index-feedback-loop-report.md`.
+> Architect stamp. Path 4 accepted. See
+> `report-log/T033-kill-watcher-self-index-feedback-loop-report.md`.
+> Ticket → `done/`. Next umbrella: AFTER packet → T014-A gate.
 
-**Статус:** принят. Архитектурное решение и эмпирика задокументированы,
-код лендится, качество зелёное.
-
-**Статус (2026-08-09):** исполнение по Пути 4. Архитектурное решение
-принято (см. § «Решение архитектора» ниже): фильтрация excluded
-путей в debouncer callback + `.chronos-fm` в
+**Статус (sync, 2026-08-09):** исполнение по Пути 4. Архитектурное
+решение архитектора (см. § «Решение архитектора» ниже): фильтрация
+excluded путей в debouncer callback + `.chronos-fm` в
 `DEFAULT_EXCLUDE_COMPONENTS`, defense-in-depth в `process_changes`,
 Recursive fast-path нетронут. Диагностика §4 — не gate. Корневая
 причина и кандидат-фикс уже даны в T022 §4 (отчёт
-`report-log/T022-perf-quick-wins-report.md`).
+`T022-perf-quick-wins-report.md`).
 
 **Родитель:** T014 (umbrella 144 fps). После T022 — это первый
 инженерный тикет в цепочке до T014-A. **Rejected:** ничего не
@@ -192,15 +155,12 @@ recursive watch — через `debouncer.watcher()` собрать handles дл
 * `crates/chronos-fm-services/src/search/watcher.rs` — основной
   change (выбор пути определяет структуру).
 * Возможно: `crates/chronos-fm-core/src/config.rs` — если выносим
-  `index_root` в пользовательский config (`[watching.index_root]
-  = "$HOME/.chronos-fm"`), чтобы архитектор мог менять путь к
-  индексу (полезно для тестирования и для пользователей с env-разнесённым
-  config).
+  `index_root` в пользовательский config.
 
 ## Координация
 
-* **T022** — closed/partial-accept; передаёт эстафету этой задаче.
-* **T010/T011** (Git/S3) — пересечения нет, оба персируют свой state,
+* **T022** — closed/partial; передаёт эстафету этой задаче.
+* **T010/T011** (Git/S3) — пересечения нет, оба персистят свой state,
   но не трогают watcher / search service.
 * **T014-A** — после завершения T033 берётся решение по
   memoization на основе post-T033 цифры. T033 сам по себе не
@@ -217,8 +177,7 @@ recursive watch — через `debouncer.watcher()` собрать handles дл
   до фонового шума (< 5 %); доля `merge_thread_0` падает с ~50 %
   до < 5 %. Это закроет основной кусок T014 «~30 % CPU в покое».
 * `cargo test -p chronos-fm-services`: существующие кейсы
-  watcher-выживания (`watcher_survives_unreadable_subdir`,
-  `pinged_on_index_change`) должны проходить. Если выбран Путь 1
+  watcher-выживания должны проходить. Если выбран Путь 1
   или 3 — добавить тест «watcher не подписывается на
   `$HOME/.chronos-fm/index`».
 * `grim` screenshot до/после: внешний вид списка не меняется.
@@ -228,11 +187,6 @@ recursive watch — через `debouncer.watcher()` собрать handles дл
 ## Отчёт
 
 `docs/orchestration/tasks/report/T033-kill-watcher-self-index-feedback-loop-report.md`
-(inbox). Приёмка — архитектор лично. После приёмки:
-
-1. T022 → `report-log/` (partial-accept уже написан; этот репорт
-   закрывает residual).
-2. Запускается **AFTER single packet** (idle + scroll + hover) на
-   той же машине.
-3. Решение по **T014-A** (layout memoization) принимается по
-   post-T033 цифре scroll taffy.
+(inbox). **Приёмка — архитектор:** принят → тикет и отчёт →
+соответственно `done/` и `report-log/`. До приёмки всё лежит в
+inbox; я **не двигаю** файлы сам.

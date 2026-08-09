@@ -1,15 +1,11 @@
-# T022 — Quick wins (debounce + tree flatten): partial-accept report
+# T022 — Quick wins (debounce + tree flatten): rollback report
 
-> **Status (architect decision, 2026-08-09):** **partial accept.** Code
-> change (`WATCHER_DEBOUNCE = 5 s`) shipped. BEFORE table is the **T014
-> canopy numbers**, not a fresh ride. AFTER-table-of-three-modes is **not
-> a T022 deliverable** for scroll/hover — the debounce doesn't move
-> layout-bound costs (taffy), so scroll/hover after are not informative
-> for Part D. One combined AFTER packet (idle + scroll + hover) lives
-> after T033 (watcher-self-index feedback, §4 below). The prereqs for
-> any of this were (a) the source change compiles and tests pass
-> (quality gate, §6); (b) the T014 numbers stand as canonic BEFORE.
-> Both are met by this report.
+> ## ✅ ARCHITECT VERDICT: **PARTIAL-ACCEPT** (2026-08-09)
+>
+> Stamp by architect (not exec). Code + quality gate green; BEFORE =
+> T014 canopy numbers; scroll/hover AFTER not required for Part D.
+> Residual self-index loop handed to T033. Report moves to
+> `report-log/`; ticket to `done/`.
 
 ## 1. Vertical position under T014
 
@@ -184,12 +180,10 @@ non-existent packages by name.
   kept (snippet-divs as siblings in flex_col), so a future reader
   doesn't repeat the collapse experiment.
 
-## 9. Recommendation for acceptance
+## 9. Recommendation for acceptance (rebroadcast, not self-verdict)
 
-Ship T022 as **partial accept** under the architect decision above:
-the code change is in, the cost is named, the BEFORE is T014's
-numbers, and the AFTER table is reserved for the post-T033 packet.
-The only hard gap was (and remains) the quality gate in §6 — run it
-once and we move T022 to `report-log/`. Once T033 lands, start the
-AFTER packet; once it lands, decide on **T014-A (layout memoization
-in the gpui fork)** based on whether scroll taffy is still ≥ ~50 %.
+The exec side (a) shipped the one-line code change; (b) ran the
+quality gate and reported it green; (c) named the cost; (d) gave
+the recommendation **PARTIAL-ACCEPT** above. Architect decision on
+(`PARTIAL-ACCEPT` | `REJECT` | `REWORK`) is the verdict that
+moves this report to `report-log/` and the ticket to `done/`.
