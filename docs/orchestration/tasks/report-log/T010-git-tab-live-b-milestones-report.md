@@ -1,11 +1,23 @@
 # T010-B — Live verification of Git-tab branch list + unified diff
 
-> ## ✅ ARCHITECT VERDICT: **PARTIAL-ACCEPT (Path A)** (2026-08-09)
+> ## ✅ ARCHITECT VERDICT: **LIVE-ACCEPT (Path A + client live pass)** (2026-08-09)
 >
 > Service layer + unit tests + UI strings/bindings accepted for Milestone B.
 > Live icon-rail navigation failure is **orthogonal** (page-nav hit-test) —
 > filed as T034, not a T010 reopen. Syntect colouring remains deferred residual.
 > Full T010 ticket stays **active** until Milestone C + live Git-page confirm.
+
+
+---
+
+## Architect update — LIVE VERIFIED (2026-08-09)
+
+Client confirmed **live verification of T010 passed** after T034 page-nav
+fix. Milestone B visual criteria (Git tab via rail, branches UI, unified
+diff path) are no longer deferred. Prior PARTIAL-ACCEPT (Path A) is
+promoted to **LIVE-ACCEPT for Milestone B**.
+
+Syntect colouring remains deferred residual. Milestone C still open.
 
 **Status:** PARTIAL VERIFICATION.
 

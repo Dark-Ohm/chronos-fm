@@ -1,17 +1,22 @@
 # T010 — Git-таб: живой статус вместо заглушки
 
-> ## Статус (2026-08-09, checkpoint #5)
+> ## Статус (2026-08-09, checkpoint #6) — **LIVE PASS (A+B)**
 >
-> - **Milestone A** — accepted earlier (status/stage/commit + T017 follow).
-> - **Milestone B** — **PARTIAL-ACCEPT (architect Path A)**: branches +
->   unified text diff. Service tests green; UI strings in binary. Live
->   harness could not switch page-nav rail (T034), so visual clickthrough
->   of Git tab deferred. Syntect residual still open.
-> - **Milestone C** — open (push/pull/stash).
-> - **T034 ACCEPT** — page-nav rail fixed (absolute + z-order). Live Git-tab
->   visual re-verify unblocked (human or harness with focused window).
+> Client confirmed live verification **passed** (post-T034 nav rail).
 >
-> Report: `report-log/T010-git-tab-live-b-milestones-report.md`.
+> | Milestone | Status |
+> | --- | --- |
+> | **A** status / stage / unstage / commit / follow (T017) | **LIVE-ACCEPT** |
+> | **B** branches list/create/checkout + unified text diff | **LIVE-ACCEPT** |
+> | **B residual** syntect colouring of diff | deferred (optional) |
+> | **C** push / pull / stash / credential-helper | **open** |
+>
+> Reports: `report-log/T010-git-tab-live-b-milestones-report.md` (+ live
+> update), earlier A material in `report/T010-git-tab-live-report.md`.
+> T034 ACCEPT unblocked rail navigation.
+>
+> **Next:** Milestone C, or close T010 with C deferred as separate ticket
+> if product priority shifts.
 
 **Приоритет:** P2 — вкладка-пустышка, но нет бэкенда вообще (в отличие
 от Settings, где конфиг уже есть).
@@ -26,15 +31,11 @@
 возвращает пустое состояние. Блокер снят, тикет разблокирован.
 
 **Открыто:**
-- ~~Milestone B — ветки + unified diff~~ **код 2026-08-09** (list/create/checkout
-  branches; click file → unified text diff; syntect colouring deferred).
-  Service tests green; live acceptance pending.
-- Milestone B residual: syntect highlighting of the diff pane.
+- ~~Milestone B~~ **LIVE-ACCEPT 2026-08-09** (client live pass after T034).
+- Milestone B residual: syntect highlighting of the diff pane (optional).
 - Milestone C — push/pull через системный credential-helper и
   SSH-agent, stash.
-- Живой прогон: сервисный слой подтверждён (ветка `main`, 6 modified +
-  6 untracked совпали с `git status`), сценарии stage → commit →
-  watcher-обновление не прогонялись.
+- ~~Живой прогон A/B~~ **passed** (client, 2026-08-09).
 - Deferred из отчёта: render-тест `git.rs` упирается в
   `recursion_limit = 128` у макроса `gpui::test`.
 - ~~Из чекпоинта #3: clippy по `pages/src/git.rs` не гонялся — 4×
