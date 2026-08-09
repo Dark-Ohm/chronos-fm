@@ -1,5 +1,11 @@
 # T027 — Форк: опциональные фичи gpui-component (`decimal`, `inspector`)
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> `decimal`, `inspector` (story + build), and `--all-features` green against
+> our gpui fork. No code. Report:
+> `report-log/T027-component-optional-features-report.md`.
+
 **Приоритет:** P2. Разблокирован частью A тикета T025.
 **Скоуп:** `Source/gpui-component`, только сборка и один запуск. **Кода
 не трогать** — ни в `Source/`, ни в `Chronos-FM/`.
