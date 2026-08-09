@@ -1,5 +1,10 @@
 # T024 — Отчёт: pattern-port remainder decisions (ratified)
 
+> ## ✅ ARCHITECT VERDICT: **ACCEPT / CLOSED** (2026-08-09)
+>
+> Four decisions ratified (see DECISIONS.log § T024). rejected/ ported;
+> notes/ and MIGRATION.md not ported; skills on-demand. Ticket → done/.
+
 **Дата:** 2026-08-09
 **Исполнитель:** Buffy (executor)
 **Статус:** ✅ Все 4 решения приняты архитектором и записаны в `DECISIONS.log`

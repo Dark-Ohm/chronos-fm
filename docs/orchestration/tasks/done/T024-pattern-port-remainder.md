@@ -1,5 +1,10 @@
 # T024 — Порт остатков рабочих паттернов из ChronOS (rejected/, notes/, по-проектные скиллы)
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> Decisions ratified in `docs/DECISIONS.log` § T024. Report:
+> `report-log/T024-pattern-port-remainder-report.md`.
+
 **Приоритет:** P3 — housekeeping, не пользовательская функциональность.
 **Роль:** решение архитектора (что портировать, а что осознанно не портировать).
 **Статус (2026-08-09):** **RATIFIED** — все 4 решения приняты архитектором и записаны в `DECISIONS.log`.

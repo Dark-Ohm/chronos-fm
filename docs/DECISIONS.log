@@ -81,3 +81,52 @@ require a forced rewrite today.
 
 **Verification.** Architect ratification of this entry + ADR 0010. No code
 gate.
+
+---
+
+## 2026-08-09 — T024: pattern-port remainder decisions (ratified)
+
+**Context.** T023 closed empty-state + DECISIONS.log mechanism. T024
+addresses the remaining ~40% of ChronOS pattern-port gaps: rejected/
+directory, notes/ directory, MIGRATION.md artifact, and per-project
+skills. Architect ratification 2026-08-09 via T024.
+
+### Decision 1 — `rejected/` directory: PORTED
+
+Create `docs/orchestration/tasks/rejected/` mirroring ChronOS convention.
+Rules:
+- REFUTED/REJECTED reports move to `rejected/` (physical move or
+  duplicate with reference)
+- Superseded tickets (suffix `-superseded-by-Txxx.md`) go there too
+- The original report in `report/` keeps its errata block — `rejected/`
+  is the final resting place, not a replacement for the errata
+- Filename convention: suffix `-REJECTED.md` or `-superseded-by-Txxx.md`
+
+First inhabitant: `T011-s3-tab-live-report.md` (REFUTED with errata).
+
+### Decision 2 — `notes/` directory: NOT PORTED
+
+`docs/orchestration/tasks/notes/` is not created. Session-knowledge is
+covered by `.workbuddy/memory/` (MEMORY.md + dated files). ChronOS
+`notes/` was ad-hoc; `.workbuddy/memory/` is the deliberate replacement.
+No duplication needed.
+
+### Decision 3 — `MIGRATION.md`: NOT PORTED
+
+`docs/orchestration/tasks/MIGRATION.md` from ChronOS is a historical
+artifact of the per-agent → per-task migration (2026-07-22). Chronos-FM
+started with per-task accounting from day one — no migration document
+is applicable. Explicitly recorded so the question does not resurface.
+
+### Decision 4 — per-project skills: ON DEMAND
+
+ChronOS has 11 skills not ported to FM. Rule: port a skill only when
+an FM task requires it. No bulk import. Likely first candidates:
+`tokio-coop-budget-on-main-thread`, `rtl-text-rendering` — both
+relevant to a gpui project with tokio in services. Each port includes
+adaptation to FM paths and conventions.
+
+### Verification
+
+Architect ratified all four decisions interactively (T024, 2026-08-09).
+Code: none — decision-only ticket.
