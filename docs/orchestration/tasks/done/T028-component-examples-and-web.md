@@ -1,5 +1,11 @@
 # T028 — Форк: 11 примеров, `story-web` и `webview`
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09) — PARTIAL-ACCEPT
+>
+> Workspace build green; 9/11 examples panic on gpui text measurement → **T035**.
+> WASM blocked on nightly (`wasm_thread`) → **T036**. Report:
+> `report-log/T028-component-examples-and-web-report.md`.
+
 **Приоритет:** P2. Остаток покрытия после T025/T026: галерея прогнана,
 но соседние члены воркспейса не собирались против нашего форка ни разу.
 **Скоуп:** `Source/gpui-component`. **Кода не трогать.**
