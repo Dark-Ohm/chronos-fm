@@ -1,5 +1,11 @@
 # T029 — Форк: тёмная тема и закрытие оверлеев
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> Hygiene pass: report was already in `report-log/` (2026-08-07, both
+> parts done, code not touched). Ticket lagged in `active/`. Closed and
+> moved to `done/`. Report: `report-log/T029-dark-theme-and-overlay-dismissal-report.md`.
+
 **Приоритет:** P1 для shell и IDE — они тёмные по умолчанию, а весь
 прогон T025/T026 прошёл в `Default Light`.
 **Скоуп:** `Source/gpui-component`, только запуск и съёмка. **Кода не
