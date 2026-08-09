@@ -9,7 +9,7 @@
 > | **A** status / stage / unstage / commit / follow (T017) | **LIVE-ACCEPT** |
 > | **B** branches list/create/checkout + unified text diff | **LIVE-ACCEPT** |
 > | **B residual** syntect colouring of diff | deferred (optional) |
-> | **C** push / pull / stash / credential-helper | **open** |
+> | **C** push / pull / stash / credential-helper | **open** — design: `docs/superpowers/specs/2026-08-09-t010-c-git-push-pull-stash-design.md` (architect approved-with-conditions) |
 >
 > Reports: `report-log/T010-git-tab-live-b-milestones-report.md` (+ live
 > update), earlier A material in `report/T010-git-tab-live-report.md`.
