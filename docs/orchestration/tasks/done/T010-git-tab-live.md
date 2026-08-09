@@ -1,20 +1,25 @@
 # T010 — Git-таб: живой статус вместо заглушки
 
-> ## Статус (2026-08-09, checkpoint #7) — **A+B LIVE, C IMPL ACCEPT**
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> Full ticket closed. Milestones:
 >
 > | Milestone | Status |
 > | --- | --- |
-> | **A** status / stage / commit / follow | **LIVE-ACCEPT** |
-> | **B** branches + unified text diff | **LIVE-ACCEPT** |
-> | **C** push / pull / stash | **ACCEPT** (impl + 24 git tests; live optional) |
-> | Residuals | syntect colouring; optional live C; stash index P8 polish |
+> | **A** status / stage / commit / follow (T017) | LIVE-ACCEPT |
+> | **B** branches + unified text diff | LIVE-ACCEPT |
+> | **C** push / pull / stash | ACCEPT (impl + 24 tests) |
+>
+> Residuals (optional, not blocking close):
+> - syntect colouring of diff pane
+> - live C smoke (push/pull/stash on a real remote)
+> - P8 stash index parse polish; disable Push/Pull when no repo
 >
 > Reports: `report-log/T010-git-tab-live-b-milestones-report.md`,
-> `report-log/T010-git-tab-live-c-milestones-report.md`.
+> `report-log/T010-git-tab-live-c-milestones-report.md`,
+> earlier A material under `report/T010-git-tab-live-report.md` (if present).
 >
-> Design: `docs/superpowers/specs/2026-08-09-t010-c-git-push-pull-stash-design.md`.
->
-> **Next:** live C smoke (optional) or close T010 and file residuals separately.
+> Design/plan: `docs/superpowers/specs/2026-08-09-t010-c-…`, `plans/2026-08-09-t010-c-…`.
 
 **Приоритет:** P2 — вкладка-пустышка, но нет бэкенда вообще (в отличие
 от Settings, где конфиг уже есть).
