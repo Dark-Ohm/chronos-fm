@@ -1,5 +1,17 @@
 # T010 — Git-таб: живой статус вместо заглушки
 
+> ## Статус (2026-08-09, checkpoint #5)
+>
+> - **Milestone A** — accepted earlier (status/stage/commit + T017 follow).
+> - **Milestone B** — **PARTIAL-ACCEPT (architect Path A)**: branches +
+>   unified text diff. Service tests green; UI strings in binary. Live
+>   harness could not switch page-nav rail (T034), so visual clickthrough
+>   of Git tab deferred. Syntect residual still open.
+> - **Milestone C** — open (push/pull/stash).
+> - **T034** — companion: page-nav rail not hittable (blocks live Git tab).
+>
+> Report: `report-log/T010-git-tab-live-b-milestones-report.md`.
+
 **Приоритет:** P2 — вкладка-пустышка, но нет бэкенда вообще (в отличие
 от Settings, где конфиг уже есть).
 **Статус (2026-08-06, чекпоинт #4):** Milestone A **сдан и принят с
