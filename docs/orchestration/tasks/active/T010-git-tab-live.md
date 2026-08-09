@@ -8,7 +8,8 @@
 >   harness could not switch page-nav rail (T034), so visual clickthrough
 >   of Git tab deferred. Syntect residual still open.
 > - **Milestone C** — open (push/pull/stash).
-> - **T034** — companion: page-nav rail not hittable (blocks live Git tab).
+> - **T034 ACCEPT** — page-nav rail fixed (absolute + z-order). Live Git-tab
+>   visual re-verify unblocked (human or harness with focused window).
 >
 > Report: `report-log/T010-git-tab-live-b-milestones-report.md`.
 

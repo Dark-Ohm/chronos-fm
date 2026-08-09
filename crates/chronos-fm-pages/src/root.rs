@@ -338,18 +338,21 @@ impl Render for RootView {
                     .flex()
                     .flex_row()
                     .min_h(px(0.0))
-                    .child(
-                        // Left navigation toolbar
-                        self.render_navigation(cx),
-                    )
+                    .relative()
                     .child(
                         // Main content area - render active page
+                        // (painted first = behind the nav rail)
                         div()
                             .flex_1()
                             .flex()
                             .flex_col()
                             .min_w(px(0.0))
+                            .pl(px(64.0))
                             .child(self.render_active_page(window, cx)),
+                    )
+                    .child(
+                        // Left navigation toolbar — ABSOLUTE, painted ON TOP
+                        self.render_navigation(cx),
                     ),
             )
             .child(
@@ -413,8 +416,11 @@ impl RootView {
         let active_page = self.current_page;
 
         div()
+            .absolute()
+            .top_0()
+            .bottom_0()
+            .left_0()
             .w(px(64.0))
-            .h_full()
             .flex()
             .flex_col()
             .items_center()

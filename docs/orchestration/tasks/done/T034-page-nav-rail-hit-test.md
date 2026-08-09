@@ -1,4 +1,9 @@
 [38;5;8m   1[0m [37m# T034 — Page-nav rail: no hit-test / invisible icons (blocks live Git tab)[0m
+
+> ## ✅ ARCHITECT VERDICT: **ACCEPT** (2026-08-09)
+>
+> See `report-log/T034-page-nav-rail-report.md`. Ticket → `done/`.
+
 [38;5;8m   2[0m 
 [38;5;8m   3[0m [37m**Приоритет:** P1 for live verification harness; not a product feature.[0m
 [38;5;8m   4[0m [37m**Источник:** T010-B live report (2026-08-09) — Path A accept of B still[0m
