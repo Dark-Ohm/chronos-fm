@@ -1,5 +1,14 @@
 # T030 — Форк: пять zed-крейтов в графе сборки
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED — DEFERRED** (2026-08-09)
+>
+> Not implemented. Closed as known dependency debt so the active queue
+> stays honest. Partial related vendoring lives under **T032**
+> (`reqwest_client` / `http_client_tls`); `http_client` itself still on
+> zed git. Full hermetic removal → new ticket when scheduled.
+>
+> Report: `report-log/T030-zed-tails-in-graph-report.md`.
+
 **Приоритет:** P2. Единственный оставшийся «хвост zed» после T025.
 **Скоуп:** `Source/`. Правки в `Source/gpui*` **разрешены** — но см.
 раздел про соседей, он здесь жёстче обычного.
