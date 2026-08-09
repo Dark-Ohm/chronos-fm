@@ -10,7 +10,7 @@
 //! foreground-poll pattern as `config.toml` hot reload in `root.rs`.
 
 use crate::explorer::ExplorerPage;
-use chronos_fm_services::git::{self, GitError, RepoStatus};
+use chronos_fm_services::git::{self, GitError, RepoStatus, StashEntry};
 use chronos_fm_services::git::watcher::GitWatcher;
 use chronos_fm_ui::patterns::{elevated_card, section_header};
 use chronos_fm_ui::theme::theme;
@@ -70,6 +70,12 @@ pub struct GitPage {
     branches: Vec<String>,
     /// Selected file unified diff (if any).
     selected_diff: Option<DiffSelection>,
+    /// C6: prevents double-click on push/pull/stash operations.
+    busy: bool,
+    /// Stash entries from the latest refresh.
+    stashes: Vec<chronos_fm_services::git::StashEntry>,
+    /// Stash message input.
+    stash_input: Entity<InputState>,
     _watcher: Option<GitWatcher>,
     _shutdown_tx: Option<mpsc::Sender<()>>,
     refresh_tx: Option<mpsc::Sender<()>>,
@@ -105,6 +111,12 @@ impl GitPage {
             state
         });
 
+                let stash_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_placeholder("Stash message", window, cx);
+            state
+        });
+
         let (tx, rx) = mpsc::channel::<()>();
         let refresh_tx = tx.clone();
 
@@ -119,6 +131,9 @@ impl GitPage {
             branch_input,
             branches: Vec::new(),
             selected_diff: None,
+            busy: false,
+            stashes: Vec::new(),
+            stash_input,
             _watcher: None,
             _shutdown_tx: Some(tx),
             refresh_tx: Some(refresh_tx),
@@ -165,7 +180,8 @@ impl GitPage {
                         let repo = git::open_repo(&dir)?;
                         let status = git::status(&repo)?;
                         let branches = git::list_branches(&repo).unwrap_or_default();
-                        Ok::<_, GitError>((status, branches))
+                        let stashes = git::stash_list(&repo).unwrap_or_default();
+                        Ok::<_, GitError>((status, branches, stashes))
                     })
                     .await;
                 this.update(&mut cx, |page, cx| {
@@ -177,10 +193,11 @@ impl GitPage {
                     }
                     page.refreshing = false;
                     match result {
-                        Ok((status, branches)) => {
+                        Ok((status, branches, stashes)) => {
                             page.recreate_watcher(&status.git_dir);
                             page.status = Some(status);
                             page.branches = branches;
+                            page.stashes = stashes;
                             page.no_repo = false;
                             page.error = None;
                         }
@@ -477,6 +494,138 @@ impl Render for GitPage {
 }
 
 impl GitPage {
+    // --- Milestone C: push / pull / stash ---------------------------------
+
+    fn push(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy { return; }                    // C6
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx.background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::push(&repo, "origin").map_err(|e| e.to_string())
+                    }).await;
+                this.update_in(&mut cx, |page, _window, cx| {
+                    page.busy = false;
+                    if let Err(msg) = result {
+                        page.error = Some(format!("push: {msg}"));
+                    }
+                    page.refresh(cx);
+                }).ok();
+            }
+        }).detach();
+    }
+
+    fn pull(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy { return; }                    // C6
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx.background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::pull(&repo, "origin").map_err(|e| e.to_string())
+                    }).await;
+                this.update_in(&mut cx, |page, _window, cx| {
+                    page.busy = false;
+                    if let Err(msg) = result {
+                        page.error = Some(format!("pull: {msg}"));
+                    }
+                    page.refresh(cx);
+                }).ok();
+            }
+        }).detach();
+    }
+
+    fn stash_push_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy { return; }
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        let message = self.stash_input.read(cx).text().to_string();
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx.background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::stash_push(&repo, &message).map_err(|e| e.to_string())
+                    }).await;
+                this.update_in(&mut cx, |page, window, cx| {
+                    page.busy = false;
+                    if let Err(msg) = result {
+                        page.error = Some(format!("stash: {msg}"));
+                    } else {
+                        page.stash_input.update(cx, |input, cx| {
+                            input.set_value("", window, cx);
+                        });
+                    }
+                    page.refresh(cx);
+                }).ok();
+            }
+        }).detach();
+    }
+
+    fn stash_pop(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy { return; }
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx.background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::stash_pop(&repo, index).map_err(|e| e.to_string())
+                    }).await;
+                this.update_in(&mut cx, |page, _window, cx| {
+                    page.busy = false;
+                    if let Err(msg) = result {
+                        page.error = Some(format!("stash pop: {msg}"));
+                    }
+                    page.refresh(cx);
+                }).ok();
+            }
+        }).detach();
+    }
+
+    fn stash_drop(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy { return; }
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+            let mut cx = cx.clone();
+            async move {
+                let result = cx.background_executor()
+                    .spawn(async move {
+                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                        git::stash_drop(&repo, index).map_err(|e| e.to_string())
+                    }).await;
+                this.update_in(&mut cx, |page, _window, cx| {
+                    page.busy = false;
+                    if let Err(msg) = result {
+                        page.error = Some(format!("stash drop: {msg}"));
+                    }
+                    page.refresh(cx);
+                }).ok();
+            }
+        }).detach();
+    }
+
     fn render_body(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
         let status = self.status.clone();
         let no_repo = self.no_repo;
@@ -487,8 +636,11 @@ impl GitPage {
             .as_ref()
             .map(|s| s.branch.clone())
             .unwrap_or_default();
+        let busy = self.busy;
         let selected_diff = self.selected_diff.clone();
         let branch_input = self.branch_input.clone();
+        let stashes = self.stashes.clone();
+        let stash_input = self.stash_input.clone();
 
         div()
             .size_full()
@@ -497,12 +649,18 @@ impl GitPage {
             .gap(px(16.))
             .p(px(24.))
             .bg(theme::bg(cx))
-            .child(render_header(status.as_ref(), no_repo, error, refreshing, cx))
+            .child(render_header(status.as_ref(), no_repo, error, refreshing, busy, cx))
             .when_some(status.as_ref(), |el, s| {
                 el.child(render_branches(
                     &branches,
                     &current_branch,
                     branch_input,
+                    cx,
+                ))
+                .child(render_stash_section(
+                    &stashes,
+                    stash_input,
+                    busy,
                     cx,
                 ))
                 .child(render_file_section(
@@ -546,6 +704,7 @@ fn render_header(
     no_repo: bool,
     error: Option<String>,
     refreshing: bool,
+    busy: bool,
     cx: &mut Context<GitPage>,
 ) -> impl IntoElement {
     elevated_card(cx)
@@ -564,6 +723,15 @@ fn render_header(
                     div().flex().items_center().gap(px(8.))
                         .child(refresh_button(refreshing, cx))
                         .child(pin_button(cx)),
+                )
+                .child(
+                    div().flex().items_center().gap(px(8.))
+                        .child(render_action_button("Pull", busy, cx, |this, _ev, window, cx| {
+                            this.pull(window, cx);
+                        }))
+                        .child(render_action_button("Push", busy, cx, |this, _ev, window, cx| {
+                            this.push(window, cx);
+                        })),
                 ),
         )
         .when_some(error, |el, error| {
@@ -685,7 +853,7 @@ fn render_branches(
 }
 
 fn render_file_section(
-    label: &str,
+    label: &'static str,
     entries: &[chronos_fm_services::git::RepoEntry],
     show_stage: bool,
     staged_section: bool,
@@ -828,6 +996,63 @@ fn render_commit_bar(
                 }))
                 .child("Commit"),
         )
+}
+
+fn render_stash_section(
+    entries: &[StashEntry],
+    stash_input: Entity<InputState>,
+    busy: bool,
+    cx: &mut Context<GitPage>,
+) -> impl IntoElement {
+    elevated_card(cx)
+        .child(section_header(cx, "Stash", &format!("{} entr{}", entries.len(),
+            if entries.len() == 1 { "y" } else { "ies" })))
+        .children(entries.iter().map(|entry| {
+            let index = entry.index;
+            let desc = format!("stash@{{{}}}: {} -- {}", entry.index, entry.branch, entry.message);
+            div()
+                .flex().items_center().justify_between()
+                .px(px(12.)).py(px(4.))
+                .text_sm().text_color(theme::fg(cx))
+                .child(div().truncate().child(desc))
+                .child(
+                    div().flex().gap(px(4.))
+                        .child(render_action_button("Pop", busy, cx, move |this, _ev, window, cx| {
+                            this.stash_pop(index, window, cx);
+                        }))
+                        .child(render_action_button("Drop", busy, cx, move |this, _ev, window, cx| {
+                            this.stash_drop(index, window, cx);
+                        })),
+                )
+        }))
+        .child(
+            div().mt(px(8.)).flex().items_center().gap(px(8.))
+                .child(div().flex_1().child(Input::new(&stash_input)))
+                .child(render_action_button("Stash push", busy, cx, |this, _ev, window, cx| {
+                    this.stash_push_action(window, cx);
+                })),
+        )
+}
+
+fn render_action_button(
+    label: &'static str,
+    busy: bool,
+    cx: &mut Context<GitPage>,
+    f: impl Fn(&mut GitPage, &MouseDownEvent, &mut Window, &mut Context<GitPage>) + 'static,
+) -> impl IntoElement {
+    div()
+        .px(px(8.)).py(px(2.)).rounded(px(4.))
+        .text_xs().font_weight(gpui::FontWeight::MEDIUM)
+        .when(busy, |this| {
+            this.bg(theme::border(cx)).text_color(theme::muted(cx)).opacity(0.6)
+        })
+        .when(!busy, |this| {
+            this.bg(theme::bg_hover(cx)).text_color(theme::fg(cx))
+                .hover(|this| this.bg(theme::border(cx)))
+                .cursor_pointer()
+        })
+        .on_mouse_down(MouseButton::Left, cx.listener(f))
+        .child(label)
 }
 
 #[cfg(test)]

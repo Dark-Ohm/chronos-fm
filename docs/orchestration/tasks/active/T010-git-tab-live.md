@@ -1,22 +1,20 @@
 # T010 — Git-таб: живой статус вместо заглушки
 
-> ## Статус (2026-08-09, checkpoint #6) — **LIVE PASS (A+B)**
->
-> Client confirmed live verification **passed** (post-T034 nav rail).
+> ## Статус (2026-08-09, checkpoint #7) — **A+B LIVE, C IMPL ACCEPT**
 >
 > | Milestone | Status |
 > | --- | --- |
-> | **A** status / stage / unstage / commit / follow (T017) | **LIVE-ACCEPT** |
-> | **B** branches list/create/checkout + unified text diff | **LIVE-ACCEPT** |
-> | **B residual** syntect colouring of diff | deferred (optional) |
-> | **C** push / pull / stash / credential-helper | **open** — design: `docs/superpowers/specs/2026-08-09-t010-c-git-push-pull-stash-design.md` (architect approved-with-conditions) |
+> | **A** status / stage / commit / follow | **LIVE-ACCEPT** |
+> | **B** branches + unified text diff | **LIVE-ACCEPT** |
+> | **C** push / pull / stash | **ACCEPT** (impl + 24 git tests; live optional) |
+> | Residuals | syntect colouring; optional live C; stash index P8 polish |
 >
-> Reports: `report-log/T010-git-tab-live-b-milestones-report.md` (+ live
-> update), earlier A material in `report/T010-git-tab-live-report.md`.
-> T034 ACCEPT unblocked rail navigation.
+> Reports: `report-log/T010-git-tab-live-b-milestones-report.md`,
+> `report-log/T010-git-tab-live-c-milestones-report.md`.
 >
-> **Next:** Milestone C, or close T010 with C deferred as separate ticket
-> if product priority shifts.
+> Design: `docs/superpowers/specs/2026-08-09-t010-c-git-push-pull-stash-design.md`.
+>
+> **Next:** live C smoke (optional) or close T010 and file residuals separately.
 
 **Приоритет:** P2 — вкладка-пустышка, но нет бэкенда вообще (в отличие
 от Settings, где конфиг уже есть).
@@ -31,11 +29,10 @@
 возвращает пустое состояние. Блокер снят, тикет разблокирован.
 
 **Открыто:**
-- ~~Milestone B~~ **LIVE-ACCEPT 2026-08-09** (client live pass after T034).
-- Milestone B residual: syntect highlighting of the diff pane (optional).
-- Milestone C — push/pull через системный credential-helper и
-  SSH-agent, stash.
-- ~~Живой прогон A/B~~ **passed** (client, 2026-08-09).
+- ~~Milestone B~~ **LIVE-ACCEPT**.
+- ~~Milestone C~~ **ACCEPT** (impl 2026-08-09; live C optional).
+- Residuals: syntect; optional live C smoke; Push/Pull disable when no repo.
+- ~~Живой прогон A/B~~ **passed**.
 - Deferred из отчёта: render-тест `git.rs` упирается в
   `recursion_limit = 128` у макроса `gpui::test`.
 - ~~Из чекпоинта #3: clippy по `pages/src/git.rs` не гонялся — 4×

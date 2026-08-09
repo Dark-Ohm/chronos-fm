@@ -289,6 +289,14 @@ fn symbolic_head_branch(repo: &gix::Repository) -> String {
     "refs/heads/main".to_string()
 }
 
+/// A single stash entry parsed from `git stash list`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct StashEntry {
+    pub index: usize,
+    pub branch: String,
+    pub message: String,
+}
+
 // --- Milestone B: branches + unified diff ---------------------------------
 
 /// Local branch names (short, without `refs/heads/`), sorted.
@@ -510,6 +518,143 @@ fn render_unified_diff(old_label: &str, new_label: &str, old: &str, new: &str) -
         out.push('\n');
     }
     out
+}
+
+// --- Milestone C: push / pull / stash (system git) --------------------------
+
+fn truncate_4k(s: &str) -> String {
+    if s.len() <= 4096 {
+        s.to_string()
+    } else {
+        let cut = floor_char_boundary(s, 4096);
+        format!("{}…\n[truncated {} bytes]", &s[..cut], s.len() - cut)
+    }
+}
+
+/// Quick UTF-8 code point boundary for painless string slice.
+fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
+    if idx >= s.len() {
+        return s.len();
+    }
+    while idx > 0 && !s.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
+/// Run `git` in `workdir` with the given args, return combined stdout+stderr
+/// on success (P1: git often writes success messages to stderr).
+fn run_git_cmd(workdir: &std::path::Path, args: &[&str]) -> Result<String, GitError> {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(workdir)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .output()
+        .map_err(|e| GitError::Operation(format!("git {}: {e}", args.get(0).unwrap_or(&"?"))))?;
+    let combined = format!(
+        "{}{}",
+        String::from_utf8_lossy(&out.stdout).trim(),
+        String::from_utf8_lossy(&out.stderr).trim()
+    );
+    let combined = combined.trim();
+    if !out.status.success() {
+        return Err(GitError::Operation(combined.to_string()));
+    }
+    Ok(truncate_4k(combined))
+}
+
+/// Push current branch to `remote` (defaults to `"origin"` when empty).
+/// C1: pushes `HEAD` explicitly so no upstream tracking is needed.
+pub fn push(repo: &gix::Repository, remote: &str) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let remote = if remote.is_empty() { "origin" } else { remote };
+    run_git_cmd(&workdir, &["push", remote, "HEAD"])  // C1, C3
+}
+
+/// Fetch + fast-forward `remote/HEAD` into current branch.
+/// C2: uses `origin HEAD` explicitly so no upstream tracking is needed.
+pub fn pull(repo: &gix::Repository, remote: &str) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let remote = if remote.is_empty() { "origin" } else { remote };
+    run_git_cmd(&workdir, &["pull", "--ff-only", remote, "HEAD"])  // C2, C3
+}
+
+/// Push working-tree changes onto the stash stack.
+/// C5: when `message` is empty or whitespace, omit the `-m` flag.
+pub fn stash_push(repo: &gix::Repository, message: &str) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let trimmed = message.trim();
+    if trimmed.is_empty() {
+        run_git_cmd(&workdir, &["stash", "push"])             // C5: no -m
+    } else {
+        run_git_cmd(&workdir, &["stash", "push", "-m", trimmed])
+    }
+}
+
+/// Pop (apply + drop) stash entry at `index`.
+pub fn stash_pop(repo: &gix::Repository, index: usize) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let refspec = format!("stash@{{{index}}}");  // P3: bind outside &[...]
+    run_git_cmd(&workdir, &["stash", "pop", &refspec])
+}
+
+/// Apply stash entry at `index` without dropping. C10: service-only, no UI.
+pub fn stash_apply(repo: &gix::Repository, index: usize) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let refspec = format!("stash@{{{index}}}");
+    run_git_cmd(&workdir, &["stash", "apply", &refspec])
+}
+
+/// Drop stash entry at `index` without applying (C10: UI Pop+Drop, Apply service-only).
+pub fn stash_drop(repo: &gix::Repository, index: usize) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let refspec = format!("stash@{{{index}}}");
+    run_git_cmd(&workdir, &["stash", "drop", &refspec])
+}
+
+/// Parse `git stash list` into `StashEntry` vec.
+/// C9: handles both `WIP on <branch>: <msg>` and `On <branch>: <msg>`.
+pub fn stash_list(repo: &gix::Repository) -> Result<Vec<StashEntry>, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let text = run_git_cmd(&workdir, &["stash", "list"])?;
+    let mut entries = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        // P8: parse stash@{N} from the line prefix
+        let stash_n = match line.split(": ").next() {
+            Some(prefix) if prefix.starts_with("stash@{") => prefix.to_string(),
+            _ => continue,
+        };
+        let after_colon = match line.find(": ") {
+            Some(pos) => &line[pos + 2..],
+            None => continue,
+        };
+        let (branch, message) = if let Some(rest) = after_colon.strip_prefix("WIP on ") {
+            parse_branch_msg(rest)
+        } else if let Some(rest) = after_colon.strip_prefix("On ") {
+            parse_branch_msg(rest)
+        } else {
+            ("unknown".to_string(), after_colon.to_string())
+        };
+        let index = entries.len();
+        entries.push(StashEntry {
+            index,
+            branch,
+            message,
+        });
+    }
+    Ok(entries)
+}
+
+fn parse_branch_msg(rest: &str) -> (String, String) {
+    match rest.find(": ") {
+        Some(pos) => (rest[..pos].to_string(), rest[pos + 2..].to_string()),
+        None => (rest.to_string(), String::new()),
+    }
 }
 
 #[cfg(test)]
@@ -812,5 +957,134 @@ mod tests {
         let diff = unified_diff(&repo, "a.txt", true).unwrap();
         assert!(diff.contains("-one"), "{diff}");
         assert!(diff.contains("+staged"), "{diff}");
+    }
+
+    // --- Milestone C -------------------------------------------------------
+
+    #[test]
+    fn push_to_bare_remote() {
+        let td = tempdir().unwrap();
+        let base = std::fs::canonicalize(td.path()).unwrap();
+        // P5: separate workdir and bare.git
+        let workdir = base.join("workdir");
+        std::fs::create_dir(&workdir).unwrap();
+        let bare = base.join("bare.git");
+        git(&base, &["init", "--bare", "-q", "bare.git"]);
+        init_repo(&workdir);
+        std::fs::write(workdir.join("a.txt"), "one").unwrap();
+        git(&workdir, &["add", "a.txt"]);
+        git(&workdir, &["commit", "-q", "-m", "init"]);
+        git(
+            &workdir,
+            &["remote", "add", "origin", bare.to_str().unwrap()],
+        );
+
+        let repo = open_repo(&workdir).unwrap();
+        let out = push(&repo, "origin").unwrap();
+        assert!(!out.is_empty(), "push should produce output: {out}");
+
+        let log = git_output(&bare, &["log", "--oneline", "--all"]);
+        assert!(log.contains("init"), "bare repo should have commit: {log}");
+    }
+
+    #[test]
+    fn pull_from_remote() {
+        let td = tempdir().unwrap();
+        let base = std::fs::canonicalize(td.path()).unwrap();
+        let bare = base.join("bare.git");
+        let pusher = base.join("pusher");
+        std::fs::create_dir(&pusher).unwrap();
+        git(&base, &["init", "--bare", "-q", "bare.git"]);
+        // P5: separate pusher repo
+        init_repo(&pusher);
+        std::fs::write(pusher.join("a.txt"), "v1").unwrap();
+        git(&pusher, &["add", "a.txt"]);
+        git(&pusher, &["commit", "-q", "-m", "c1"]);
+        git(
+            &pusher,
+            &["remote", "add", "origin", bare.to_str().unwrap()],
+        );
+        git(&pusher, &["push", "-q", "origin", "HEAD:refs/heads/main"]);
+        // Set HEAD on the bare remote so clone+fetch have a default branch.
+        let head_set = std::process::Command::new("git")
+            .args(["--git-dir", bare.to_str().unwrap(), "symbolic-ref", "HEAD", "refs/heads/main"])
+            .output()
+            .unwrap();
+        assert!(head_set.status.success(), "git symbolic-ref HEAD failed");
+
+        let clone = base.join("clone");
+        git(
+            &base,
+            &["clone", "-q", bare.to_str().unwrap(), clone.to_str().unwrap()],
+        );
+        std::fs::write(pusher.join("a.txt"), "v2").unwrap();
+        git(&pusher, &["add", "a.txt"]);
+        git(&pusher, &["commit", "-q", "-m", "c2"]);
+        git(&pusher, &["push", "-q", "origin", "HEAD:refs/heads/main"]);
+
+        let repo = open_repo(&clone).unwrap();
+        let out = pull(&repo, "origin").unwrap();
+        assert!(!out.is_empty(), "pull should produce output");
+
+        let log = git_output(&clone, &["log", "--oneline"]);
+        assert!(log.contains("c2"), "clone should have c2 after pull: {log}");
+    }
+
+    #[test]
+    fn stash_push_pop_roundtrip() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "modified").unwrap();
+
+        let repo = open_repo(&root).unwrap();
+        let out = stash_push(&repo, "test stash").unwrap();
+        assert!(out.contains("Saved working directory"), "{out}");
+
+        // Stash touches tracked files only (P4: no untracked).
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.txt")).unwrap(),
+            "one",
+            "stash should restore tracked file"
+        );
+
+        let out = stash_pop(&repo, 0).unwrap();
+        assert!(out.contains("Dropped"), "{out}");
+
+        assert_eq!(
+            std::fs::read_to_string(root.join("a.txt")).unwrap(),
+            "modified"
+        );
+    }
+
+    #[test]
+    fn stash_list_and_drop() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "v1").unwrap();
+        let repo = open_repo(&root).unwrap();
+        stash_push(&repo, "first").unwrap();
+        std::fs::write(root.join("a.txt"), "v2").unwrap();
+        stash_push(&repo, "second").unwrap();
+
+        let entries = stash_list(&repo).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].message, "second");
+        assert_eq!(entries[1].message, "first");
+
+        stash_drop(&repo, 0).unwrap();
+        let entries = stash_list(&repo).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].message, "first");
+    }
+
+    #[test]
+    fn stash_push_empty_message() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "v1").unwrap();
+        let repo = open_repo(&root).unwrap();
+        stash_push(&repo, "").unwrap();
+        // Second push with different content so git doesn't reject as no-op.
+        std::fs::write(root.join("a.txt"), "v2").unwrap();
+        stash_push(&repo, "  ").unwrap();
+        let entries = stash_list(&repo).unwrap();
+        assert_eq!(entries.len(), 2);
     }
 }
