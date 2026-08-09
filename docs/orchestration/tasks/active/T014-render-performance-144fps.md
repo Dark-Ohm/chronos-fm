@@ -2,10 +2,21 @@
 
 **Приоритет:** P1 — цель проекта («blazing fast gpui file manager»), сейчас
 не выполняется. Не блокер функционала, но блокер daily-driver-ощущения.
-**Статус (2026-08-06, чекпоинт #4):** **расследование завершено, замер
-проведён.** Запрет «не оптимизировать до цифр» снят — цифры есть.
-Два отчёта в `report/`: recon по коду форка и perf-замер на живой
-машине. Требуется **архитектурный выбор варианта**, после него — код.
+**Статус (2026-08-09, чекпоинт #6):** **T022 partial-accept + T033
+partial-accept.** Цикл watcher↔self-index **мёртв архитектурно**:
+за 4 минуты idle на новом бинаре наш consumer (`process_changes`)
+вызвался **0 раз** из watcher'а. `merge_thread_0` всё ещё
+держит ~30 % CPU в первые 4 минуты, но это tantivy's own
+cold-start consolidation мелких сегментов от прошлых T014 runs —
+не loop. Полный поток: см. `report-log/T033-kill-watcher-self-index-feedback-loop-report.md`.
+T022 чекпоинт #5 ранее закрыл `WATCHER_DEBOUNCE = 5 s` + Part C audit
+(no-op). Quality gate по обоим тикетам: green (89/89 + 87/87 passed
+соответственно). **Следующий шаг:** AFTER single packet (idle + scroll
++ hover) на stabilised index, не на cold-start — один прогон после
+того, как tantivy сольёт ~14 мелких сегментов в 1-2 (это происходит
+само через несколько минут на hot relaunch). Решение по
+**T014-A** (layout memoization) принимается по post-T033 цифре
+scroll taffy. Вариант **B** — без отдельного разговора.
 
 **Что показал замер** (3×10 с, `perf -F 1000 -g`, release с символами):
 монитор 2560×1440 @ 144 Гц, present mode Mailbox, VRR выкл. — потолок

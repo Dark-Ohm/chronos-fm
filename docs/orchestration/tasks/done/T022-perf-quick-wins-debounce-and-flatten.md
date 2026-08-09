@@ -1,11 +1,34 @@
 # T022 — Перф, быстрые выигрыши: debounce watcher'а + уплощение дерева элементов
 
+> ## ✅ ВЕРДИКТ ПРИЁМКИ: **PARTIAL-ACCEPTED** (2026-08-09)
+>
+> **Что зашло в код:** `WATCHER_DEBOUNCE = 5 s` в `engine.rs:64`,
+> `Duration::from_secs(2)` → константу на call-site, comment-only change в
+> `row.rs:104–110` (документирует, почему outer row wrapper не
+> схлопывается). Part C = no-op по результату аудита: код уже площе, чем
+> оценивал тикет.
+>
+> **Quality gate:** `cargo build --release -p chronos-fm` — green;
+> `cargo test -p chronos-fm-services` — **87/87 passed**;
+> `cargo clippy -p chronos-fm-services -p chronos-fm-pages --all-targets`
+> — 0 errors (warnings — pre-existing в `s3.rs`/`settings.rs`,
+> не цитируют touched files).
+>
+> **BEFORE-таблица = T014 (а не новые измерения).** Scroll/hover AFTER
+> для Part D не информативны: debounce не двигает layout-bound
+> (taffy) cost. Один объединённый AFTER-пакет (idle + scroll + hover)
+> живёт после **T033** (kill watcher ↔ self-index feedback loop) —
+> см. отчёт §4.
+>
+> **Residual:** T033 черновик в `active/` — это следующая инженерная
+> итерация перед T014-A.
+
 **Приоритет:** P1 — первый шаг к цели 144 fps из T014, выбран
 архитектором из четырёх вариантов отчёта.
-**Статус:** готов к исполнению. Корень известен, замер уже сделан —
-но **правки обязаны сопровождаться собственным замером «до/после»**.
+**Статус:** partial-accept (см. врезку выше); отчёт —
+`docs/orchestration/tasks/report-log/T022-perf-quick-wins-report.md`.
 **Родитель:** T014 (остаётся открытым; варианты A и B — следующим шагом,
-после цифр этого тикета).
+после AFTER-пакета после T033).
 
 ## Откуда взялись эти два варианта
 
