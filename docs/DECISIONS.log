@@ -1,0 +1,83 @@
+# Chronos-FM — journal of architectural decisions
+
+Mirror of the ChronOS `DECISIONS.log` convention (T023 / T024).  
+Long-form product/architecture calls live here; short ADR stubs in `docs/adr/`
+point at these entries when both are useful.
+
+---
+
+## 2026-08-09 — T023: empty-state pattern for Chronos-FM pages (ratified)
+
+**Context.** ChronOS T252 (2026-08-05, ratified) fixed a single empty-state
+language for right-panel tabs. Chronos-FM already has unified *card* chrome
+via T002 (`elevated_card` / `section_header` in `chronos-fm-ui::patterns`)
+but no written rule for “what to show when data is missing.” HANDOFF gated
+this port on T252 close; gate is open.
+
+**Decision — adopt T252’s six absence classes for all `chronos-fm-pages`:**
+
+1. **Whole page empty / resting** → honest placeholder: what is missing and
+   where to go. Centered block if the page is essentially empty; inline muted
+   line inside a card if the rest of the page is still useful.
+2. **Sub-section empty inside a useful page** → compact inline muted line or
+   CTA, **not** a giant centered empty. **Hiding the section entirely is
+   allowed** when the section header would be redundant noise (see Git file
+   groups below).
+3. **Async load not finished** → centered/muted `Loading…`, never the final
+   empty until the background settles.
+4. **Error / source unavailable** → `theme::danger` (or status.error) text
+   with a **concrete** reason. Never a blank rect, never bare `"error"`.
+5. **Truncation / soft limits** → honest banner (`Showing N of M…`). No silent
+   clip.
+6. **Not implemented** → icon + name + what it will do; **no** ETA, **no**
+   “coming soon.”
+
+**Cross-cutting honesty (§13 from ChronOS).** No fake content, no inventing
+window titles / device names / counts. Every error carries its cause.
+
+**Layout floor (T249 technique).** Prefer `min_h` / fill on short elevated
+cards so the page does not leave a dead void under a tiny card (Places
+sidebar already uses `h_full` post-T015). Apply when a page feels “hollow,”
+not as a blanket rule.
+
+**No forced shared helper in T023.** Cases intentionally differ (centered vs
+inline vs hide vs danger). A `muted_note` / empty helper is allowed later only
+if ≥3 sites share the same spacing/border recipe; not a gate for this ticket.
+
+### Chronos-FM page audit (architect, 2026-08-09)
+
+| Surface | Absence class | What we show today | Verdict |
+| --- | --- | --- | --- |
+| Explorer — empty folder | 1 | Empty listing + context menu (New Folder / Paste / Refresh) | **Keep** — resting state + actions is honest |
+| Explorer — preview none | 1 | Placeholder in preview panel | **Keep** |
+| Explorer — devices none | 2 | Devices block collapses / short | **Keep** — compact class 2 |
+| Explorer — search empty query | 3→normal | Clears search; listing returns to dir | **Keep** |
+| Explorer — search fail | 4 | Error string with cause (T016 path) | **Keep** — ensure UI always surfaces the string (no silent fail) |
+| Settings — no S3 profiles | 1/2 | Empty profile list copy | **Keep**; CTA path is Settings itself |
+| S3 — NoProfiles | 1 | Card + copy + **Open Settings** (post T011 bugfix) | **Keep** — gold standard class 1 + CTA |
+| S3 — NeedCredentials | 1 | Form + endpoint + validation errors | **Keep** |
+| S3 — Error | 4 | Concrete message | **Keep** |
+| Git — not a repo | 1 | “Not a git repository” | **Keep** |
+| Git — loading | 3 | “Loading…” | **Keep** |
+| Git — op error | 4 | `danger` + concrete message | **Keep** |
+| Git — empty Staged/Modified/Untracked | 2 | **Section omitted** | **Accept hide** — page already shows branch/stash/header; empty file groups need no “0 files” noise |
+| Git — empty stash list | 2 | Stash card still shown (C8) with 0 entries + push row | **Keep** — differs from file sections on purpose (actionable push) |
+| Extensions — no plugins | 1 | Card + “Add them in config.toml” + snippet | **Keep** — honest + actionable |
+
+**Open product residuals (not T023 code, optional later tickets):**
+
+- Truncation banners (class 5) if any listing soft-caps without a banner —
+  audit-on-touch, not a sweep.
+- Search zero-hits UX (query non-empty, 0 results) — ensure a single muted
+  “No matches” line if missing.
+- No new empty-state helper in this decision.
+
+**Code in T023: none.** Pattern is documentation + ADR. Implementation
+changes only when a page **violates** the table; none of the core pages
+require a forced rewrite today.
+
+**Recording mechanism (also from T023 ticket):** both `docs/DECISIONS.log`
+(this entry) and ADR 0010 stub. Further pattern-port gaps → **T024**.
+
+**Verification.** Architect ratification of this entry + ADR 0010. No code
+gate.
