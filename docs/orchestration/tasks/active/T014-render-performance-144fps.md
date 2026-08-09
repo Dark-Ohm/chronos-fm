@@ -1,5 +1,14 @@
 # T014 — Рендер-перформанс: довести до 144 fps
 
+> ## Статус (2026-08-09, чекпоинт #7 — AFTER packet)
+>
+> AFTER single packet **принят** (`report/T014-after-packet-T022-T033-report.md`).
+> T022+T033 в `done/`. Loop мёртв; notify-rs ~4–5% (было ~30%).
+> **T014-A GO:** main-thread taffy ~47–53% of UI self samples.
+> merge_thread residual (33–54% process) — не loop, ортогонален A.
+>
+> **Следующий инженерный тикет:** T014-A layout memoization в форке gpui.
+
 **Приоритет:** P1 — цель проекта («blazing fast gpui file manager»), сейчас
 не выполняется. Не блокер функционала, но блокер daily-driver-ощущения.
 **Статус (2026-08-09, чекпоинт #6):** **T022 partial-accept + T033
