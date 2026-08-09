@@ -43,3 +43,5 @@
 - ファイル名: `NNNN-kebab-case.md` (4 桁連番)
 - 番号は連続採番、欠番は作らない (`Superseded` は status で表現)
 - タイトルは命題形 (Decision を 1 行で要約)
+
+- [0010 — Empty-state pattern](./0010-empty-state-pattern.md)

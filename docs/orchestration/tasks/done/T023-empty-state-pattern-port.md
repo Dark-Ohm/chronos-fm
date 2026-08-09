@@ -1,5 +1,14 @@
 # T023 — Порт паттерна empty-state (источник: ChronOS T252) на страницы Chronos-FM
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> Decision ratified (no code). Six-class pattern from ChronOS T252 adopted
+> for Chronos-FM pages. Full text: `docs/DECISIONS.log` § 2026-08-09 T023;
+> ADR: `docs/adr/0010-empty-state-pattern.md`. Report: `report-log/T023-…`.
+>
+> No forced empty helper. Git empty file-section hide accepted. T024 still
+> owns rejected/ / notes / skill-port decisions.
+
 **Приоритет:** P2 — системная/архитектурная задача, не точечный фикс.
 **Роль:** дизайн-решение архитектора + возможный код после.
 **Статус:** готова к этапу решения (аудит страниц + фиксация паттерна).
