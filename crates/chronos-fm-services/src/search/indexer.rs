@@ -295,6 +295,14 @@ impl IndexManager {
     }
 
     /// Re-indexes or removes each of `paths` (depending on existence) and commits once.
+    ///
+    /// T033 — defense in depth: even though the watcher callback now filters
+    /// `Excludes::matches(path)` paths *before* sending batches (see
+    /// `FileWatcher::new` in `watcher.rs`), this method short-circuits on
+    /// excluded paths too. That way any future caller — direct API use from
+    /// tests, an interpolation in `update_file`, or a sloppy rebuild of the
+    /// watcher — still cannot feed the tantivy commit → `meta.json` write →
+    /// notify → `process_changes` feedback loop.
     pub fn process_changes(&self, paths: &[PathBuf]) -> Result<()> {
         let mut writer_guard = self
             .writer
@@ -307,6 +315,12 @@ impl IndexManager {
         let is_directory_field = schema.get_field("is_directory").context("Schema error")?;
 
         for path in paths {
+            if self.excludes.matches(path) {
+                // Filtered out: skip both re-index and delete. The watcher
+                // never sends these (T033 callback-level filter), but keeping
+                // the predicate here makes the contract explicit and robust.
+                continue;
+            }
             if path.exists() {
                 if let Err(e) = self.index_single_file(
                     path,
@@ -497,5 +511,57 @@ mod tests {
 
         // Restore perms for cleanup.
         let _ = fs::set_permissions(&locked, fs::Permissions::from_mode(0o755));
+    }
+
+    // T033 — defense in depth: even if the watcher callback ever let an
+    // excluded path through (regression, alternate code path, manual call),
+    // `process_changes` must not commit it into the index. Without this guard
+    // the feedback loop can resurface at any layer that touches the writer.
+    #[test]
+    fn process_changes_skips_excluded_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+        let user = root.join("user.txt");
+        fs::write(&user, b"user content alpha").unwrap();
+
+        let index_dir = root.join(".chronos-fm").join("index");
+        fs::create_dir_all(&index_dir).unwrap();
+        let meta = index_dir.join("meta.json");
+        // Use a unique token that is query-syntax-safe (no quotes, no colons,
+        // just ascii word chars) so we can probe the index for the file body.
+        fs::write(&meta, b"metajson_uniquetoken_xyz").unwrap();
+
+        let index_path = tmp.path().join("idx");
+        let mgr =
+            IndexManager::new_with_path(index_path, root, Excludes::default()).unwrap();
+
+        mgr.process_changes(&[user.clone(), meta.clone()])
+            .expect("process_changes commit must succeed");
+
+        // User file must be in the index and discoverable by search.
+        let hits = mgr.search("alpha").unwrap();
+        assert!(
+            hits.iter().any(|r| r.path == user),
+            "user file must be indexed; got {:?}",
+            hits
+        );
+
+        // The excluded `meta.json` must NOT be in the index. Two checks so
+        // the test reads both ways:\n
+        //   a) the unique body-only token returns nothing,\n
+        //   b) any search that *does* return rows never points under\n
+        //      `.chronos-fm/`.\n
+        let leaky = mgr.search("xyz").unwrap();
+        assert!(
+            leaky.is_empty(),
+            "excluded meta.json body must not surface from process_changes; got {:?}",
+            leaky
+        );
+        let all_hits = mgr.search("meta").unwrap();
+        assert!(
+            all_hits.iter().all(|r| !r.path.starts_with(&index_dir.parent().unwrap())),
+            "no indexed path may live under .chronos-fm/; got {:?}",
+            all_hits
+        );
     }
 }

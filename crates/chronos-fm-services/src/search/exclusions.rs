@@ -24,6 +24,14 @@ pub const DEFAULT_EXCLUDE_COMPONENTS: &[&str] = &[
     ".rustup",
     ".Trash",
     ".npm",
+    // T033: our own search index lives at `~/.chronos-fm/index/**`. A Recursive
+    // inotify watch on `$HOME` therefore sees tantivy's own `meta.json` /
+    // segment writes, and the watcher → `process_changes` → `writer.commit()`
+    // → write `meta.json` feedback loop eats ~30% CPU in idle (T014 §2).
+    // Excluding at the component level breaks the loop without unwatching the
+    // subtree (kernel does not support reliable unwatch-subtree on Linux
+    // inotify; tried in T033 path-2 and rejected as architecturally messy).
+    ".chronos-fm",
 ];
 
 /// Resolved exclude set: user-configured `[indexing.exclude]` paths/globs.
@@ -135,6 +143,17 @@ mod tests {
         assert!(e.matches(Path::new("/home/neo/Documents/proj/target/debug/app")));
         assert!(e.matches(Path::new("/home/neo/repo/.git/objects")));
         assert!(e.matches(Path::new("/home/neo/.cache/something")));
+        // T033: the search index itself must be skipped so tantivy's own
+        // `meta.json` / segment writes don't retrigger the watcher and feed
+        // the feedback loop.
+        assert!(e.matches(Path::new("/home/neo/.chronos-fm/index/meta.json")));
+        assert!(e.matches(Path::new("/home/neo/.chronos-fm/index/000/seg.uda")));
+        assert!(e.matches(Path::new("/home/neo/.chronos-fm/non-index-dir/whatever")));
+        // But unrelated `.chronos-fm` named files in deeper paths are also
+        // excluded — this is the price of the component-level match we
+        // already pay for `target`/`node_modules`/etc. Acceptable: real-world
+        // names this narrow will not collide for users.
+        assert!(e.matches(Path::new("/home/neo/projects/.chronos-fm/cache")));
         assert!(!e.matches(Path::new("/home/neo/Documents/proj/src/main.rs")));
         assert!(!e.matches(Path::new("/home/neo/Pictures/photo.png")));
     }

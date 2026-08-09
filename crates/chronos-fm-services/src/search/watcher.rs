@@ -28,17 +28,45 @@ impl FileWatcher {
     /// created subdirs on healthy systems); if that fails we fall back to
     /// watching each *readable* directory individually, skipping the ones we
     /// cannot read and pruning heavy/foreign trees via `excludes`.
+    ///
+    /// **T033 — feedback-loop fix.** The debouncer callback now filters out
+    /// paths that match `excludes` *before* they ever reach the consumer
+    /// thread. The motivating case is `~/.chronos-fm/index/**`: tantivy lives
+    /// under the watched `$HOME`, so without this filter every tantivy commit
+    /// retriggers the watcher → `process_changes` → `writer.commit()` →
+    /// write `meta.json` → loop (T014 §2). Filtering at the callback level
+    /// also means an empty batch (debounce window contained only excluded
+    /// changes) is dropped without waking the consumer. This preserves the
+    /// Recursive fast-path coverage (newly created unexcluded dirs still get
+    /// watched automatically on healthy systems).
     pub fn new(
         root: PathBuf,
         tx: Sender<Vec<PathBuf>>,
         timeout: Duration,
         excludes: Excludes,
     ) -> Result<Self> {
-        // Create debouncer with specified timeout
+        // T033: the callback runs on notify's own thread and receives every
+        // event in the watched tree. We filter against `excludes` *before* any
+        // user of the channel ever sees a path, so the feedback loop
+        // (`meta.json` write → notify → process_changes → commit → write)
+        // never trips itself. `Excludes: Clone`, so we just take a clone for
+        // the closure and leave the original `excludes` for the fallback walker.
+        let excludes_for_cb = excludes.clone();
         let mut debouncer = new_debouncer(timeout, move |res: DebounceEventResult| {
             match res {
                 Ok(events) => {
-                    let paths: Vec<PathBuf> = events.into_iter().map(|e| e.path).collect();
+                    let paths: Vec<PathBuf> = events
+                        .into_iter()
+                        .map(|e| e.path)
+                        .filter(|p| !excludes_for_cb.matches(p))
+                        .collect();
+                    // Drop the batch entirely if everything was excluded:
+                    // there's no work for the consumer and sending an empty
+                    // `Vec` would force a futex wake + `recv_blocking` for
+                    // nothing.
+                    if paths.is_empty() {
+                        return;
+                    }
                     // We run on notify's own thread, so a blocking send is correct here.
                     if let Err(e) = tx.send_blocking(paths) {
                         tracing::warn!("Failed to send watcher events: {}", e);
@@ -63,10 +91,9 @@ impl FileWatcher {
             // Watch each readable directory individually and swallow per-dir
             // errors so one bad branch can't take search down (T016).
             tracing::debug!(
-                "Recursive watch of {:?} failed; falling back to per-directory watch with exclusions",
+                "Recursive watch of {:?} failed; falling back to per-directory watch with excludes",
                 root
             );
-            let excludes = excludes.clone();
             let walker = WalkBuilder::new(&root)
                 .hidden(false)
                 .git_ignore(true)
@@ -94,6 +121,91 @@ mod tests {
     use std::fs;
     use std::os::unix::fs::PermissionsExt;
     use std::time::Duration;
+
+    // T033 — Path 4 verification: when the user rewrites tantivy's own
+    // `meta.json`, the debouncer callback must filter that path so it never
+    // reaches the consumer thread (this is what kills the watcher↔self-index
+    // feedback loop). At the same time, real user edits in *non*-excluded
+    // subdirectories must still produce events.
+    #[cfg(unix)]
+    #[test]
+    fn watcher_callback_filters_self_index_paths() {
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().to_path_buf();
+
+        // Two parallel subtrees: a normal user file and the simulated
+        // tantivy index. Both will be touched; only the user file should
+        // surface in an rx batch.
+        fs::write(root.join("user.txt"), b"hello").unwrap();
+        let index_dir = root.join(".chronos-fm").join("index");
+        fs::create_dir_all(&index_dir).unwrap();
+        let meta = index_dir.join("meta.json");
+        fs::write(&meta, b"{\"version\":1}").unwrap();
+
+        let (tx, rx) = async_channel::bounded(64);
+        let result = FileWatcher::new(
+            root.clone(),
+            tx,
+            Duration::from_millis(100),
+            Excludes::default(),
+        );
+        assert!(result.is_ok(), "watcher must start under T033 excludes");
+
+        // Drain any in-flight events from the initial scan / first-batch
+        // burst so the test reads only what we deliberately write next.
+        std::thread::sleep(Duration::from_millis(200));
+        while rx.try_recv().is_ok() {}
+
+        // Touch both files within a single debounce window so they end up in
+        // the same batch and we can assert the filter behavior on one batch.
+        fs::write(&meta, b"{\"version\":2}").unwrap();
+        fs::write(root.join("user.txt"), b"hello updated").unwrap();
+
+        // Wait up to 2 s for the batch, then collect anything else within
+        // an extra 300 ms so a second debounce window's worth of events also
+        // gets drained — and we can confirm none of them are excluded-path.
+        let deadline = std::time::Instant::now() + Duration::from_secs(2);
+        let mut first_batch = None;
+        let mut leaked_excluded: Vec<PathBuf> = Vec::new();
+        while std::time::Instant::now() < deadline {
+            match rx.try_recv() {
+                Ok(paths) => {
+                    if first_batch.is_none() {
+                        first_batch = Some(paths.clone());
+                    }
+                    leaked_excluded.extend(
+                        paths
+                            .iter()
+                            .filter(|p| p.components().any(|c| {
+                                c.as_os_str().to_string_lossy() == ".chronos-fm"
+                            }))
+                            .cloned(),
+                    );
+                }
+                Err(async_channel::TryRecvError::Empty) => {
+                    std::thread::sleep(Duration::from_millis(50));
+                }
+                Err(async_channel::TryRecvError::Closed) => break,
+            }
+        }
+
+        let batch = first_batch.expect("watcher should have produced at least one batch");
+        assert!(
+            batch.iter().any(|p| p.ends_with("user.txt")),
+            "user edit must reach the consumer; got {:?}",
+            batch
+        );
+        assert!(
+            !batch.iter().any(|p| p.ends_with("meta.json")),
+            "self-index write must be filtered at the callback; got {:?}",
+            batch
+        );
+        assert!(
+            leaked_excluded.is_empty(),
+            "no batch may contain a path under .chronos-fm/; leaked {:?}",
+            leaked_excluded
+        );
+    }
 
     #[cfg(unix)]
     #[test]
