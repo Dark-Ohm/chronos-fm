@@ -1,5 +1,10 @@
 # T035 — Fork: text measurement panic in examples (`text.rs:777`)
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> Fixed in Source/gpui TextLayout prepaint/paint (early return). Report:
+> `report-log/T035-text-measurement-panic-report.md`. Unblocks T028 examples.
+
 **Приоритет:** P1 for fork health (shell/IDE examples, possible Chronos-FM
 risk if path is shared). **Скоуп:** `Source/gpui` (Wall 1 of T028 lifted —
 this ticket owns the fix).
