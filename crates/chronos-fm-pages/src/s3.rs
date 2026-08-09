@@ -16,6 +16,8 @@ use gpui_component::input::{Input, InputState};
 
 use crate::explorer::ExplorerPane;
 
+gpui::actions!(s3, [NavigateToSettings]);
+
 /// Which phase the S3 page is in.
 enum S3State {
     NoProfiles,
@@ -45,7 +47,11 @@ impl Focusable for S3Page {
 impl S3Page {
     pub fn new(config: Config, window: &mut Window, cx: &mut Context<Self>) -> Self {
         let access_key_input = cx.new(|cx| InputState::new(window, cx));
-        let secret_key_input = cx.new(|cx| InputState::new(window, cx));
+        let secret_key_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_masked(true, window, cx);
+            state
+        });
         let state = Self::derive_state(&config);
         Self {
             config,
@@ -289,7 +295,7 @@ fn content(page: &mut S3Page, cx: &mut Context<S3Page>) -> AnyElement {
     }
 }
 
-fn no_profiles_card(cx: &App) -> AnyElement {
+fn no_profiles_card(cx: &mut Context<S3Page>) -> AnyElement {
     elevated_card(cx)
         .p(px(32.0))
         .child("No S3 profiles configured")
@@ -298,6 +304,15 @@ fn no_profiles_card(cx: &App) -> AnyElement {
                 .mt(px(12.0))
                 .text_color(theme::fg_secondary(cx))
                 .child("Add a profile in Settings to connect to your S3-compatible storage."),
+        )
+        .child(
+            div().mt(px(16.0)).child(
+                Button::new("open-settings")
+                    .label("Open Settings")
+                    .on_click(move |_event, window, cx| {
+                        window.dispatch_action(NavigateToSettings.boxed_clone(), cx);
+                    }),
+            ),
         )
         .into_any_element()
 }
@@ -351,7 +366,7 @@ fn credentials_form(page: &mut S3Page, cx: &mut Context<S3Page>) -> AnyElement {
                             .text_sm()
                             .child("Secret Access Key"),
                     )
-                    .child(Input::new(&page.secret_key_input)),
+                    .child(Input::new(&page.secret_key_input).mask_toggle()),
                 ),
         )
         .child(

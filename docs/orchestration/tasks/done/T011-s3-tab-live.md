@@ -7,14 +7,16 @@
 > listing fixed and live-confirmed on RustFS.
 >
 > **Residuals (not reopened as T011 — file new tickets if needed):**
-> - Mask Secret Access Key in credential field
-> - Missing «Open Settings →» on `NoProfiles` card
+> - ~~Mask Secret Access Key~~ **fixed 2026-08-09** (`T011-…-c-bugfixes-report`)
+> - ~~Missing «Open Settings →» on NoProfiles~~ **fixed 2026-08-09**
 > - Deeper prefix navigation / upload / download / delete / multi-profile
 > - Out-of-scope B extras (DnD, multipart, bucket CRUD, …)
+> - Optional live smoke of the two bugfixes on RustFS
 >
 > Reports: `report-log/T011-s3-tab-live-report.md`,
 > `report-log/T011-s3-tab-live-b-milestones-report.md`,
-> `report-log/T021-s3-bucket-listing-report.md`.
+> `report-log/T021-s3-bucket-listing-report.md`,
+> `report-log/T011-s3-tab-live-c-bugfixes-report.md`.
 
 **Приоритет:** P3 — вкладка-пустышка, нет бэкенда, ниже приоритет чем
 Git (нишевее для повседневного использования).

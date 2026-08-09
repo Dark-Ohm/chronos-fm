@@ -8,6 +8,7 @@
 //! launcher window will be a symmetric root in `chronos-fm-launcher`.
 
 use crate::explorer::ExplorerPage;
+use crate::s3::NavigateToSettings;
 use crate::{
     PageKind, extensions::ExtensionsPage, git::GitPage, s3::S3Page, settings::SettingsPage,
 };
@@ -330,6 +331,7 @@ impl Render for RootView {
             .relative()
             .track_focus(&self.focus_handle)
             .on_action(cx.listener(Self::handle_account_action))
+            .on_action(cx.listener(Self::handle_navigate_to_settings))
             .child(toolbar)
             .child(
                 // Main content: toolbar + page
@@ -388,6 +390,15 @@ impl Render for RootView {
 }
 
 impl RootView {
+    fn handle_navigate_to_settings(
+        &mut self,
+        _action: &NavigateToSettings,
+        _window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.set_page(PageKind::Settings, cx);
+    }
+
     fn handle_account_action(
         &mut self,
         action: &AccountMenuAction,
