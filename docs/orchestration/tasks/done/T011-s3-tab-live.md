@@ -1,5 +1,21 @@
 # T011 — S3-таб: браузер объектного хранилища вместо заглушки
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
+>
+> Core deliverable met: S3 tab is live (config → credentials → connect →
+> bucket/object listing via T021). Milestones A/B accepted with errata;
+> listing fixed and live-confirmed on RustFS.
+>
+> **Residuals (not reopened as T011 — file new tickets if needed):**
+> - Mask Secret Access Key in credential field
+> - Missing «Open Settings →» on `NoProfiles` card
+> - Deeper prefix navigation / upload / download / delete / multi-profile
+> - Out-of-scope B extras (DnD, multipart, bucket CRUD, …)
+>
+> Reports: `report-log/T011-s3-tab-live-report.md`,
+> `report-log/T011-s3-tab-live-b-milestones-report.md`,
+> `report-log/T021-s3-bucket-listing-report.md`.
+
 **Приоритет:** P3 — вкладка-пустышка, нет бэкенда, ниже приоритет чем
 Git (нишевее для повседневного использования).
 **Статус (2026-08-06, чекпоинт #4):** Milestones **A и B сданы**.

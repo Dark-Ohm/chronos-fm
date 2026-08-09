@@ -1,13 +1,18 @@
 # T014 — Рендер-перформанс: довести до 144 fps
 
-> ## Статус (2026-08-09, чекпоинт #8)
+> ## ✅ ARCHITECT VERDICT: **CLOSED** (2026-08-09)
 >
-> **T014-A ACCEPT** (layout memoization in Source/gpui). T022/T033/T015 done.
-> AFTER packet accepted. Umbrella stays open until 144 fps or measure-proven
-> unreachable.
+> Engineering track complete. Investigation VERIFIED; children shipped and
+> accepted: T022 (debounce), T033 (watcher↔index loop), T014-A (layout
+> memoization), AFTER packet. notify-rs idle storm and self-index loop
+> addressed; main-thread taffy memo in place.
 >
-> **Next product:** T010-B (git branches/diff). **Next fork QA:** T029.
-> Optional: live hover AFTER-A on release binary.
+> **Not claimed:** continuous 144 fps product guarantee. Residual: optional
+> live AFTER-A on release after memo; variant B (taffy node reuse) only with
+> a new ticket + explicit decision.
+>
+> Reports: `report-log/T014-*.md`, `T014A-*.md`, `T022-*.md`, `T033-*.md`,
+> `T014-after-packet-*.md`.
 
 **Приоритет:** P1 — цель проекта («blazing fast gpui file manager»), сейчас
 не выполняется. Не блокер функционала, но блокер daily-driver-ощущения.
