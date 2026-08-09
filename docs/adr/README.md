@@ -37,6 +37,7 @@
 | [0006](./0006-monorepo-web.md) | web/ を chronos-fm リポジトリ同居 (monorepo) | Accepted |
 | [0007](./0007-cloudflare-hosting.md) | web ホスティングは Cloudflare Pages + Workers + R2 | Accepted |
 | [0008](./0008-web-design-system.md) | web のデザイン北極星は zed.dev、FE は Tailwind v4 + Radix 再スキン | Accepted |
+| [0010](./0010-empty-state-pattern.md) | Empty-state pattern for pages (ChronOS T252 port) | Accepted |
 
 ## 命名規約
 
@@ -44,4 +45,3 @@
 - 番号は連続採番、欠番は作らない (`Superseded` は status で表現)
 - タイトルは命題形 (Decision を 1 行で要約)
 
-- [0010 — Empty-state pattern](./0010-empty-state-pattern.md)
