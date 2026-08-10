@@ -6,8 +6,29 @@
 **Scope:** Local filesystem drag and drop between Explorer list/grid entries,
 folder targets, and the two visible panes.
 
-**Design status:** PROPOSED - awaiting Architect review. Do not implement until
-the committed spec receives an Architect `IMPLEMENT GO` stamp.
+**Design status:** Architect **APPROVE — IMPLEMENT GO** (2026-08-10). Write plan, then implement.
+
+
+> ## ✅ ARCHITECT VERDICT (2026-08-10): **APPROVE — IMPLEMENT GO**
+>
+> Spec `6d1cc69` matches T051 Must and ratified policies:
+>
+> | Decision | Spec § |
+> |----------|--------|
+> | Typed `FileDrag` + pane targets + shared transfer helper (Approach 1) | §2–§3 |
+> | Paste/Drop same batch helper; `unique_name` never overwrite | §4 |
+> | Ctrl-at-**drop** (not drag start); Move default | §1, §3, §7 |
+> | No fall-through empty cwd under item bounds | §5 |
+> | Cross-pane reload/selection; same-pane re-enter guard | §6 |
+> | Marquee cancel on file drag; local FS only | §1, §7 |
+> | Handoffs T052/T053/T054/T056 | §10 |
+>
+> Rejected Approach 2 (page-global coordinator) and 3 (clipboard as drag
+> state) — correct. Partial success must surface as error status, not green.
+>
+> **Next:** implementation plan → execute → report (no self-ACCEPT). Runtime:
+> release `class=chronos-fm`, multi-file cross-pane move + Ctrl-copy evidence.
+
 
 ## 1. Goal and User Contract
 
