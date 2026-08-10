@@ -46,27 +46,35 @@ impl ExplorerPane {
             return;
         };
         let dst_dir = Path::new(&self.cwd).to_path_buf();
-        let mut errors: Vec<String> = Vec::new();
-        for src_path in &clip.paths {
-            let src = Path::new(src_path);
-            let Some(name) = src.file_name().and_then(|n| n.to_str()) else {
-                continue;
-            };
-            let name = ops::unique_name(&dst_dir, name);
-            let dst = dst_dir.join(&name);
-            let result = match mode {
-                ClipboardMode::Copy => ops::copy_path(src, &dst),
-                ClipboardMode::Cut => ops::move_path(src, &dst).map(|_| ()),
-            };
-            if let Err(error) = result {
-                errors.push(format!("{name}: {error}"));
-            }
-        }
+        let sources = clip
+            .paths
+            .iter()
+            .map(Path::new)
+            .map(Path::to_path_buf)
+            .collect::<Vec<_>>();
+        let transfer_mode = match mode {
+            ClipboardMode::Copy => ops::TransferMode::Copy,
+            ClipboardMode::Cut => ops::TransferMode::Move,
+        };
+        let report = ops::transfer_paths(&sources, &dst_dir, transfer_mode);
         if mode == ClipboardMode::Cut {
             clipboard::clear(cx);
         }
         self.reload();
-        if !errors.is_empty() {
+        if !report.failures.is_empty() {
+            let errors = report
+                .failures
+                .into_iter()
+                .map(|failure| {
+                    let source = failure
+                        .source
+                        .file_name()
+                        .and_then(|name| name.to_str())
+                        .map(str::to_owned)
+                        .unwrap_or_else(|| failure.source.display().to_string());
+                    format!("{source}: {}", failure.error)
+                })
+                .collect::<Vec<_>>();
             self.set_status(
                 StatusLevel::Error,
                 format!("Paste failed for {}", errors.join(", ")),
@@ -153,6 +161,7 @@ impl ExplorerPane {
 #[cfg(test)]
 mod tests {
     use super::super::tests::new_explorer_for_tests;
+    use super::clipboard;
     use gpui::TestAppContext;
     use std::fs;
     use tempfile::tempdir;
@@ -215,6 +224,74 @@ mod tests {
             fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(),
             "hello"
         );
+    }
+
+    #[gpui::test]
+    async fn paste_collision_uses_the_service_unique_name(cx: &mut TestAppContext) {
+        let src_dir = tempdir().unwrap();
+        let dst_dir = tempdir().unwrap();
+        let src = src_dir.path().join("file.txt");
+        fs::write(&src, "new").unwrap();
+        fs::write(dst_dir.path().join("file.txt"), "existing").unwrap();
+
+        let window = new_explorer_for_tests(cx, dst_dir.path());
+        window
+            .update(cx, |_page, _window, cx| {
+                clipboard::set_copy(vec![src.to_string_lossy().to_string()], cx);
+            })
+            .unwrap();
+        window
+            .update(cx, |page, _window, cx| page.paste_clipboard(cx))
+            .unwrap();
+
+        assert!(src.exists(), "copy preserves source");
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("file.txt")).unwrap(),
+            "existing"
+        );
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("file (2).txt")).unwrap(),
+            "new"
+        );
+    }
+
+    #[gpui::test]
+    async fn partial_cut_paste_reports_error_and_clears_clipboard(cx: &mut TestAppContext) {
+        let src_dir = tempdir().unwrap();
+        let dst_dir = tempdir().unwrap();
+        let existing = src_dir.path().join("existing.txt");
+        let missing = src_dir.path().join("missing.txt");
+        fs::write(&existing, "payload").unwrap();
+
+        let window = new_explorer_for_tests(cx, dst_dir.path());
+        window
+            .update(cx, |_page, _window, cx| {
+                clipboard::set_cut(
+                    vec![
+                        existing.to_string_lossy().to_string(),
+                        missing.to_string_lossy().to_string(),
+                    ],
+                    cx,
+                );
+            })
+            .unwrap();
+        window
+            .update(cx, |page, _window, cx| page.paste_clipboard(cx))
+            .unwrap();
+
+        assert!(!existing.exists(), "successful cut item is moved");
+        assert!(dst_dir.path().join("existing.txt").exists());
+        window
+            .update(cx, |page, _window, cx| {
+                assert!(
+                    page.status_for_footer()
+                        .is_some_and(|(_, is_error)| is_error)
+                );
+                let clip = clipboard::current(cx);
+                assert!(clip.mode.is_none());
+                assert!(clip.paths.is_empty());
+            })
+            .unwrap();
     }
 
     #[gpui::test]

@@ -21,6 +21,46 @@ pub enum MoveKind {
     CrossVolume,
 }
 
+/// Whether a batch transfer copies or moves its sources.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TransferMode {
+    /// Preserve each source after creating its destination copy.
+    Copy,
+    /// Remove each source after moving it to the destination.
+    Move,
+}
+
+/// One successfully transferred source and its resolved destination.
+#[derive(Debug)]
+pub struct TransferSuccess {
+    /// Original source path.
+    pub source: PathBuf,
+    /// Final destination path after conflict-name resolution.
+    pub destination: PathBuf,
+    /// Whether conflict resolution changed the destination file name.
+    pub renamed: bool,
+    /// How a move was performed, or `None` for a copy.
+    pub move_kind: Option<MoveKind>,
+}
+
+/// One source that could not be transferred.
+#[derive(Debug)]
+pub struct TransferFailure {
+    /// Original source path.
+    pub source: PathBuf,
+    /// Error returned while validating or transferring the source.
+    pub error: Error,
+}
+
+/// Structured outcomes for a batch transfer, including partial completion.
+#[derive(Debug)]
+pub struct TransferReport {
+    /// Sources that were transferred successfully.
+    pub successes: Vec<TransferSuccess>,
+    /// Sources that failed validation or transfer.
+    pub failures: Vec<TransferFailure>,
+}
+
 /// How a name collision at the destination should be resolved when copying or
 /// moving. The resolution itself is applied by the caller; this module only
 /// provides the building blocks ([`would_conflict`], [`unique_name`]).
@@ -117,6 +157,55 @@ pub fn unique_name(dir: &Path, name: &str) -> String {
         }
         counter += 1;
     }
+}
+
+/// Copies or moves every source into `destination`, keeping both entries on a
+/// name collision and preserving successes alongside failures in one report.
+pub fn transfer_paths(
+    sources: &[PathBuf],
+    destination: &Path,
+    mode: TransferMode,
+) -> TransferReport {
+    let mut report = TransferReport {
+        successes: Vec::new(),
+        failures: Vec::new(),
+    };
+
+    for source in sources {
+        let Some(name) = source.file_name().and_then(|name| name.to_str()) else {
+            report.failures.push(TransferFailure {
+                source: source.clone(),
+                error: Error::Other(format!(
+                    "cannot transfer path without a valid final name: {}",
+                    source.display()
+                )),
+            });
+            continue;
+        };
+
+        let resolved_name = unique_name(destination, name);
+        let renamed = resolved_name != name;
+        let resolved_destination = destination.join(resolved_name);
+        let result = match mode {
+            TransferMode::Copy => copy_path(source, &resolved_destination).map(|()| None),
+            TransferMode::Move => move_path(source, &resolved_destination).map(Some),
+        };
+
+        match result {
+            Ok(move_kind) => report.successes.push(TransferSuccess {
+                source: source.clone(),
+                destination: resolved_destination,
+                renamed,
+                move_kind,
+            }),
+            Err(error) => report.failures.push(TransferFailure {
+                source: source.clone(),
+                error,
+            }),
+        }
+    }
+
+    report
 }
 
 /// Recursively copies `src` (a file or directory) to `dst`, where `dst` is the
@@ -310,6 +399,163 @@ mod tests {
         assert_eq!(kind, MoveKind::Rename);
         assert!(!src.exists());
         assert_eq!(fs::read_to_string(&dst).unwrap(), "payload");
+    }
+
+    #[test]
+    fn transfer_paths_copy_keeps_both_with_unique_name() {
+        let dir = tempdir().unwrap();
+        let source_dir = dir.path().join("source");
+        let destination = dir.path().join("destination");
+        fs::create_dir(&source_dir).unwrap();
+        fs::create_dir(&destination).unwrap();
+        let src = source_dir.join("file.txt");
+        fs::write(&src, "new").unwrap();
+        fs::write(destination.join("file.txt"), "existing").unwrap();
+
+        let report = transfer_paths(&[src.clone()], &destination, TransferMode::Copy);
+
+        assert!(src.exists());
+        assert_eq!(
+            fs::read_to_string(destination.join("file.txt")).unwrap(),
+            "existing"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("file (2).txt")).unwrap(),
+            "new"
+        );
+        assert_eq!(report.successes.len(), 1);
+        assert!(report.failures.is_empty());
+        assert_eq!(report.successes[0].source, src);
+        assert_eq!(
+            report.successes[0].destination,
+            destination.join("file (2).txt")
+        );
+        assert!(report.successes[0].renamed);
+        assert_eq!(report.successes[0].move_kind, None);
+    }
+
+    #[test]
+    fn transfer_paths_move_keeps_both_with_unique_name() {
+        let dir = tempdir().unwrap();
+        let source_dir = dir.path().join("source");
+        let destination = dir.path().join("destination");
+        fs::create_dir(&source_dir).unwrap();
+        fs::create_dir(&destination).unwrap();
+        let src = source_dir.join("file.txt");
+        fs::write(&src, "moved").unwrap();
+        fs::write(destination.join("file.txt"), "existing").unwrap();
+
+        let report = transfer_paths(&[src.clone()], &destination, TransferMode::Move);
+
+        assert!(!src.exists(), "move removes the source");
+        assert_eq!(
+            fs::read_to_string(destination.join("file.txt")).unwrap(),
+            "existing"
+        );
+        assert_eq!(
+            fs::read_to_string(destination.join("file (2).txt")).unwrap(),
+            "moved"
+        );
+        assert_eq!(report.successes.len(), 1);
+        assert!(report.failures.is_empty());
+        assert_eq!(
+            report.successes[0].destination,
+            destination.join("file (2).txt")
+        );
+        assert!(report.successes[0].renamed);
+        assert!(report.successes[0].move_kind.is_some());
+    }
+
+    #[test]
+    fn transfer_paths_copy_without_collision_keeps_original_name() {
+        let dir = tempdir().unwrap();
+        let source_dir = dir.path().join("source");
+        let destination = dir.path().join("destination");
+        fs::create_dir(&source_dir).unwrap();
+        fs::create_dir(&destination).unwrap();
+        let src = source_dir.join("file.txt");
+        fs::write(&src, "payload").unwrap();
+
+        let report = transfer_paths(&[src.clone()], &destination, TransferMode::Copy);
+
+        assert!(src.exists());
+        assert!(destination.join("file.txt").exists());
+        assert_eq!(report.successes.len(), 1);
+        assert!(report.failures.is_empty());
+        assert_eq!(
+            report.successes[0].destination,
+            destination.join("file.txt")
+        );
+        assert!(!report.successes[0].renamed);
+        assert_eq!(report.successes[0].move_kind, None);
+    }
+
+    #[test]
+    fn transfer_paths_rejects_sources_without_a_valid_final_component() {
+        let destination = tempdir().unwrap();
+        let empty = PathBuf::new();
+        let root = PathBuf::from(std::path::MAIN_SEPARATOR.to_string());
+        let mut sources = vec![empty.clone(), root.clone()];
+        #[cfg(unix)]
+        {
+            use std::os::unix::ffi::OsStringExt;
+            sources.push(PathBuf::from(std::ffi::OsString::from_vec(vec![0xff])));
+        }
+
+        let report = transfer_paths(&sources, destination.path(), TransferMode::Copy);
+
+        assert!(report.successes.is_empty());
+        assert_eq!(report.failures.len(), sources.len());
+        assert_eq!(report.failures[0].source, empty);
+        assert_eq!(report.failures[1].source, root);
+        assert!(
+            report
+                .failures
+                .iter()
+                .all(|failure| failure.error.to_string().contains("valid final name"))
+        );
+    }
+
+    #[test]
+    fn transfer_paths_report_preserves_total_failure() {
+        let dir = tempdir().unwrap();
+        let destination = dir.path().join("destination");
+        fs::create_dir(&destination).unwrap();
+        let missing_a = dir.path().join("missing-a.txt");
+        let missing_b = dir.path().join("missing-b.txt");
+
+        let report = transfer_paths(
+            &[missing_a.clone(), missing_b.clone()],
+            &destination,
+            TransferMode::Copy,
+        );
+
+        assert!(report.successes.is_empty());
+        assert_eq!(report.failures.len(), 2);
+        assert_eq!(report.failures[0].source, missing_a);
+        assert_eq!(report.failures[1].source, missing_b);
+    }
+
+    #[test]
+    fn transfer_paths_report_preserves_partial_failure() {
+        let dir = tempdir().unwrap();
+        let destination = dir.path().join("destination");
+        fs::create_dir(&destination).unwrap();
+        let existing = dir.path().join("existing.txt");
+        let missing = dir.path().join("missing.txt");
+        fs::write(&existing, "payload").unwrap();
+
+        let report = transfer_paths(
+            &[existing.clone(), missing.clone()],
+            &destination,
+            TransferMode::Copy,
+        );
+
+        assert_eq!(report.successes.len(), 1);
+        assert_eq!(report.failures.len(), 1);
+        assert_eq!(report.successes[0].source, existing);
+        assert_eq!(report.failures[0].source, missing);
+        assert!(destination.join("existing.txt").exists());
     }
 
     #[test]
