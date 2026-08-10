@@ -119,6 +119,47 @@ re-entrancy in `taffy.rs` for what happens when `compute_layout` is called
 again for a *different* subtree before the outer one has finished pinning
 every node's `absolute_layout_bounds`.
 
+## H5 narrowing (2026-08-10, continued): offset-stack leak ruled out by static review
+
+Read `Window::layout_bounds` (`window.rs:4375`): its returned `bounds.origin`
+is `stored_absolute_origin + self.pixel_snap_point(self.element_offset())`
+— i.e. it depends on the **ambient** `element_offset_stack` at call time, not
+a value fixed per-node. This looked like a strong lead: if
+`v_virtual_list`'s nested `layout_as_root`/`prepaint_at` calls left that
+stack unbalanced (pushed without a matching pop), every *later* sibling
+paint in the same frame would read a corrupted ambient offset.
+
+**Ruled out by code review** (no live test needed for this part): traced
+every push/pop pair in the exact call path —
+`AnyElement::prepaint_at` (`element.rs:643`) wraps its single `self.prepaint`
+call in `window.with_absolute_element_offset(origin, |window| ...)`, which
+itself (`window.rs:3358`) pushes, calls the closure, then unconditionally
+pops — a single-expression RAII-shaped scope, no early return, no loop
+inside it that could double-push. `v_virtual_list`'s own item loop
+(`virtual_list.rs:692`) wraps the whole per-item loop in one
+`window.with_content_mask(...)` call, same shape. **Every scope here is
+correctly balanced by construction** — this specific leak mechanism is not
+what's happening. (Still worth checking `element_offset_stack` depth
+*empirically* — this review only rules out an *unbalanced push/pop*, not
+every possible way the ambient offset could be wrong going in.)
+
+**Also notable, not yet explained:** the debug output is not "slightly
+off" — it is **exactly** `Bounds { origin: (0,0), size: (0,0) }` on all
+12,588 occurrences, no variance. That's the shape of a `Bounds::default()`
+value, not a corrupted-but-computed one. Worth checking whether some path
+paints with a genuinely default/uninitialized `Bounds` rather than one
+derived from `layout_bounds()` at all — e.g. a second, distinct paint
+invocation for the same element that never went through the normal
+layout→bounds resolution this frame.
+
+**Stopping point for this session:** further progress needs either (a) a
+live instrumented trace correlating the *exact* frame-relative timing of a
+zero-bounds SVG paint against `v_virtual_list`'s nested-layout window, or
+(b) a minimal isolated repro in a new `Source/gpui/examples/` file (sibling
+SVG icon + a nested `layout_as_root` caller, no Chronos-FM code at all) —
+both are real next steps, not done this pass. Handing off with the search
+space narrowed rather than forcing another live cycle for its own sake.
+
 ## Done when
 
 1. Root cause Claim → Evidence (one H* confirmed, others falsified).
