@@ -208,6 +208,7 @@ fn render_resizable_column_header(
         ))
         .child(
             div()
+                .debug_selector(move || format!("list-column-resize-{column_index}"))
                 .absolute()
                 .top_0()
                 .right_0()

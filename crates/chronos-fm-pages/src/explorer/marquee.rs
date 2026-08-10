@@ -168,9 +168,17 @@ mod tests {
         cx: &mut TestAppContext,
         view_mode: ViewMode,
     ) -> (WindowHandle<Root>, Entity<ExplorerPane>) {
+        rooted_pane_with_entries(cx, view_mode, 6)
+    }
+
+    fn rooted_pane_with_entries(
+        cx: &mut TestAppContext,
+        view_mode: ViewMode,
+        entry_count: usize,
+    ) -> (WindowHandle<Root>, Entity<ExplorerPane>) {
         cx.update(gpui_component::init);
         cx.update(crate::explorer::clipboard::init);
-        let entries = (0..6)
+        let entries = (0..entry_count)
             .map(|ix| file(&format!("marquee-{ix}.txt")))
             .collect::<Vec<_>>();
         let root = cx.add_window(move |window, cx| {
@@ -316,26 +324,24 @@ mod tests {
         cx.simulate_resize(size(px(900.), px(560.)));
         draw_window(&mut cx);
 
-        let (row_points, header_point) = pane.read_with(&cx, |pane, _cx| {
-            let rows = [0, 2, 4].map(|ix| {
+        let row_points = pane.read_with(&cx, |pane, _cx| {
+            [0, 2, 4].map(|ix| {
                 center(
                     *pane
                         .measured_items
                         .get(&ix)
                         .expect("list must measure the click-test row"),
                 )
-            });
-            let header = center(
-                *pane
-                    .marquee_exclusions
-                    .get("list-header")
-                    .expect("list must measure its header exclusion"),
-            );
-            (rows, header)
+            })
         });
+        let resize_point = center(
+            cx.debug_bounds("list-column-resize-0")
+                .expect("list must render the nested name-column resize handle"),
+        );
 
-        cx.simulate_click(row_points[0], Modifiers::default());
+        cx.simulate_mouse_down(row_points[0], MouseButton::Left, Modifiers::default());
         assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+        cx.simulate_mouse_up(row_points[0], MouseButton::Left, Modifiers::default());
         assert_eq!(
             pane.read_with(&cx, |pane, _cx| pane.selection.clone()),
             BTreeSet::from([0])
@@ -363,9 +369,15 @@ mod tests {
             assert_eq!(pane.selection, BTreeSet::from([2, 3, 4]));
             assert_eq!(pane.selection_anchor, Some(2));
         });
-        cx.simulate_mouse_down(header_point, MouseButton::Left, Modifiers::default());
-        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
-        cx.simulate_mouse_up(header_point, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_down(resize_point, MouseButton::Left, Modifiers::default());
+        pane.read_with(&cx, |pane, _cx| {
+            assert!(pane.marquee.is_none());
+            assert!(
+                pane.resizing_column.is_some(),
+                "the nested name-column resize handle must own the press"
+            );
+        });
+        cx.simulate_mouse_up(resize_point, MouseButton::Left, Modifiers::default());
         draw_window(&mut cx);
 
         let (start, end, expected) = pane.read_with(&cx, |pane, _cx| routing_points(pane));
@@ -417,8 +429,9 @@ mod tests {
                 )
             })
         });
-        cx.simulate_click(tile_points[0], Modifiers::default());
+        cx.simulate_mouse_down(tile_points[0], MouseButton::Left, Modifiers::default());
         assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+        cx.simulate_mouse_up(tile_points[0], MouseButton::Left, Modifiers::default());
         assert_eq!(
             pane.read_with(&cx, |pane, _cx| pane.selection.clone()),
             BTreeSet::from([0])
@@ -484,6 +497,63 @@ mod tests {
             ..Default::default()
         });
         assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+    }
+
+    #[gpui::test]
+    fn marquee_routing_grid_retains_only_tiles_intersecting_viewport(cx: &mut TestAppContext) {
+        let (root, pane) = rooted_pane_with_entries(cx, ViewMode::Grid, 48);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(720.), px(360.)));
+        draw_window(&mut cx);
+
+        pane.read_with(&cx, |pane, _cx| {
+            let viewport = pane
+                .listing_viewport
+                .expect("overflowing grid must measure its viewport");
+            let offscreen = pane
+                .measured_items
+                .iter()
+                .filter_map(|(&ix, &bounds)| {
+                    (!intersects_closed(bounds, viewport)).then_some((ix, bounds))
+                })
+                .collect::<Vec<_>>();
+            assert!(
+                offscreen.is_empty(),
+                "grid retained off-screen prepaint bounds: {offscreen:?}"
+            );
+            assert!(
+                pane.measured_items.len() < pane.filtered_entries.len(),
+                "overflowing grid must exclude non-visible tiles"
+            );
+            assert!(
+                !pane
+                    .measured_items
+                    .contains_key(&(pane.filtered_entries.len() - 1)),
+                "the final overflowing tile must not remain measured"
+            );
+        });
+    }
+
+    #[gpui::test]
+    fn marquee_routing_list_measures_only_virtual_visible_rows(cx: &mut TestAppContext) {
+        let (root, pane) = rooted_pane_with_entries(cx, ViewMode::List, 48);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(720.), px(360.)));
+        draw_window(&mut cx);
+
+        pane.read_with(&cx, |pane, _cx| {
+            assert!(!pane.measured_items.is_empty());
+            assert!(
+                pane.measured_items.len() < pane.filtered_entries.len(),
+                "virtual list must not measure every overflowing row"
+            );
+            assert!(
+                !pane
+                    .measured_items
+                    .contains_key(&(pane.filtered_entries.len() - 1)),
+                "the final overflowing row must not remain measured"
+            );
+        });
     }
 
     #[gpui::test]

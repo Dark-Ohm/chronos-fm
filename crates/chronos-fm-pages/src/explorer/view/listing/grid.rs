@@ -1,6 +1,7 @@
 use super::truncate_middle;
 use crate::explorer::ExplorerPane;
 use crate::explorer::clipboard::{self, ClipboardMode};
+use crate::explorer::marquee::intersects_closed;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::Input;
@@ -102,7 +103,11 @@ fn render_grid_item(
         .on_prepaint(move |bounds, _window, cx| {
             entity.update(cx, |pane, _cx| {
                 if let Some(token) = pane.geometry_token.clone() {
-                    pane.record_item_bounds(ix, bounds, token);
+                    if intersects_closed(bounds, token.viewport) {
+                        pane.record_item_bounds(ix, bounds, token);
+                    } else if pane.geometry_token.as_ref() == Some(&token) {
+                        pane.measured_items.remove(&ix);
+                    }
                 }
             });
         })
