@@ -67,11 +67,11 @@ Active queue files: **`T039`**, **`T042`** only.
 - **Executor:** code + release grim; vision for visual ACCEPT; no self-ACCEPT.
 
 ### Очередь (сейчас)
-1. **T039** — prove 4-view S3 shell with profile (or always-show chrome decision).
-2. Phase F backends after full V (T039 close).
-3. `git push` (ahead origin) — **only on user request**.
-4. Perf residuals — non-blocking.
-5. Smoke tip: Git populated grims need clean `state.redb` or repo path.
+1. **T048 epic** — Explorer essentials (Thunar parity): T049–T056 filed.
+2. **P0 next:** T049 keybindings ∥ T050 marquee multi-select → T051 in-app DnD → T052 external DnD.
+3. **T039** residual — S3 profile / always-show 4-view chrome (parallel OK).
+4. T053 conflict · T054 undo · T055 terminal · T056 new file/progress (P1–P2).
+5. `git push` — **only on user request**.
 
 ### Где что лежит
 | Что | Путь |

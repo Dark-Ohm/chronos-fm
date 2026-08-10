@@ -6,6 +6,32 @@ point at these entries when both are useful.
 
 ---
 
+## 2026-08-10 — T048 Explorer essentials epic (Thunar parity track)
+
+**Context.** Phase V pixel-copy (T042) closed most tab shells; daily-driver
+gap is Explorer muscle memory (keys, marquee multi-select, DnD), not more
+tab chrome.
+
+**Decision.** File parallel P0 program **T048** with children T049–T056:
+
+| ID | Scope |
+|----|--------|
+| T049 | File-ops keybindings |
+| T050 | Multi-select + **marquee rubber-band** (list+grid) |
+| T051 | **DnD in-app** |
+| T052 | **DnD external** (↔ other apps) |
+| T053 | Paste/drop conflict dialog |
+| T054 | Undo stack |
+| T055 | Open terminal here |
+| T056 | New file + bulk progress |
+
+Order: T049 ∥ T050 → T051 → T052; T053–T056 after. Orthogonal to T039 residual.
+
+**Consequences.** Executors pick T049/T050 first; no self-ACCEPT; evidence
+discipline unchanged.
+
+---
+
 ## 2026-08-09 — T023: empty-state pattern for Chronos-FM pages (ratified)
 
 **Context.** ChronOS T252 (2026-08-05, ratified) fixed a single empty-state

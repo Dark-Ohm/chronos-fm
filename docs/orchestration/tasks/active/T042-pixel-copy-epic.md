@@ -48,3 +48,9 @@ Source: `/home/neo/projects/chronos-ecosystem/Source`.
 ## Done when (epic)
 
 All five page children full Phase V ACCEPT. T039 last open page child.
+
+## Parallel program
+
+**T048 Explorer essentials** (T049–T056) is a separate P0 track — daily FM
+parity (keys, marquee select, DnD). Does not replace finishing T039 V.
+
