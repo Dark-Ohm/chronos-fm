@@ -1,5 +1,6 @@
 /// Global clipboard for copy/cut/paste, shared across panes and tabs.
 pub mod clipboard;
+pub(crate) mod marquee;
 mod entries;
 mod file_ops;
 mod list_setup;
