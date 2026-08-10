@@ -123,7 +123,11 @@ mod tests {
     use crate::explorer::ExplorerPane;
     use crate::explorer::types::ViewMode;
     use chronos_fm_services::fs::listing::FileEntryDto;
-    use gpui::{AppContext, Bounds, Modifiers, TestAppContext, WindowHandle, point, px, size};
+    use gpui::{
+        AppContext, Bounds, Entity, Modifiers, MouseButton, ScrollDelta, ScrollWheelEvent,
+        TestAppContext, VisualTestContext, WindowHandle, point, px, size,
+    };
+    use gpui_component::Root;
     use gpui_component::input::InputState;
     use gpui_component::resizable::ResizableState;
     use std::collections::BTreeSet;
@@ -158,6 +162,328 @@ mod tests {
             size: 1,
             modified: 0,
         }
+    }
+
+    fn rooted_pane(
+        cx: &mut TestAppContext,
+        view_mode: ViewMode,
+    ) -> (WindowHandle<Root>, Entity<ExplorerPane>) {
+        cx.update(gpui_component::init);
+        cx.update(crate::explorer::clipboard::init);
+        let entries = (0..6)
+            .map(|ix| file(&format!("marquee-{ix}.txt")))
+            .collect::<Vec<_>>();
+        let root = cx.add_window(move |window, cx| {
+            let pane = cx.new(|cx| {
+                let mut pane = ExplorerPane::build(None, window, cx);
+                pane.loaded = true;
+                pane.sidebar_visible = false;
+                pane.view_mode = view_mode;
+                pane.entries = entries.clone();
+                pane.replace_filtered_entries(entries);
+                pane.update_item_sizes();
+                pane
+            });
+            Root::new(pane, window, cx)
+        });
+        let pane = root
+            .read_with(cx, |root, _cx| {
+                root.view()
+                    .clone()
+                    .downcast::<ExplorerPane>()
+                    .expect("the Root's view is the explorer pane")
+            })
+            .expect("window is alive");
+        (root, pane)
+    }
+
+    fn draw_window(cx: &mut VisualTestContext) {
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+    }
+
+    fn point_inside(bounds: Bounds<gpui::Pixels>, position: Point<gpui::Pixels>) -> bool {
+        position.x.as_f32() >= bounds.left().as_f32()
+            && position.x.as_f32() <= bounds.right().as_f32()
+            && position.y.as_f32() >= bounds.top().as_f32()
+            && position.y.as_f32() <= bounds.bottom().as_f32()
+    }
+
+    fn center(bounds: Bounds<gpui::Pixels>) -> Point<gpui::Pixels> {
+        point(
+            bounds.left() + bounds.size.width / 2.,
+            bounds.top() + bounds.size.height / 2.,
+        )
+    }
+
+    fn routing_points(
+        pane: &ExplorerPane,
+    ) -> (Point<gpui::Pixels>, Point<gpui::Pixels>, BTreeSet<usize>) {
+        let viewport = pane
+            .listing_viewport
+            .expect("marquee routing must measure the listing viewport");
+        assert!(
+            pane.measured_items.len() >= 3,
+            "marquee routing must measure at least three visible items"
+        );
+
+        let left = viewport.left().as_f32() + 8.;
+        let right = viewport.right().as_f32() - 8.;
+        let top = viewport.top().as_f32() + 8.;
+        let bottom = viewport.bottom().as_f32() - 8.;
+        let mut starts = Vec::new();
+        for x_step in 0..=10 {
+            for y_step in 0..=10 {
+                let x = left + (right - left) * x_step as f32 / 10.;
+                let y = top + (bottom - top) * y_step as f32 / 10.;
+                let candidate = point(px(x), px(y));
+                if pane
+                    .measured_items
+                    .values()
+                    .chain(pane.marquee_exclusions.values())
+                    .all(|bounds| !point_inside(*bounds, candidate))
+                {
+                    starts.push(candidate);
+                }
+            }
+        }
+
+        let mut ends = Vec::new();
+        for bounds in pane.measured_items.values() {
+            let item_center = center(*bounds);
+            ends.push(point(
+                px(item_center.x.as_f32().max(left).min(right)),
+                px(item_center.y.as_f32().max(top).min(bottom)),
+            ));
+            ends.push(point(
+                px(bounds.left().as_f32().max(left).min(right)),
+                px(bounds.top().as_f32().max(top).min(bottom)),
+            ));
+            ends.push(point(
+                px(bounds.right().as_f32().max(left).min(right)),
+                px(bounds.bottom().as_f32().max(top).min(bottom)),
+            ));
+        }
+
+        let mut best = None;
+        for start in starts {
+            for &end in &ends {
+                if !past_threshold(start, end) {
+                    continue;
+                }
+                let rect = normalized_rect(start, end);
+                let hits = pane
+                    .measured_items
+                    .iter()
+                    .filter(|(_, bounds)| intersects_closed(rect, **bounds))
+                    .map(|(&ix, _)| ix)
+                    .collect::<BTreeSet<_>>();
+                if hits.len() < 3 {
+                    continue;
+                }
+                let distance = (start.x - end.x).abs().as_f32()
+                    + (start.y - end.y).abs().as_f32();
+                if best
+                    .as_ref()
+                    .is_none_or(|(best_hits, best_distance, _, _): &(BTreeSet<usize>, f32, _, _)| {
+                        hits.len() > best_hits.len()
+                            || (hits.len() == best_hits.len() && distance > *best_distance)
+                    })
+                {
+                    best = Some((hits, distance, start, end));
+                }
+            }
+        }
+
+        let (hits, _, start, end) =
+            best.expect("measured listing must expose an empty drag spanning three items");
+        (start, end, hits)
+    }
+
+    fn assert_rect_inside(inner: Bounds<gpui::Pixels>, outer: Bounds<gpui::Pixels>) {
+        assert!(inner.left().as_f32() >= outer.left().as_f32());
+        assert!(inner.top().as_f32() >= outer.top().as_f32());
+        assert!(inner.right().as_f32() <= outer.right().as_f32());
+        assert!(inner.bottom().as_f32() <= outer.bottom().as_f32());
+    }
+
+    #[gpui::test]
+    fn marquee_routing_list_measures_rejects_chrome_and_finishes(cx: &mut TestAppContext) {
+        let (root, pane) = rooted_pane(cx, ViewMode::List);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.), px(560.)));
+        draw_window(&mut cx);
+
+        let (row_points, header_point) = pane.read_with(&cx, |pane, _cx| {
+            let rows = [0, 2, 4].map(|ix| {
+                center(
+                    *pane
+                        .measured_items
+                        .get(&ix)
+                        .expect("list must measure the click-test row"),
+                )
+            });
+            let header = center(
+                *pane
+                    .marquee_exclusions
+                    .get("list-header")
+                    .expect("list must measure its header exclusion"),
+            );
+            (rows, header)
+        });
+
+        cx.simulate_click(row_points[0], Modifiers::default());
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+        assert_eq!(
+            pane.read_with(&cx, |pane, _cx| pane.selection.clone()),
+            BTreeSet::from([0])
+        );
+        cx.simulate_click(
+            row_points[1],
+            Modifiers {
+                control: true,
+                ..Modifiers::default()
+            },
+        );
+        assert_eq!(
+            pane.read_with(&cx, |pane, _cx| pane.selection.clone()),
+            BTreeSet::from([0, 2])
+        );
+        cx.simulate_click(
+            row_points[2],
+            Modifiers {
+                control: true,
+                shift: true,
+                ..Modifiers::default()
+            },
+        );
+        pane.read_with(&cx, |pane, _cx| {
+            assert_eq!(pane.selection, BTreeSet::from([2, 3, 4]));
+            assert_eq!(pane.selection_anchor, Some(2));
+        });
+        cx.simulate_mouse_down(header_point, MouseButton::Left, Modifiers::default());
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+        cx.simulate_mouse_up(header_point, MouseButton::Left, Modifiers::default());
+        draw_window(&mut cx);
+
+        let (start, end, expected) = pane.read_with(&cx, |pane, _cx| routing_points(pane));
+        cx.simulate_mouse_down(start, MouseButton::Left, Modifiers::default());
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_some()));
+        cx.simulate_mouse_move(end, Some(MouseButton::Left), Modifiers::default());
+        pane.read_with(&cx, |pane, _cx| {
+            assert_eq!(pane.selection, expected);
+            assert!(pane.selection.len() >= 3);
+            assert_rect_inside(
+                pane.marquee_rect().expect("drag paints a marquee rectangle"),
+                pane.listing_viewport.expect("viewport remains measured"),
+            );
+        });
+        draw_window(&mut cx);
+        let overlay = cx
+            .debug_bounds("marquee-overlay")
+            .expect("active drag paints the marquee overlay");
+        assert_eq!(
+            overlay,
+            pane.read_with(&cx, |pane, _cx| pane.marquee_rect().unwrap()),
+            "the local absolute overlay must land on the window-coordinate marquee",
+        );
+        assert_rect_inside(
+            overlay,
+            pane.read_with(&cx, |pane, _cx| pane.listing_viewport.unwrap()),
+        );
+
+        cx.simulate_mouse_up(end, MouseButton::Left, Modifiers::default());
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+    }
+
+    #[gpui::test]
+    fn marquee_routing_grid_is_additive_and_cleans_up_outside_or_on_scroll(
+        cx: &mut TestAppContext,
+    ) {
+        let (root, pane) = rooted_pane(cx, ViewMode::Grid);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.), px(560.)));
+        draw_window(&mut cx);
+
+        let tile_points = pane.read_with(&cx, |pane, _cx| {
+            [0, 2, 4].map(|ix| {
+                center(
+                    *pane
+                        .measured_items
+                        .get(&ix)
+                        .expect("grid must measure the click-test tile"),
+                )
+            })
+        });
+        cx.simulate_click(tile_points[0], Modifiers::default());
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+        assert_eq!(
+            pane.read_with(&cx, |pane, _cx| pane.selection.clone()),
+            BTreeSet::from([0])
+        );
+        cx.simulate_click(
+            tile_points[1],
+            Modifiers {
+                control: true,
+                ..Modifiers::default()
+            },
+        );
+        assert_eq!(
+            pane.read_with(&cx, |pane, _cx| pane.selection.clone()),
+            BTreeSet::from([0, 2])
+        );
+        cx.simulate_click(
+            tile_points[2],
+            Modifiers {
+                control: true,
+                shift: true,
+                ..Modifiers::default()
+            },
+        );
+        pane.read_with(&cx, |pane, _cx| {
+            assert_eq!(pane.selection, BTreeSet::from([2, 3, 4]));
+            assert_eq!(pane.selection_anchor, Some(2));
+        });
+
+        pane.update(&mut cx, |pane, cx| {
+            pane.selection = BTreeSet::from([5]);
+            pane.selection_anchor = Some(5);
+            pane.active_index = Some(5);
+            cx.notify();
+        });
+        draw_window(&mut cx);
+        let (start, end, hits) = pane.read_with(&cx, |pane, _cx| routing_points(pane));
+        let modifiers = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        cx.simulate_mouse_down(start, MouseButton::Left, modifiers);
+        cx.simulate_mouse_move(end, Some(MouseButton::Left), modifiers);
+        let mut expected = hits;
+        expected.insert(5);
+        assert_eq!(
+            pane.read_with(&cx, |pane, _cx| pane.selection.clone()),
+            expected
+        );
+        assert!(pane.read_with(&cx, |pane, _cx| pane.selection.len() >= 3));
+
+        let viewport = pane.read_with(&cx, |pane, _cx| pane.listing_viewport.unwrap());
+        let outside = point(viewport.left() - px(4.), viewport.top() - px(4.));
+        cx.simulate_mouse_up(outside, MouseButton::Left, modifiers);
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
+
+        let (start, end, _) = pane.read_with(&cx, |pane, _cx| routing_points(pane));
+        cx.simulate_mouse_down(start, MouseButton::Left, modifiers);
+        cx.simulate_mouse_move(end, Some(MouseButton::Left), modifiers);
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_some()));
+        cx.simulate_event(ScrollWheelEvent {
+            position: start,
+            delta: ScrollDelta::Pixels(point(px(0.), px(-40.))),
+            ..Default::default()
+        });
+        assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
     }
 
     #[gpui::test]

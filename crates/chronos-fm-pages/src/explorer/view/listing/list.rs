@@ -4,7 +4,7 @@ use crate::explorer::types::SortKey;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::list::ListItem;
-use gpui_component::v_virtual_list;
+use gpui_component::{ElementExt, v_virtual_list};
 use chronos_fm_ui::theme::theme;
 use std::rc::Rc;
 
@@ -114,6 +114,8 @@ fn render_header_row(
     col_action: f32,
     cx: &mut Context<ExplorerPane>,
 ) -> impl IntoElement + use<> {
+    let entity = cx.entity().clone();
+
     div()
         .w(px(table_width))
         .h(px(26.0))
@@ -121,6 +123,13 @@ fn render_header_row(
         .bg(theme::bg(cx))
         .border_b_1()
         .border_color(theme::border(cx))
+        .on_prepaint(move |bounds, _window, cx| {
+            entity.update(cx, |pane, _cx| {
+                if let Some(token) = pane.geometry_token.clone() {
+                    pane.record_marquee_exclusion("list-header", bounds, token);
+                }
+            });
+        })
         .child(
             div()
                 .flex()

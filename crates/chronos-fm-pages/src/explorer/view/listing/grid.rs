@@ -4,7 +4,7 @@ use crate::explorer::clipboard::{self, ClipboardMode};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::Input;
-use gpui_component::Icon;
+use gpui_component::{ElementExt, Icon};
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_ui::theme::theme;
 
@@ -15,6 +15,7 @@ pub fn render(
     cx: &mut Context<ExplorerPane>,
 ) -> AnyElement {
     let items = page.filtered_entries.clone();
+    let scroll_handle = page.virtual_scroll_handle.clone();
     let mut grid = div()
         .flex()
         .flex_wrap()
@@ -31,6 +32,7 @@ pub fn render(
         .id("grid-scroll")
         .flex_1()
         .overflow_scroll()
+        .track_scroll(&scroll_handle)
         .px(px(16.0))
         .py(px(16.0))
         .on_mouse_down(
@@ -61,6 +63,7 @@ fn render_grid_item(
     let activation_item = item.clone();
     let preview_item = item.clone();
     let context_menu_path = item.path.clone();
+    let entity = cx.entity().clone();
 
     let bg_color = if selected {
         theme::bg_hover(cx)
@@ -96,6 +99,13 @@ fn render_grid_item(
         .items_center()
         .gap(px(7.0))
         .when(is_cut, |el| el.opacity(0.5))
+        .on_prepaint(move |bounds, _window, cx| {
+            entity.update(cx, |pane, _cx| {
+                if let Some(token) = pane.geometry_token.clone() {
+                    pane.record_item_bounds(ix, bounds, token);
+                }
+            });
+        })
         .on_mouse_down(
             gpui::MouseButton::Right,
             cx.listener(move |this, event: &gpui::MouseDownEvent, _window, cx| {

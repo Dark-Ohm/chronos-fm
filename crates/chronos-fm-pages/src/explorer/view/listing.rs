@@ -2,6 +2,7 @@ use super::super::types::{StatusLevel, ViewMode};
 use crate::explorer::ExplorerPane;
 use chronos_fm_ui::theme::theme;
 use gpui::*;
+use gpui_component::ElementExt;
 
 /// Grid-mode rendering of the listing.
 pub mod grid;
@@ -41,7 +42,86 @@ pub fn render(
             }
         }
     }
-    column = column.child(file_list);
+    let entity = cx.entity().clone();
+    let scroll_handle = page.virtual_scroll_handle.clone();
+    let event_scroll_handle = scroll_handle.clone();
+    let mut listing_viewport = div()
+        .id("listing-marquee-viewport")
+        .w_full()
+        .flex_1()
+        .min_h(px(0.0))
+        .relative()
+        .overflow_hidden()
+        // Install this before the listing child so the current geometry token
+        // exists before row/tile prepaint callbacks report their bounds.
+        .on_prepaint(move |bounds, _window, cx| {
+            let scroll_offset = scroll_handle.offset();
+            entity.update(cx, |pane, _cx| {
+                pane.record_listing_viewport(bounds, scroll_offset);
+            });
+        })
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|pane, event: &MouseDownEvent, _window, cx| {
+                if pane.begin_marquee(event.position, event.modifiers) {
+                    cx.notify();
+                }
+            }),
+        )
+        .on_mouse_move(cx.listener(|pane, event: &MouseMoveEvent, _window, cx| {
+            if event.pressed_button == Some(MouseButton::Left) && pane.marquee.is_some() {
+                pane.update_marquee(event.position);
+                cx.notify();
+            }
+        }))
+        .on_mouse_up(
+            MouseButton::Left,
+            cx.listener(|pane, _event, _window, cx| {
+                let had_marquee = pane.marquee.is_some();
+                pane.finish_marquee();
+                if had_marquee {
+                    cx.notify();
+                }
+            }),
+        )
+        .on_mouse_up_out(
+            MouseButton::Left,
+            cx.listener(|pane, _event, _window, cx| {
+                let had_marquee = pane.marquee.is_some();
+                pane.finish_marquee();
+                if had_marquee {
+                    cx.notify();
+                }
+            }),
+        )
+        .on_scroll_wheel(cx.listener(move |pane, _event: &ScrollWheelEvent, _window, cx| {
+            let had_marquee = pane.marquee.is_some();
+            pane.cancel_marquee();
+            if let Some(viewport) = pane.listing_viewport {
+                pane.record_listing_viewport(viewport, event_scroll_handle.offset());
+            }
+            if had_marquee {
+                cx.notify();
+            }
+        }))
+        .child(file_list);
+
+    if let (Some(rect), Some(viewport)) = (page.marquee_rect(), page.listing_viewport) {
+        listing_viewport = listing_viewport.child(
+            div()
+                .debug_selector(|| "marquee-overlay".to_string())
+                .absolute()
+                .left(rect.origin.x - viewport.origin.x)
+                .top(rect.origin.y - viewport.origin.y)
+                .w(rect.size.width)
+                .h(rect.size.height)
+                .border_1()
+                .border_dashed()
+                .border_color(theme::accent(cx))
+                .bg(theme::accent(cx).opacity(0.10)),
+        );
+    }
+    column = column.child(listing_viewport);
 
     if page.search_visible {
         div()

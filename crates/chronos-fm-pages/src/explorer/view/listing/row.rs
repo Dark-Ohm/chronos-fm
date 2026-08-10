@@ -6,7 +6,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::Input;
 use gpui_component::list::ListItem;
-use gpui_component::{ActiveTheme, Icon, IconName};
+use gpui_component::{ActiveTheme, ElementExt, Icon, IconName};
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_ui::theme::theme;
 
@@ -72,6 +72,7 @@ pub fn render(
     let item_for_preview = item.clone();
     let item_for_activate = item.clone();
     let context_menu_path = item_for_preview.path.clone();
+    let entity = cx.entity().clone();
 
     // Check if query matches filename (for highlighting)
     let query_lower = page.search_query.to_lowercase();
@@ -146,6 +147,13 @@ pub fn render(
         .flex_col()
         .w(px(total_width))
         .when(is_cut, |el| el.opacity(0.5))
+        .on_prepaint(move |bounds, _window, cx| {
+            entity.update(cx, |pane, _cx| {
+                if let Some(token) = pane.geometry_token.clone() {
+                    pane.record_item_bounds(ix, bounds, token);
+                }
+            });
+        })
         .on_mouse_down(
             gpui::MouseButton::Right,
             cx.listener(move |this, event: &gpui::MouseDownEvent, _window, cx| {
