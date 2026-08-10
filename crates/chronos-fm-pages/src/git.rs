@@ -262,14 +262,20 @@ impl GitPage {
                         let status = git::status(&repo)?;
                         let branches = git::list_branches(&repo).unwrap_or_default();
                         let stashes = git::stash_list(&repo).unwrap_or_default();
-                        // T038: History and Remotes are read best-effort — a
-                        // repo with no commits (empty history) or no
-                        // configured remotes is not an error, matches
-                        // `unwrap_or_default()` already used for
-                        // branches/stashes above.
-                        let history = git::history(&repo, HISTORY_LIMIT).unwrap_or_default();
+                        // T038: Remotes is read best-effort — no configured
+                        // remotes is not an error, matches
+                        // `unwrap_or_default()`.
+                        //
+                        // History is NOT masked the same way (T047): an
+                        // empty repo and a real read failure both used to
+                        // collapse into the same empty `Vec`, which made a
+                        // parse/truncation error on a real repo render as a
+                        // false "no commits yet". Kept as a `Result` all the
+                        // way to the page so a genuine error surfaces
+                        // instead of impersonating an honest empty state.
+                        let history_result = git::history(&repo, HISTORY_LIMIT);
                         let remotes = git::remotes(&repo).unwrap_or_default();
-                        Ok::<_, GitError>((status, branches, stashes, history, remotes))
+                        Ok::<_, GitError>((status, branches, stashes, history_result, remotes))
                     })
                     .await;
                 this.update(&mut cx, |page, cx| {
@@ -281,26 +287,43 @@ impl GitPage {
                     }
                     page.refreshing = false;
                     match result {
-                        Ok((status, branches, stashes, history, remotes)) => {
+                        Ok((status, branches, stashes, history_result, remotes)) => {
                             page.recreate_watcher(&status.git_dir);
                             page.status = Some(status);
                             page.branches = branches;
                             page.stashes = stashes;
-                            // Keep the selected commit's detail in sync (a
-                            // refresh can happen while History is open); drop
-                            // the selection if that commit no longer exists
-                            // in the bounded window instead of showing stale
-                            // detail for a hash that scrolled out.
-                            if let Some(hash) = &page.selected_commit {
-                                if !history.iter().any(|c| &c.full_hash == hash) {
-                                    page.selected_commit = None;
-                                    page.commit_detail = None;
-                                }
-                            }
-                            page.history = history;
                             page.remotes = remotes;
                             page.no_repo = false;
-                            page.error = None;
+                            // T047: a real history read failure (e.g. a
+                            // parse error surviving the trailing-record
+                            // leniency) is surfaced via `page.error`, not
+                            // silently swapped for an empty `Vec` — an
+                            // all-garbage result must never look like an
+                            // honestly empty history. Other fields above
+                            // still apply even when history itself failed.
+                            match history_result {
+                                Ok(history) => {
+                                    // Keep the selected commit's detail in
+                                    // sync (a refresh can happen while
+                                    // History is open); drop the selection
+                                    // if that commit no longer exists in the
+                                    // bounded window instead of showing
+                                    // stale detail for a hash that scrolled
+                                    // out.
+                                    if let Some(hash) = &page.selected_commit {
+                                        if !history.iter().any(|c| &c.full_hash == hash) {
+                                            page.selected_commit = None;
+                                            page.commit_detail = None;
+                                        }
+                                    }
+                                    page.history = history;
+                                    page.error = None;
+                                }
+                                Err(err) => {
+                                    page.history.clear();
+                                    page.error = Some(format!("git history: {err}"));
+                                }
+                            }
                         }
                         Err(GitError::NotARepository) => {
                             page.status = None;

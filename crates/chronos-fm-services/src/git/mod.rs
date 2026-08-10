@@ -685,11 +685,21 @@ fn render_unified_diff(old_label: &str, new_label: &str, old: &str, new: &str) -
 
 // --- Milestone C: push / pull / stash (system git) --------------------------
 
-fn truncate_4k(s: &str) -> String {
-    if s.len() <= 4096 {
+/// Cap for `history`/`commit_detail`'s `git` output (T047). The generic
+/// 4KB `run_git_cmd` cap silently truncated real `git log -50` output
+/// (confirmed ~8.8KB on this repo's own 174-commit history) mid-record,
+/// which made `parse_history` error out on the mangled trailing record and
+/// `do_refresh` mask that error as an empty, "no commits yet" history —
+/// false on screen for a repo with real commits. 256KB comfortably covers
+/// `HISTORY_LIMIT` commits (or one commit's numstat) even with long
+/// subject lines / many changed files, while still bounding worst case.
+const GIT_LOG_OUTPUT_CAP: usize = 256 * 1024;
+
+fn truncate_at(s: &str, cap: usize) -> String {
+    if s.len() <= cap {
         s.to_string()
     } else {
-        let cut = floor_char_boundary(s, 4096);
+        let cut = floor_char_boundary(s, cap);
         format!("{}…\n[truncated {} bytes]", &s[..cut], s.len() - cut)
     }
 }
@@ -706,8 +716,19 @@ fn floor_char_boundary(s: &str, mut idx: usize) -> usize {
 }
 
 /// Run `git` in `workdir` with the given args, return combined stdout+stderr
-/// on success (P1: git often writes success messages to stderr).
+/// on success (P1: git often writes success messages to stderr). Output is
+/// capped at 4KB — callers that expect larger output (`history`,
+/// `commit_detail`, T047) use [`run_git_cmd_capped`] instead.
 fn run_git_cmd(workdir: &std::path::Path, args: &[&str]) -> Result<String, GitError> {
+    run_git_cmd_capped(workdir, args, 4096)
+}
+
+/// Same as [`run_git_cmd`] with an explicit output cap in bytes.
+fn run_git_cmd_capped(
+    workdir: &std::path::Path,
+    args: &[&str],
+    cap: usize,
+) -> Result<String, GitError> {
     let out = std::process::Command::new("git")
         .args(args)
         .current_dir(workdir)
@@ -724,7 +745,7 @@ fn run_git_cmd(workdir: &std::path::Path, args: &[&str]) -> Result<String, GitEr
     if !out.status.success() {
         return Err(GitError::Operation(combined.to_string()));
     }
-    Ok(truncate_4k(combined))
+    Ok(truncate_at(combined, cap))
 }
 
 /// Push current branch to `remote` (defaults to `"origin"` when empty).
@@ -833,24 +854,55 @@ const FIELD_SEP: char = '\u{1f}';
 const RECORD_SEP: char = '\u{1e}';
 
 /// Bounded commit history via system `git log`, newest first (T038).
+/// Uses [`GIT_LOG_OUTPUT_CAP`] (256KB), not the generic 4KB
+/// `run_git_cmd` cap — T047: a `HISTORY_LIMIT`-commit log on a real repo
+/// routinely exceeds 4KB.
 pub fn history(repo: &gix::Repository, limit: usize) -> Result<Vec<CommitEntry>, GitError> {
     let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
     let count_arg = format!("-{}", limit.max(1));
     let format_arg = format!(
         "--pretty=format:%h{FIELD_SEP}%H{FIELD_SEP}%s{FIELD_SEP}%an{FIELD_SEP}%ar{FIELD_SEP}%P{FIELD_SEP}%D{RECORD_SEP}"
     );
-    let text = run_git_cmd(&workdir, &["log", &count_arg, &format_arg])?;
+    let text = run_git_cmd_capped(&workdir, &["log", &count_arg, &format_arg], GIT_LOG_OUTPUT_CAP)?;
     parse_history(&text)
 }
 
+/// Parses `RECORD_SEP`-joined commit records (T047: tolerant of a
+/// truncated trailing record — the 256KB cap above is generous, but
+/// nothing here assumes it can never be hit again). A malformed record
+/// that is NOT the last one is still a hard error: that's real corruption
+/// or a format-string mismatch, not a truncation artifact, and dropping it
+/// would silently under-report history exactly like the T047 bug did.
+/// Only when *every* record fails to parse (not just a truncated tail) is
+/// the whole call an error — an all-garbage result must never look like an
+/// honestly empty history.
 fn parse_history(text: &str) -> Result<Vec<CommitEntry>, GitError> {
-    let mut out = Vec::new();
-    for record in text.split(RECORD_SEP) {
-        let record = record.trim();
-        if record.is_empty() {
-            continue;
+    let records: Vec<&str> = text
+        .split(RECORD_SEP)
+        .map(str::trim)
+        .filter(|r| !r.is_empty())
+        .collect();
+    let mut out = Vec::with_capacity(records.len());
+    for (i, record) in records.iter().enumerate() {
+        match parse_commit_fields(record) {
+            Ok(entry) => out.push(entry),
+            Err(err) if i + 1 == records.len() => {
+                // Likely the cap cut this record mid-field (possibly with
+                // truncate_at's own "…[truncated N bytes]" suffix appended
+                // after the cut). Drop it rather than failing the whole
+                // history read over one incomplete trailing entry.
+                tracing::debug!(
+                    "git history: dropping unparsable trailing record (likely truncated): {err}"
+                );
+            }
+            Err(err) => return Err(err),
         }
-        out.push(parse_commit_fields(record)?);
+    }
+    if out.is_empty() && !records.is_empty() {
+        return Err(GitError::Operation(format!(
+            "git history: {} record(s) present but none parsed successfully",
+            records.len()
+        )));
     }
     Ok(out)
 }
@@ -904,7 +956,13 @@ pub fn commit_detail(repo: &gix::Repository, hash: &str) -> Result<CommitDetail,
     let format_arg = format!(
         "--pretty=format:%h{FIELD_SEP}%H{FIELD_SEP}%s{FIELD_SEP}%an{FIELD_SEP}%ar{FIELD_SEP}%P{FIELD_SEP}%D"
     );
-    let text = run_git_cmd(&workdir, &["show", "--numstat", &format_arg, hash])?;
+    // T047: same 256KB cap as `history` — a commit touching many files
+    // (`--numstat` line per file) can exceed the generic 4KB cap. Unlike
+    // `history`, a truncated tail here just drops trailing file-stat lines
+    // (`parse_commit_detail`'s loop already skips malformed lines), not the
+    // whole commit — but there is no reason to make that undercount more
+    // likely than it needs to be.
+    let text = run_git_cmd_capped(&workdir, &["show", "--numstat", &format_arg, hash], GIT_LOG_OUTPUT_CAP)?;
     parse_commit_detail(&text)
 }
 
@@ -1552,13 +1610,84 @@ mod tests {
 
     #[test]
     fn parse_history_malformed_record_is_an_error_not_invented_data() {
-        // Only 3 fields instead of 7 — must error, not silently fabricate a
-        // commit with empty remaining fields.
+        // Only 3 fields instead of 7, and it's the ONLY record — after
+        // T047's "drop an unparsable trailing record" leniency, dropping it
+        // leaves zero parsed records, which is still an error (not an
+        // honestly-empty history): must not silently fabricate a commit
+        // with empty remaining fields, and must not look like an empty
+        // repo either.
         let record = format!(
             "{}{RECORD_SEP}",
             ["a", "b", "c"].join(&FIELD_SEP.to_string())
         );
         assert!(parse_history(&record).is_err());
+    }
+
+    #[test]
+    fn parse_history_drops_a_malformed_trailing_record_but_keeps_the_rest() {
+        // T047: simulates the real bug — `truncate_at` cutting the last
+        // record of a long `git log` output mid-field (here, missing the
+        // trailing fields entirely, same shape as a mid-record cut). The
+        // first, complete record must still come back; the mangled tail is
+        // dropped rather than failing the whole read.
+        let good = format!(
+            "{}{RECORD_SEP}",
+            ["abc123", "abc123full", "init", "Test", "3 days ago", "", ""]
+                .join(&FIELD_SEP.to_string())
+        );
+        let truncated_tail = format!("def456{FIELD_SEP}def456full{RECORD_SEP}");
+        let text = format!("{good}{truncated_tail}");
+
+        let entries = parse_history(&text).unwrap();
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hash, "abc123");
+    }
+
+    #[test]
+    fn parse_history_errors_when_a_non_trailing_record_is_malformed() {
+        // T047's leniency is scoped to the LAST record only (a truncation
+        // artifact lands there, never in the middle). A malformed record
+        // anywhere else is real corruption or a format mismatch — must
+        // still be a hard error, not silently dropped.
+        let bad = format!(
+            "{}{RECORD_SEP}",
+            ["a", "b", "c"].join(&FIELD_SEP.to_string())
+        );
+        let good = format!(
+            "{}{RECORD_SEP}",
+            ["abc123", "abc123full", "init", "Test", "3 days ago", "", ""]
+                .join(&FIELD_SEP.to_string())
+        );
+        let text = format!("{bad}{good}");
+
+        assert!(parse_history(&text).is_err());
+    }
+
+    #[test]
+    fn history_survives_output_past_the_old_4kb_cap() {
+        // T047 regression: build a repo whose `git log -50` pretty output
+        // exceeds the old 4096-byte `run_git_cmd` cap (confirmed on this
+        // repo's own history at ~8.8KB for 50 commits) using long subject
+        // lines, and assert `history()` still returns real commits instead
+        // of silently coming back empty.
+        let (_td, root) = repo_with_base_commit();
+        let long_subject = "x".repeat(200);
+        for i in 0..40 {
+            std::fs::write(root.join("a.txt"), format!("v{i}")).unwrap();
+            git(&root, &["add", "a.txt"]);
+            git(
+                &root,
+                &["commit", "-q", "-m", &format!("commit {i} {long_subject}")],
+            );
+        }
+        let repo = open_repo(&root).unwrap();
+
+        let entries = history(&repo, 50).unwrap();
+
+        // 40 authored + the base commit = 41; well past the old 4KB cliff.
+        assert_eq!(entries.len(), 41);
+        assert_eq!(entries[0].subject, format!("commit 39 {long_subject}"));
     }
 
     #[test]

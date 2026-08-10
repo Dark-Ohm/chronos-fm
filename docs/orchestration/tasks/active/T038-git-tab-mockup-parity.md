@@ -3,7 +3,7 @@
 > ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
 >
 > Service + page implemented (43 git service tests green). Horizontal sub-nav
-> deviation OK. **Live vision UNVERIFIED** (hypr focus dead) — residual.
+> deviation OK. **History empty bug fixed (T047 ACCEPT).** Live vision residual (sub-views beyond history) still T046 class. (hypr focus dead) — residual.
 > Report: `report/T038-git-tab-mockup-parity-report.md`.
 
 
