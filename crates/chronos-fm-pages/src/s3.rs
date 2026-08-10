@@ -57,6 +57,18 @@ impl S3View {
             S3View::Properties => "Properties",
         }
     }
+
+    /// Parses a sub-view name from `--page=s3:<name>` (T046 residual,
+    /// case-insensitive). Mirrors `PageKind::from_cli_name`.
+    fn from_cli_name(name: &str) -> Option<S3View> {
+        match name.trim().to_lowercase().as_str() {
+            "explorer" => Some(S3View::Explorer),
+            "buckets" => Some(S3View::Buckets),
+            "transfers" => Some(S3View::Transfers),
+            "properties" => Some(S3View::Properties),
+            _ => None,
+        }
+    }
 }
 
 /// One row in the Transfers view: the job's current state plus the
@@ -292,6 +304,20 @@ impl S3Page {
             self.load_buckets(cx);
         }
         cx.notify();
+    }
+
+    /// `--page=s3:<name>` (T046 residual): select a sub-view by CLI name at
+    /// startup. Silently warns and leaves the default view on an
+    /// unrecognized name — never aborts the launch over a typo. A no-op
+    /// while still in the credentials/connecting flow (nothing to route to
+    /// yet) — `select_view` itself doesn't gate on `state`, but calling it
+    /// before `Browsing` is harmless since `content()` routes on `state`
+    /// first and only reaches `browsing_content` once connected.
+    pub(crate) fn set_initial_subview(&mut self, name: &str, cx: &mut Context<Self>) {
+        match S3View::from_cli_name(name) {
+            Some(view) => self.select_view(view, cx),
+            None => tracing::warn!("ignoring unrecognized s3 sub-view {name:?}"),
+        }
     }
 
     /// The bucket + key-prefix the Explorer pane is currently pointed at,

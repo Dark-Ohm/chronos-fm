@@ -73,6 +73,18 @@ impl ExtensionsView {
             ExtensionsView::Host => "icons/square-terminal.svg",
         }
     }
+
+    /// Parses a sub-view name from `--page=extensions:<name>` (T046
+    /// residual, case-insensitive). Mirrors `PageKind::from_cli_name`.
+    fn from_cli_name(name: &str) -> Option<ExtensionsView> {
+        match name.trim().to_lowercase().as_str() {
+            "installed" => Some(ExtensionsView::Installed),
+            "available" => Some(ExtensionsView::Available),
+            "permissions" => Some(ExtensionsView::Permissions),
+            "host" | "runtime" => Some(ExtensionsView::Host),
+            _ => None,
+        }
+    }
 }
 
 pub struct ExtensionsPage {
@@ -110,6 +122,16 @@ impl ExtensionsPage {
     fn select_view(&mut self, view: ExtensionsView, cx: &mut Context<Self>) {
         self.view = view;
         cx.notify();
+    }
+
+    /// `--page=extensions:<name>` (T046 residual): select a sub-view by
+    /// CLI name at startup. Silently warns and leaves the default view on
+    /// an unrecognized name — never aborts the launch over a typo.
+    pub(crate) fn set_initial_subview(&mut self, name: &str, cx: &mut Context<Self>) {
+        match ExtensionsView::from_cli_name(name) {
+            Some(view) => self.select_view(view, cx),
+            None => tracing::warn!("ignoring unrecognized extensions sub-view {name:?}"),
+        }
     }
 }
 

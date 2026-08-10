@@ -80,6 +80,19 @@ impl GitView {
             GitView::Remotes => "Remotes",
         }
     }
+
+    /// Parses a sub-view name from `--page=git:<name>` (T046 residual,
+    /// case-insensitive). Mirrors `PageKind::from_cli_name`.
+    fn from_cli_name(name: &str) -> Option<GitView> {
+        match name.trim().to_lowercase().as_str() {
+            "changes" => Some(GitView::Changes),
+            "history" => Some(GitView::History),
+            "branches" => Some(GitView::Branches),
+            "stashes" => Some(GitView::Stashes),
+            "remotes" => Some(GitView::Remotes),
+            _ => None,
+        }
+    }
 }
 
 /// How many commits `history` bounds a single `git log` read to (T038).
@@ -619,6 +632,16 @@ impl GitPage {
     fn select_view(&mut self, view: GitView, cx: &mut Context<Self>) {
         self.view = view;
         cx.notify();
+    }
+
+    /// `--page=git:<name>` (T046 residual): select a sub-view by CLI name
+    /// at startup. Silently warns and leaves the default view on an
+    /// unrecognized name — never aborts the launch over a typo.
+    pub(crate) fn set_initial_subview(&mut self, name: &str, cx: &mut Context<Self>) {
+        match GitView::from_cli_name(name) {
+            Some(view) => self.select_view(view, cx),
+            None => tracing::warn!("ignoring unrecognized git sub-view {name:?}"),
+        }
     }
 
     fn toggle_amend(&mut self, cx: &mut Context<Self>) {

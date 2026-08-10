@@ -88,6 +88,12 @@ impl RootView {
         // non-default page. `None` (the flag omitted) keeps the product
         // default (Explorer) — this never changes normal-user behavior.
         initial_page: Option<PageKind>,
+        // T046 residual: the `:<sub>` half of `--page=page:sub` — which
+        // sub-view/category to land on within `initial_page`. Ignored if
+        // `initial_page` is `None` or the named page has no matching
+        // sub-view (each page warns and ignores an unrecognized name
+        // itself, same contract as an invalid `--theme`).
+        initial_subview: Option<String>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -108,6 +114,27 @@ impl RootView {
         let s3 = cx.new(|cx| S3Page::new(config.clone(), window, cx));
         let extensions = cx.new(|cx| ExtensionsPage::new(config.clone(), window, cx));
         let settings = cx.new(|cx| SettingsPage::new(config.clone(), window, cx));
+
+        // T046 residual: `--page=page:sub` lands directly on a named
+        // sub-view/category — only the page named by `initial_page` gets
+        // the sub argument; the other three pages keep their own defaults.
+        if let Some(sub) = &initial_subview {
+            match initial_page {
+                Some(PageKind::Git) => git.update(cx, |page, cx| page.set_initial_subview(sub, cx)),
+                Some(PageKind::S3) => s3.update(cx, |page, cx| page.set_initial_subview(sub, cx)),
+                Some(PageKind::Extensions) => {
+                    extensions.update(cx, |page, cx| page.set_initial_subview(sub, cx))
+                }
+                Some(PageKind::Settings) => {
+                    settings.update(cx, |page, cx| page.set_initial_subview(sub, cx))
+                }
+                Some(PageKind::Explorer) | None => {
+                    tracing::warn!(
+                        "ignoring --page sub-view {sub:?}: Explorer has no sub-view CLI vocabulary"
+                    );
+                }
+            }
+        }
 
         let mut view = RootView {
             current_page: initial_page.unwrap_or(PageKind::Explorer),

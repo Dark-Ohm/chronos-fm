@@ -77,7 +77,7 @@ impl Cli {
     /// `None` (same as omitting the flag) on an unrecognized name — never
     /// aborts the launch over a typo'd debug flag.
     pub fn initial_page(&self) -> Option<chronos_fm_pages::PageKind> {
-        let name = self.page.as_ref()?;
+        let (name, _sub) = split_page_arg(self.page.as_ref()?);
         match chronos_fm_pages::PageKind::from_cli_name(name) {
             Some(page) => Some(page),
             None => {
@@ -85,6 +85,25 @@ impl Cli {
                 None
             }
         }
+    }
+
+    /// The `:<sub>` half of `--page=page:sub` (T046 residual), if present.
+    /// Each page validates and warns on its own sub-view vocabulary
+    /// (`RootView::new`) — this just extracts the raw string.
+    pub fn initial_subview(&self) -> Option<String> {
+        let (_name, sub) = split_page_arg(self.page.as_ref()?);
+        sub.map(str::to_string)
+    }
+}
+
+/// Splits a `--page` value into the page name and, if present, a `:`-
+/// delimited sub-view name (`--page=settings:appearance`). A trailing
+/// empty sub (`--page=git:`) is treated as absent rather than an empty
+/// string sub-view name. Pure so it's unit-testable without CLI parsing.
+fn split_page_arg(raw: &str) -> (&str, Option<&str>) {
+    match raw.split_once(':') {
+        Some((page, sub)) if !sub.is_empty() => (page, Some(sub)),
+        _ => (raw, None),
     }
 }
 
@@ -224,5 +243,37 @@ mod tests {
         // Same "warn and ignore" contract as an invalid --theme — never
         // aborts the launch over a typo'd debug flag.
         assert_eq!(parse(&["--page", "bogus"]).initial_page(), None);
+    }
+
+    #[test]
+    fn initial_page_parses_the_page_half_of_a_page_colon_sub_value() {
+        assert_eq!(
+            parse(&["--page", "settings:appearance"]).initial_page(),
+            Some(chronos_fm_pages::PageKind::Settings)
+        );
+    }
+
+    #[test]
+    fn initial_subview_extracts_the_sub_half() {
+        assert_eq!(
+            parse(&["--page", "git:history"]).initial_subview(),
+            Some("history".to_string())
+        );
+    }
+
+    #[test]
+    fn initial_subview_none_when_no_colon() {
+        assert_eq!(parse(&["--page", "settings"]).initial_subview(), None);
+    }
+
+    #[test]
+    fn initial_subview_none_when_flag_omitted() {
+        assert_eq!(parse(&[]).initial_subview(), None);
+    }
+
+    #[test]
+    fn initial_subview_none_on_trailing_colon() {
+        // "--page=git:" — an empty sub after the colon is absent, not "".
+        assert_eq!(parse(&["--page", "git:"]).initial_subview(), None);
     }
 }

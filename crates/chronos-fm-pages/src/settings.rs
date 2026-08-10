@@ -86,6 +86,25 @@ impl SettingsCategory {
             SettingsCategory::About => "icons/info.svg",
         }
     }
+
+    /// Parses a category name from `--page=settings:<name>` (T046
+    /// residual, case-insensitive). Short keys, not the full display
+    /// labels (`"preview"`, not `"Preview Panel"`) — matches the other
+    /// three pages' sub-view CLI vocabulary.
+    fn from_cli_name(name: &str) -> Option<SettingsCategory> {
+        match name.trim().to_lowercase().as_str() {
+            "files" => Some(SettingsCategory::Files),
+            "appearance" => Some(SettingsCategory::Appearance),
+            "preview" => Some(SettingsCategory::Preview),
+            "behavior" => Some(SettingsCategory::Behavior),
+            "terminal" => Some(SettingsCategory::Terminal),
+            "plugins" => Some(SettingsCategory::Plugins),
+            "keybindings" => Some(SettingsCategory::Keybindings),
+            "s3" => Some(SettingsCategory::S3),
+            "about" => Some(SettingsCategory::About),
+            _ => None,
+        }
+    }
 }
 
 /// The settings page.
@@ -139,6 +158,16 @@ impl SettingsPage {
     fn select_category(&mut self, category: SettingsCategory, cx: &mut Context<Self>) {
         self.category = category;
         cx.notify();
+    }
+
+    /// `--page=settings:<name>` (T046 residual): select a category by CLI
+    /// name at startup. Silently warns and leaves the default category on
+    /// an unrecognized name — never aborts the launch over a typo.
+    pub(crate) fn set_initial_subview(&mut self, name: &str, cx: &mut Context<Self>) {
+        match SettingsCategory::from_cli_name(name) {
+            Some(category) => self.select_category(category, cx),
+            None => tracing::warn!("ignoring unrecognized settings category {name:?}"),
+        }
     }
 }
 
