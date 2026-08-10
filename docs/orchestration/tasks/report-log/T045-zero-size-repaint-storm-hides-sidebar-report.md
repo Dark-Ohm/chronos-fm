@@ -1,14 +1,13 @@
 # T045 — Zero-size repaint storm — Report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 5): **ROOT CAUSE ACCEPTED — not fixed**
+> ## ✅ ARCHITECT VERDICT: **ACCEPT / CLOSED** (2026-08-10)
 >
-> Mechanism confirmed: `VirtualList::measure_item` nested `compute_layout`
-> → `snapshot_memo` walks full `frame_node_order` → `layout_bounds` caches
-> Taffy default (0,0) for not-yet-computed siblings (sidebar). Isolated
-> repro `gpui-component/examples/t045_repro`. Fix direction: scope
-> `snapshot_memo` to computed subtree (or skip nested snapshot / refuse
-> caching uncomputed nodes). Tests + `t045_repro` + FM grim required for
-> ACCEPT. No blind Chronos-FM workaround.
+> RC + Source fix + unit tests + isolated repro + live grim vision-verified.
+> Places + listing co-visible; zero-size storm gone. Fix: Source `taffy.rs`
+> `snapshot_memo` scoped to compute-root subtree.
+>
+> Grim: `report-log/T045-shots/t045_fixed_final.png`
+> Source commit: see Source git log (T045 snapshot_memo).
 
 
 ## Summary

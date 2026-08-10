@@ -283,3 +283,12 @@ Poisons sidebar/toolbar SVG/text absolute bounds for the rest of the frame.
 (or skip nested snapshots / do not cache uncomputed layouts).  
 **Status:** RC accepted; fix not shipped. Blocks T037.
 
+
+### Decision — T045 fix shipped (snapshot_memo subtree scope)
+
+**Date:** 2026-08-10  
+**Change:** Source `gpui/src/taffy.rs` — `snapshot_memo(root, space)` only
+layout_bounds nodes in `subtree_ids(root)`.  
+**Verification:** gpui taffy 8/8 tests; live grim Places+listing; 0 zero-size errors.  
+**Status:** ACCEPT. Unblocks T037.
+

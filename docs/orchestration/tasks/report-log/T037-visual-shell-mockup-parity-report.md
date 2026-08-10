@@ -1,3 +1,11 @@
+# T037 — Visual shell mockup parity — Report
+
+> ## ✅ ARCHITECT VERDICT: **ACCEPT / CLOSED** (2026-08-10)
+>
+> Closed with T045 Source fix. Vision proof co-located with
+> `report-log/T045-shots/t045_fixed_final.png`. See done/T037 ticket.
+
+
 # T037 — Visual shell mockup parity: implementation report
 
 > ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT — not closed**

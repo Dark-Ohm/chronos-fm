@@ -18,7 +18,7 @@
 [38;5;8m  18[0m 
 [38;5;8m  19[0m [37m| Ticket | Surface | Mockup | Status |[0m
 [38;5;8m  20[0m [37m|--------|---------|--------|--------|[0m
-[38;5;8m  21[0m [37m| **T037** | Explorer shell | `chronos-file-manager.dc.html` | **PARTIAL** — blocked by T045 |[0m
+[38;5;8m  21[0m [37m| **T037** | Explorer shell | `chronos-file-manager.dc.html` | **done ACCEPT** |[0m
 [38;5;8m  22[0m [37m| **T038** | Git | `Chronos-Git-Tab.dc.html` | open (V not shipped) |[0m
 [38;5;8m  23[0m [37m| **T039** | S3 | `Chronos-S3-Tab.dc.html` | open (V not shipped) |[0m
 [38;5;8m  24[0m [37m| **T040** | Settings | `Chronos-File-Manager-Settings.dc.html` | open (V not shipped) |[0m
@@ -30,7 +30,7 @@
 [38;5;8m  30[0m [37m|--------|-------|--------|[0m
 [38;5;8m  31[0m [37m| **T043** | Places empty / text missing | **done** |[0m
 [38;5;8m  32[0m [37m| **T044** | Listing not in tree / empty pane | **done** |[0m
-[38;5;8m  33[0m [37m| **T045** | `snapshot_memo` poisons uncomputed siblings (virtual_list measure) | **active P1** — RC accepted, fix pending |[0m
+[38;5;8m  33[0m [37m| **T045** | `snapshot_memo` sibling poison | **done ACCEPT** (Source fix) |[0m
 [38;5;8m  34[0m 
 [38;5;8m  35[0m [37m## Order[0m
 [38;5;8m  36[0m 

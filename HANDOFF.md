@@ -45,12 +45,12 @@ UNVERIFIED ≠ ACCEPT. Secrets (AWS keys) не в toml/report/grim.
 
 | ID | State | Note |
 |----|--------|------|
-| **T037** | **PARTIAL**, open | Phase V shell; blocked by **T045** (sidebar under full tree) |
+| **T037** | **done ACCEPT** | Phase V shell; Places+list co-visible after T045 |
 | **T038–T041** | open (V not shipped) | Design APPROVED where noted (T038/T039 option C = Phase F); pixel-copy V first |
 | **T042** | epic active | Pixel-copy program index |
 | **T043** | **done** | Places text: Source T014-A measure memo fix + resizable path |
 | **T044** | **done** | Listing was not in render tree (T043 bypass); restored under h_resizable |
-| **T045** | **active P1** | **RC confirmed** (`snapshot_memo` poisons siblings); fix Source + tests + grim pending |
+| **T045** | **done ACCEPT** | Source snapshot_memo subtree scope; unit tests + repro + grim |
 | T010–T036 etc. | mostly done | See `docs/orchestration/tasks/done/` |
 
 Reports: `report/T037-…`, `T038-…`, `T039-…`, `T044-…`, `T045-…`.
@@ -76,9 +76,9 @@ Reports: `report/T037-…`, `T038-…`, `T039-…`, `T044-…`, `T045-…`.
   self-ACCEPT.
 
 ### Очередь (сейчас)
-1. **T045** — implement Source fix (scope `snapshot_memo`); unit test + `t045_repro`; FM grim Places+list → vision.
-2. **T037** §7 full ACCEPT → `done/` + report-log.
-3. **T038–T041** Phase V pixel-copy (shell tokens stable after T037).
+1. ~~T045 / T037~~ **done**.
+2. **T038–T041** Phase V pixel-copy.
+3. Phase F backends after each V ACCEPT.
 4. Phase F backends (git history/remotes, S3 transfers, …) after V.
 5. `git push` (~150 commits ahead origin) — **only on user request**.
 6. Perf residuals (watcher home walk, CPU) — non-blocking visual; T014/T022/T033 history.
