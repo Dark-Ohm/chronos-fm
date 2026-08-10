@@ -1,0 +1,857 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ChronOS · Extensions</title>
+<style>
+  :root{
+    --bg:#181825;
+    --surface:#1e1e2e;
+    --surface1:#1e1e2e;
+    --surface2:#45475a;
+    --fg:#cdd6f4;
+    --muted:rgba(205,214,244,0.58);
+    --faint:rgba(205,214,244,0.34);
+    --border:#45475a;
+    --border-soft:rgba(205,214,244,0.09);
+    --hairline:rgba(205,214,244,0.07);
+    --accent:#007acc;
+    --accent-2:#cba6f7;
+    --accent-press:#007acc;
+    --shadow:0 1px 2px rgba(0,0,0,0.30), 0 4px 14px rgba(0,0,0,0.22);
+    --r:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+    font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    display:flex;align-items:center;justify-content:center;overflow:hidden;
+  }
+  .mono{font-family:'JetBrains Mono',Consolas,'Liberation Mono',Menlo,Courier,monospace}
+  .wrap{
+    width:1320px;height:820px;background:var(--bg);
+    border:1px solid var(--border);border-radius:10px;overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:var(--shadow);
+  }
+
+  /* titlebar */
+  .titlebar{
+    flex:none;height:38px;background:var(--bg);
+    border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:10px;padding:0 12px;-webkit-app-region:drag;
+  }
+  .sigil{width:18px;height:18px;color:var(--accent);flex:none}
+  .tb-title{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg);letter-spacing:.02em}
+  .tb-sep{width:1px;height:16px;background:var(--border)}
+  .tb-repo{font-size:12px;color:var(--muted)}
+  .tb-branch{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--fg);font-weight:600}
+  .tb-branch svg{width:13px;height:13px;color:var(--accent-2)}
+  .tb-spacer{flex:1}
+  .tb-stat{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+  .tb-icon{
+    width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);cursor:pointer;-webkit-app-region:no-drag;
+  }
+  .tb-icon:hover{background:var(--surface1);color:var(--fg)}
+  .tb-icon svg{width:16px;height:16px}
+  .tb-search{
+    display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;width:230px;
+    background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--muted);
+  }
+  .tb-search svg{width:14px;height:14px;flex:none}
+  .tb-search input{background:transparent;border:none;outline:none;color:var(--fg);font-family:'Inter',sans-serif;font-size:12px;width:100%}
+  .tb-search input::placeholder{color:var(--faint)}
+  .tb-search:focus-within{border-color:var(--accent)}
+  .tb-toggle{
+    display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;border-radius:7px;
+    background:var(--surface);border:1px solid var(--border);color:var(--muted);
+    font-family:'JetBrains Mono',monospace;font-size:11px;cursor:pointer;-webkit-app-region:no-drag;
+  }
+  .tb-toggle:hover{background:var(--surface1);color:var(--fg)}
+  .tb-toggle.on{color:var(--accent);border-color:var(--accent)}
+
+  /* body 3-col */
+  .body{flex:1;min-height:0;display:flex}
+
+  /* sub-nav */
+  .subnav{
+    width:190px;flex:none;background:var(--surface);
+    border-right:1px solid var(--border);display:flex;flex-direction:column;
+  }
+  .sub-head{padding:14px 14px 10px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:9px}
+  .repo-row{display:flex;align-items:center;gap:9px;min-width:0}
+  .repo-dot{width:22px;height:22px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none}
+  .repo-dot svg{width:13px;height:13px}
+  .repo-name{font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nav{padding:8px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;scrollbar-width:thin}
+  .nav::-webkit-scrollbar{width:8px}.nav::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .cat{
+    display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;
+    cursor:pointer;color:var(--muted);position:relative;
+  }
+  .cat:hover{background:var(--surface1);color:var(--fg)}
+  .cat.active{background:var(--surface1);color:var(--fg)}
+  .cat.active::before{content:"";position:absolute;left:-8px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--accent)}
+  .cat svg{width:16px;height:16px;flex:none}
+  .cat .label{font-size:12.5px;font-weight:500;flex:1}
+  .cat .badge{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint)}
+  .nav-foot{margin-top:auto;padding:10px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+  .foot-row{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .foot-row svg{width:12px;height:12px;flex:none;color:var(--muted)}
+
+  /* main */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .view-head{
+    flex:none;height:46px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:12px;padding:0 16px;
+  }
+  .view-title{font-size:14px;font-weight:700;color:var(--fg);letter-spacing:-.01em}
+  .view-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+  .head-spacer{flex:1}
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:7px;
+    font-size:12px;font-weight:600;letter-spacing:.01em;cursor:pointer;border:1px solid transparent;
+  }
+  .btn svg{width:14px;height:14px}
+  .btn.sm{height:26px;padding:0 10px;font-size:11.5px}
+  .btn.ghost{background:var(--surface);border-color:var(--border);color:var(--fg)}
+  .btn.ghost:hover{background:var(--surface1);border-color:var(--surface2)}
+  .btn.ghost:active{background:var(--surface2)}
+  .btn.primary{border:1px solid var(--accent);color:var(--accent)}
+  .btn.primary:hover{background:rgba(0,122,204,0.12)}
+  .btn.primary:active{background:var(--accent-press);color:var(--fg);border-color:var(--accent-press)}
+  .btn:disabled{opacity:.45;cursor:not-allowed}
+  .btn.danger{border:1px solid var(--accent-2);color:var(--accent-2)}
+  .btn.danger:hover{background:rgba(203,166,247,0.12)}
+
+  .seg{display:flex;gap:0;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:2px}
+  .seg .s{font-size:11px;font-weight:600;color:var(--muted);padding:4px 10px;border-radius:5px;cursor:pointer}
+  .seg .s.on{background:var(--bg);color:var(--accent)}
+
+  /* list */
+  .list{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding:10px 14px 30px}
+  .list::-webkit-scrollbar{width:8px}.list::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .pl-row{
+    display:grid;grid-template-columns:34px 1fr auto;gap:12px;align-items:center;
+    padding:11px 12px;border:1px solid var(--hairline);border-radius:8px;margin-bottom:8px;
+    cursor:pointer;background:transparent;
+  }
+  .pl-row:hover{background:var(--surface);border-color:var(--border)}
+  .pl-row.sel{background:var(--surface);border-color:var(--accent)}
+  .pl-ic{width:34px;height:34px;border-radius:8px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none}
+  .pl-ic svg{width:18px;height:18px}
+  .pl-mid{min-width:0}
+  .pl-top{display:flex;align-items:center;gap:9px}
+  .pl-name{font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pl-ver{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .pl-desc{font-size:11.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}
+  .pl-right{display:flex;align-items:center;gap:8px}
+  .badge{
+    font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;letter-spacing:.02em;
+    padding:3px 8px;border-radius:5px;border:1px solid var(--border);color:var(--muted);background:var(--bg);white-space:nowrap;
+  }
+  .badge.core{color:var(--fg);border-color:var(--surface2)}
+  .badge.community{color:var(--accent-2);border-color:var(--accent-2)}
+  .badge.verified{color:var(--accent);border-color:var(--accent)}
+  .badge.active{color:var(--accent);border-color:var(--accent)}
+  .badge.disabled{color:var(--faint)}
+  .badge.error{color:var(--accent-2);border-color:var(--accent-2)}
+  .badge.update{color:var(--accent-2);border-color:var(--accent-2)}
+  .badge.src{color:var(--faint);font-size:9.5px}
+
+  .row-acts{display:flex;gap:6px}
+  .act{
+    display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 9px;border-radius:6px;
+    font-size:11px;font-weight:600;cursor:pointer;background:var(--surface);border:1px solid var(--border);color:var(--fg);
+  }
+  .act:hover{background:var(--surface1);border-color:var(--surface2)}
+  .act svg{width:13px;height:13px}
+  .act.muted{color:var(--muted)}
+  .act.danger{color:var(--accent-2);border-color:var(--accent-2)}
+  .act.danger:hover{background:rgba(203,166,247,0.12)}
+  .act.more{width:26px;padding:0;justify-content:center}
+
+  /* cards grid (available) */
+  .cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:12px}
+  .card{
+    display:flex;flex-direction:column;gap:10px;padding:14px;border:1px solid var(--hairline);
+    border-radius:9px;background:transparent;
+  }
+  .card:hover{border-color:var(--border);background:var(--surface)}
+  .card-hd{display:flex;align-items:center;gap:11px}
+  .card-ic{width:32px;height:32px;border-radius:8px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent-2);flex:none}
+  .card-ic svg{width:17px;height:17px}
+  .card-name{font-size:13px;font-weight:600;color:var(--fg)}
+  .card-ver{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint)}
+  .card-desc{font-size:11.5px;color:var(--muted);min-height:30px}
+  .card-ft{display:flex;align-items:center;gap:8px;margin-top:2px}
+
+  /* banner */
+  .banner{
+    display:flex;gap:11px;padding:12px 14px;border:1px solid var(--accent-2);border-radius:9px;
+    background:rgba(203,166,247,0.08);margin-bottom:12px;
+  }
+  .banner svg{width:18px;height:18px;color:var(--accent-2);flex:none;margin-top:1px}
+  .banner .b-ttl{font-size:12.5px;font-weight:700;color:var(--fg)}
+  .banner .b-body{font-size:11.5px;color:var(--muted);margin-top:3px}
+  .banner .b-body .mono{color:var(--faint)}
+  .banner .b-cta{margin-top:8px;display:flex;gap:8px}
+
+  /* empty */
+  .empty{
+    display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;
+    height:100%;color:var(--faint);font-size:12.5px;text-align:center;padding:30px;
+  }
+  .empty svg{width:30px;height:30px;opacity:.6}
+  .empty .em-ttl{color:var(--muted);font-weight:600}
+
+  /* detail */
+  .detail{
+    width:380px;flex:none;border-left:1px solid var(--border);background:var(--surface);
+    display:flex;flex-direction:column;min-height:0;
+  }
+  .dt-hd{flex:none;padding:14px 16px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:10px}
+  .dt-top{display:flex;align-items:center;gap:11px}
+  .dt-ic{width:38px;height:38px;border-radius:9px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none}
+  .dt-ic svg{width:20px;height:20px}
+  .dt-name{font-size:14px;font-weight:700;color:var(--fg)}
+  .dt-ver{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .dt-badges{display:flex;flex-wrap:wrap;gap:6px}
+  .dt-body{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding:14px 16px 28px}
+  .dt-body::-webkit-scrollbar{width:8px}.dt-body::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .dt-sec{margin-bottom:16px}
+  .dt-sec-h{font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-2);margin-bottom:7px}
+  .dt-desc{font-size:12.5px;color:var(--fg);line-height:1.5}
+  .meta-line{display:flex;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px;margin-bottom:5px}
+  .meta-line .k{color:var(--faint);min-width:64px}
+  .meta-line .v{color:var(--fg);word-break:break-all}
+  .readme{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);line-height:1.65;
+    background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:11px;white-space:pre-wrap;
+  }
+  .readme .kw{color:var(--accent)}
+  .readme .st{color:var(--accent-2)}
+  .err-box{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent-2);
+    background:rgba(203,166,247,0.08);border:1px solid var(--accent-2);border-radius:7px;padding:10px;line-height:1.5;
+  }
+  .dt-acts{display:flex;flex-wrap:wrap;gap:7px}
+
+  /* permissions table */
+  .ptab{width:100%;border-collapse:collapse;font-size:11.5px}
+  .ptab th{
+    text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.06em;color:var(--faint);
+    font-weight:600;padding:7px 8px;border-bottom:1px solid var(--border);
+  }
+  .ptab td{padding:8px;border-bottom:1px solid var(--hairline);color:var(--fg);vertical-align:middle}
+  .ptab td.name{font-weight:600}
+  .ptab td .mono{font-size:10.5px;color:var(--muted)}
+  .grant{display:flex;align-items:center;gap:7px;font-family:'JetBrains Mono',monospace;font-size:10px}
+  .sw{width:34px;height:19px;border-radius:10px;background:var(--surface2);position:relative;cursor:pointer;flex:none;transition:background .12s}
+  .sw.on{background:var(--accent)}
+  .sw .knob{position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--bg);transition:left .12s;box-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .sw.on .knob{left:17px}
+  .grant .lbl{color:var(--muted)}
+  .grant .lbl.on{color:var(--accent)}
+  .grant.locked{color:var(--faint)}
+
+  /* host view */
+  .host-card{border:1px solid var(--hairline);border-radius:9px;padding:14px;background:var(--bg)}
+  .host-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--hairline);font-size:12px}
+  .host-row:last-child{border-bottom:none}
+  .host-row .hk{color:var(--faint);min-width:120px;font-family:'JetBrains Mono',monospace;font-size:10.5px}
+  .host-row .hv{color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:11px}
+  .dotstat{display:inline-flex;align-items:center;gap:6px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--accent)}
+  .dotstat .d{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .dotstat.off{color:var(--accent-2)}
+  .dotstat.off .d{background:var(--accent-2)}
+
+  /* modal / toast / menu (reuse) */
+  .modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:80}
+  .modal{width:560px;max-height:70%;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}
+  .modal-hd{flex:none;display:flex;align-items:center;gap:9px;padding:13px 16px;border-bottom:1px solid var(--border)}
+  .modal-hd .ttl{font-size:13px;font-weight:600;color:var(--fg)}
+  .modal-hd .sp{flex:1}
+  .modal-bd{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;padding:14px 16px}
+  .modal-bd::-webkit-scrollbar{width:8px}.modal-bd::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .modal-code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);white-space:pre;line-height:1.5;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:12px;max-height:320px;overflow:auto}
+  .modal-ft{flex:none;display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border)}
+  .fld{background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--fg);font-family:'JetBrains Mono',monospace;font-size:12px;padding:8px 10px;outline:none;width:100%}
+  .fld:focus{border-color:var(--accent)}
+  .toasts{position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+  .toast{
+    display:flex;align-items:center;gap:9px;padding:10px 13px;background:var(--surface1);
+    border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);font-size:12px;color:var(--fg);
+    min-width:220px;animation:tin .14s ease-out;
+  }
+  .toast svg{width:15px;height:15px;color:var(--accent);flex:none}
+  .toast.warn svg{color:var(--accent-2)}
+  @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+  .menu{position:absolute;background:var(--surface1);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:5px;z-index:60;min-width:190px}
+  .menu .mi{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;font-size:12.5px;color:var(--fg);cursor:pointer}
+  .menu .mi:hover{background:var(--surface2)}
+  .menu .mi svg{width:14px;height:14px;color:var(--muted)}
+  .menu .mi.danger{color:var(--accent-2)}
+  .menu .sep{height:1px;background:var(--hairline);margin:4px 0}
+</style>
+</head>
+<body>
+<x-dc>
+<div class="wrap" id="app"></div>
+<div id="modal-root"></div>
+<div class="toasts" id="toasts"></div>
+</x-dc>
+
+<script>
+/* ============================================================
+   ChronOS · Extensions tab (standalone prototype)
+   Visual language locked to ChronOS palette + Inter/JetBrains Mono.
+   Lifecycle center: installed / available / permissions / host.
+   Runtime policy lives in Settings -> Plugins; this tab manages
+   what is installed and how, plus honest pre-P4 / offline states.
+   ============================================================ */
+
+const I = {
+  sigil:`<svg class="sigil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><path d="M12 2 V22 M4 7 L20 17 M20 7 L4 17"/></svg>`,
+  folder:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 72H128l-16-16H40a16 16 0 00-16 16v128a16 16 0 0016 16h176a16 16 0 0016-16V88a16 16 0 00-16-16z"/></svg>`,
+  file:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.7 82.3a8 8 0 010 11.4l-80 80a8 8 0 01-11.4 0l-80-80a8 8 0 0111.4-11.4L128 148.7l74.3-74.4a8 8 0 0111.4 0z"/></svg>`,
+  search:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 218.3l-43.3-43.3a88 88 0 10-11.4 11.4l43.3 43.3a8 8 0 0011.4-11.4zM40 112a72 72 0 1172 72 72 72 0 01-72-72z"/></svg>`,
+  plus:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8h-80v80a8 8 0 01-16 0v-80H40a8 8 0 010-16h80V40a8 8 0 0116 0v80h80a8 8 0 018 8z"/></svg>`,
+  trash:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 48h-40v-8a24 24 0 00-24-24h-48a24 24 0 00-24 24v8H40a8 8 0 000 16h10l11 143a24 24 0 0024 22h92a24 24 0 0024-22l11-143h10a8 8 0 000-16zM96 40a8 8 0 018-8h48a8 8 0 018 8v8H96z"/></svg>`,
+  warn:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M236.8 188.1L148.7 30.8a24 24 0 00-41.4 0L19.2 188.1a23.9 23.9 0 0020.7 36h176.2a23.9 23.9 0 0020.7-36zM120 104a8 8 0 0116 0v40a8 8 0 01-16 0zm8 88a12 12 0 1112-12 12 12 0 01-12 12z"/></svg>`,
+  check:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 77.3a8 8 0 010 11.3l-104 104a8 8 0 01-11.3 0l-56-56a8 8 0 0111.3-11.3L112 164.7 218.3 88.6a8 8 0 0111.4 0z"/></svg>`,
+  link:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M112 64a8 8 0 000 16 24 24 0 010 48 8 8 0 000 16 40 40 0 100-80zm-32 56a8 8 0 008-8 24 24 0 0124-24 8 8 0 000-16 40 40 0 100 80 8 8 0 008-8 24 24 0 01-24-24 8 8 0 00-8-8z"/></svg>`,
+  refresh:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.7 186.3A88 88 0 1190 38a8 8 0 00-4.3 14.7A72 72 0 10172 154l-26.3-26.3a8 8 0 00-11.3 11.3L188 181.3a8 8 0 0011.3-1.4z"/></svg>`,
+  gear:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 80a48 48 0 1048 48 48 48 0 00-48-48zm-8 120h16l4 28 20 12 20-16 24 8 12-20 20-12-8-22 16-18-16-18 8-22-20-12-12 20-24-8-20 18 16 20-16 18 8 22-20 12-12-20-24 8-20-18 16-20z"/></svg>`,
+  plug:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M112 24a8 8 0 018 8v40a8 8 0 01-16 0V32a8 8 0 018-8zm64 0a8 8 0 018 8v40a8 8 0 01-16 0V32a8 8 0 018-8zM160 120v40a80 80 0 01-160 0v-40a8 8 0 0116 0v40a64 64 0 00128 0v-40a8 8 0 0116 0zm-48 72a8 8 0 018 8v40a8 8 0 01-16 0v-40a8 8 0 018-8z"/></svg>`,
+  key:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208 80a48 48 0 10-37.3 46.2L32 185v39h39l2-2 82.8-82.8A48 48 0 10208 80zm-72 32a16 16 0 1116-16 16 16 0 01-16 16z"/></svg>`,
+  info:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 24a104 104 0 100 208 104 104 0 000-208zm0 40a16 16 0 110 32 16 16 0 010-32zm16 128h-32a8 8 0 010-16h8v-40h-8a8 8 0 010-16h24a8 8 0 018 8v48h8a8 8 0 010 16z"/></svg>`,
+  close:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.7 194.3a8 8 0 010 11.3 8 8 0 01-11.3 0L128 139.3l-66.3 66.3a8 8 0 01-11.3-11.3L116.7 128 50.4 61.7a8 8 0 0111.3-11.3L128 116.7l66.3-66.3a8 8 0 0111.3 11.3L139.3 128z"/></svg>`,
+  shield:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 6 V12 C20 17 16 21 12 22 C8 21 4 17 4 12 V6 Z"/><path d="M9 12 l2 2 l4 -4"/></svg>`,
+  star:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><path d="M12 3 l2.6 5.6 6 .7 -4.4 4.1 1.2 6 -5.4-3 -5.4 3 1.2-6 -4.4-4.1 6-.7 Z"/></svg>`,
+  download:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 152v56a16 16 0 01-16 16H48a16 16 0 01-16-16v-56a8 8 0 0116 0v48h160v-48a8 8 0 0116 0zM120 40v104a8 8 0 0016 0V40a8 8 0 00-16 0zM80 112l40 40 40-40a8 8 0 0111 11l-48 48a8 8 0 01-11 0l-48-48a8 8 0 0111-11z"/></svg>`,
+  box:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M223 84l-15-27a16 16 0 00-14-8H62a16 16 0 00-14 8l-15 27v40a8 8 0 008 8h25v92a8 8 0 008 8h132a8 8 0 008-8v-92h25a8 8 0 008-8zM100 188h-24v-92h24zm24 0v-92h24v92zm56 0h-24v-92h24z"/></svg>`,
+  more:`<svg viewBox="0 0 256 256" fill="currentColor"><circle cx="64" cy="128" r="16"/><circle cx="128" cy="128" r="16"/><circle cx="192" cy="128" r="16"/></svg>`,
+  eye:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 56c-48 0-88 32-104 72 16 40 56 72 104 72s88-32 104-72c-16-40-56-72-104-72zm0 112a40 40 0 110-80 40 40 0 010 80z"/></svg>`,
+  term:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104 148l-32 32 32 32 16-16-16-16 16-16zm40-40h48v16h-48zm56-56H32a16 16 0 00-16 16v144a16 16 0 0016 16h192a16 16 0 0016-16V68a16 16 0 00-16-16zM216 200H40V72h176z"/></svg>`,
+  git:`<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="6" cy="6" r="2.4"/><circle cx="6" cy="18" r="2.4"/><circle cx="18" cy="9" r="2.4"/><path d="M6 8.4V15.6M8.1 6.9C12 7.4 15 8 17.6 8.9"/></svg>`,
+  brush:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 96a32 32 0 00-54.3-22.7L74.5 169a24 24 0 00-34 34l-14 14a16 16 0 0022.6 22.6l14-14a24 24 0 0034-34l95.7-95.2A32 32 0 00224 96zM72 200H40a16 16 0 010-32h32z"/></svg>`,
+  cloud:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 160a32 32 0 00-32-32 40 40 0 00-76-14 32 32 0 00-12 61.7V192a16 16 0 0016 16h88a32 32 0 0032-32 0 000-16zM88 192v-14.3a32 32 0 0056 0V192zm96-16a16 16 0 110-32 16 16 0 010 32z"/></svg>`,
+  bolt:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M152 32L56 144h56l-16 80 96-112H136z"/></svg>`,
+};
+
+/* ---------- model ---------- */
+function mkPlugins(){
+  return [
+    { id:'git', name:'Git', ver:'0.4.0', kind:'core', trust:'core', state:'active',
+      source:'bundled · chronos-core', icon:I.git||I.plug,
+      desc:'Version control: status, diff, commit, log, branches, stashes.',
+      readme:'Native Rust integration via gix 0.68.\nExposes :Git status, :Git commit, :Git log,\n:Git branch, :Git stash. No subprocess spawn.',
+      perms:{ fs:'read-write · repo root', net:'denied', clip:'denied', notify:'denied', luau:'native' }, err:null },
+    { id:'s3', name:'S3 Bucket Browser', ver:'0.4.0', kind:'core', trust:'core', state:'active',
+      source:'bundled · chronos-core', icon:I.box,
+      desc:'Object browser for S3-compatible buckets (prefix tree, transfers).',
+      readme:'Rust + rusoto_s3 0.48.\nPrefix tree, multipart-aware transfers,\nstorage-class aware listing.',
+      perms:{ fs:'read-only · cache', net:'allow · s3 endpoint', clip:'denied', notify:'allow', luau:'native' }, err:null },
+    { id:'archive-mount', name:'Archive Mount', ver:'0.2.1', kind:'community', trust:'community', state:'active',
+      source:'path · ~/.config/chronos/plugins/archive-mount.luau', icon:I.folder,
+      desc:'Mounts zip/tar archives as virtual folders via FUSE-lite.',
+      readme:'Luau sandbox plugin.\nRegisters a virtual FS back-end.\nHonors deny-by-default net policy.',
+      perms:{ fs:'read · mounts', net:'denied', clip:'denied', notify:'allow', luau:'sandbox' }, err:null },
+    { id:'ai-commit', name:'AI Commit Writer', ver:'0.3.0', kind:'community', trust:'verified', state:'disabled',
+      source:'marketplace · m-ai-commit', icon:I.bolt,
+      desc:'Drafts commit messages from staged diffs via local model.',
+      readme:'Verified community plugin.\nRuns an on-device LLM through the\nhost sandbox; no telemetry.',
+      perms:{ fs:'read · repo', net:'denied', clip:'read', notify:'allow', luau:'sandbox' }, err:null },
+    { id:'wallpaper-flux', name:'Wallpaper (Flux)', ver:'1.1.0', kind:'community', trust:'community', state:'error',
+      source:'path · ~/plugins/wallpaper-flux.luau', icon:I.brush,
+      desc:'Generates wallpapers via ChronOS media and sets on OSD.',
+      readme:'Luau plugin calling host media API.\nLoad failed during last reload.',
+      perms:{ fs:'read-write · wallpaper', net:'denied', clip:'denied', notify:'allow', luau:'sandbox' },
+      err:'load failed: module "flux" not found in sandbox — network grant denied by policy' },
+  ];
+}
+
+function mkAvailable(){
+  return [
+    { id:'av-fzf', name:'Fuzzy Finder', ver:'0.5.2', trust:'verified',
+      desc:'fzf-style jump-to-file across open tabs and history.', icon:I.search },
+    { id:'av-sync', name:'Cloud Sync', ver:'0.1.0', trust:'community',
+      desc:'Mounts WebDAV / rclone remotes as inline folders.', icon:I.cloud||I.box },
+    { id:'av-lsp', name:'LSP Sidebar', ver:'0.2.0', trust:'verified',
+      desc:'Per-folder language server status and diagnostics.', icon:I.term },
+    { id:'av-diff', name:'Image Diff', ver:'0.3.4', trust:'community',
+      desc:'Side-by-side visual diff for PNG/JPG assets.', icon:I.eye },
+    { id:'av-notes', name:'Quick Notes', ver:'0.0.9', trust:'community',
+      desc:'Scratchpad bound to a global hotkey.', icon:I.file },
+    { id:'av-git-graph', name:'Commit Graph', ver:'0.4.1', trust:'verified',
+      desc:'Interactive DAG view of the current repository.', icon:I.git||I.plug },
+  ];
+}
+
+let PLUGINS = mkPlugins();
+let AVAILABLE = mkAvailable();
+let view = 'installed';
+let search = '';
+let selId = 'git';
+let availFilter = 'all';
+let hostReady = true;     // P4 plugin host
+let marketOnline = true;  // P5 marketplace
+let onlyCore = false;     // demo: no user (community) plugins
+
+/* ---------- helpers ---------- */
+const esc = (s)=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function toast(msg,warn){
+  const t=document.createElement("div");
+  t.className="toast"+(warn?" warn":"");
+  t.innerHTML=(warn?I.warn:I.check)+`<span>${esc(msg)}</span>`;
+  document.getElementById("toasts").appendChild(t);
+  setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(8px)"; t.style.transition=".2s"; },2200);
+  setTimeout(()=>t.remove(),2500);
+}
+function openMenu(x,y,items){
+  closeMenu();
+  const m=document.createElement("div");
+  m.className="menu"; m.style.left=x+"px"; m.style.top=y+"px";
+  m.innerHTML=items.map((it,i)=> it.sep?`<div class="sep"></div>`
+    :`<div class="mi ${it.danger?'danger':''}" data-i="${i}">${(it.icon?I[it.icon]:'')}<span>${esc(it.label)}</span></div>`).join("");
+  document.body.appendChild(m);
+  m.querySelectorAll(".mi").forEach(el=>{
+    el.onclick=(e)=>{ e.stopPropagation(); const it=items[+el.dataset.i]; closeMenu(); it.run&&it.run(); };
+  });
+  setTimeout(()=>document.addEventListener("click",closeMenu,{once:true}),0);
+}
+function closeMenu(){ document.querySelectorAll(".menu").forEach(m=>m.remove()); }
+
+function findP(id){ return PLUGINS.find(p=>p.id===id); }
+function badge(kind){ return `<span class="badge ${kind}">${esc(kind.charAt(0).toUpperCase()+kind.slice(1))}</span>`; }
+function stateBadge(s){
+  const map={active:'Active',disabled:'Disabled',error:'Error',update:'Update'};
+  return `<span class="badge ${s}">${esc(map[s]||s)}</span>`;
+}
+function trustBadge(t){
+  if(t==='core') return `<span class="badge core">Core</span>`;
+  if(t==='verified') return `<span class="badge verified">${I.star}Verified</span>`;
+  return `<span class="badge community">Community</span>`;
+}
+function iconFor(p){ return p.icon && typeof p.icon==='string' ? p.icon : I.plug; }
+
+/* ---------- titlebar ---------- */
+function titlebar(){
+  const installedCount = PLUGINS.length;
+  const communityCount = PLUGINS.filter(p=>p.kind==='community').length;
+  return `<div class="titlebar" data-od-id="titlebar">
+    ${I.sigil}
+    <span class="tb-title">chronos</span>
+    <div class="tb-sep"></div>
+    <span class="tb-repo">Extensions</span>
+    <div class="tb-spacer"></div>
+    <div class="tb-search">${I.search}<input id="search" type="text" placeholder="Search plugins…" value="${esc(search)}"/></div>
+    <div class="tb-toggle ${hostReady?'on':''}" data-act="toggle-host" title="Plugin host status (P4)">${I.term}<span>${hostReady?'host ready':'pre-P4'}</span></div>
+    <div class="tb-toggle ${marketOnline?'on':''}" data-act="toggle-market" title="Marketplace status (P5)">${I.cloud||I.box}<span>${marketOnline?'market live':'offline'}</span></div>
+    <div class="tb-icon" data-act="install-file" title="Install from file / URL">${I.plus}</div>
+  </div>`;
+}
+
+/* ---------- sub-nav ---------- */
+function subnav(){
+  const counts={
+    installed: PLUGINS.length,
+    available: AVAILABLE.length,
+    permissions: PLUGINS.filter(p=>p.kind==='community').length,
+    host: 1,
+  };
+  const items=[
+    {id:'installed',label:'Installed',icon:I.plug},
+    {id:'available',label:'Available',icon:I.download},
+    {id:'permissions',label:'Permissions',icon:I.shield},
+    {id:'host',label:'Host / Runtime',icon:I.term},
+  ];
+  return `<div class="subnav" data-od-id="subnav">
+    <div class="sub-head">
+      <div class="repo-row"><div class="repo-dot">${I.plug}</div><span class="repo-name">Extensions</span></div>
+    </div>
+    <div class="nav">
+      ${items.map(c=>`<div class="cat ${view===c.id?'active':''}" data-nav="${c.id}">${c.icon}<span class="label">${esc(c.label)}</span><span class="badge">${counts[c.id]}</span></div>`).join("")}
+    </div>
+    <div class="nav-foot">
+      <div class="foot-row">${I.sigil}<span>gpui · layer-shell</span></div>
+      <div class="foot-row">${I.link}<span>Luau sandbox</span></div>
+    </div>
+  </div>`;
+}
+
+/* ---------- view head ---------- */
+function viewHead(){
+  let right="";
+  if(view==='installed'){
+    right=`<div class="btn ghost sm" data-act="toggle-core" title="Demo: show only bundled core plugins">${I.plug}<span>${onlyCore?'showing core only':'all plugins'}</span></div>
+           <div class="btn primary sm" data-act="install-file">${I.plus}<span>Install…</span></div>`;
+  } else if(view==='available'){
+    right=`<div class="seg" data-od-id="av-filter">
+      <div class="s ${availFilter==='all'?'on':''}" data-avf="all">All</div>
+      <div class="s ${availFilter==='core'?'on':''}" data-avf="core">Core-capable</div>
+      <div class="s ${availFilter==='community'?'on':''}" data-avf="community">Community</div>
+    </div>`;
+  } else if(view==='permissions'){
+    right=`<div class="btn ghost sm" data-act="deny-all" title="Reset all community grants to denied">${I.shield}<span>Deny all</span></div>`;
+  } else if(view==='host'){
+    right=`<div class="btn ghost sm" data-act="open-settings">${I.gear}<span>Settings → Plugins</span></div>`;
+  }
+  const sub = view==='installed' ? `${PLUGINS.length} installed`
+            : view==='available' ? `${AVAILABLE.length} in catalog`
+            : view==='permissions' ? `${PLUGINS.filter(p=>p.kind==='community').length} community`
+            : 'wasmtime · WIT';
+  return `<div class="view-head" data-od-id="view-head">
+    <span class="view-title">${esc(view.charAt(0).toUpperCase()+view.slice(1))}</span>
+    <span class="view-sub">${esc(sub)}</span>
+    <div class="head-spacer"></div>${right}</div>`;
+}
+
+/* ---------- installed list ---------- */
+function installedRows(){
+  let list = PLUGINS.slice();
+  if(onlyCore) list = list.filter(p=>p.kind==='core');
+  if(search){
+    const q=search.toLowerCase();
+    list = list.filter(p=> p.name.toLowerCase().includes(q) || p.desc.toLowerCase().includes(q));
+  }
+  if(!list.length){
+    return `<div class="empty">${I.plug}<div class="em-ttl">No user plugins</div><div>Installed shows core only. Use Install… to add a community plugin.</div></div>`;
+  }
+  return list.map(p=>{
+    const acts = [];
+    if(p.kind!=='core'){
+      if(p.state==='active') acts.push(`<div class="act muted" data-act="disable" data-id="${p.id}">Disable</div>`);
+      else if(p.state==='disabled') acts.push(`<div class="act" data-act="enable" data-id="${p.id}">Enable</div>`);
+      else if(p.state==='error') acts.push(`<div class="act" data-act="reload" data-id="${p.id}">Reload</div>`);
+    }
+    acts.push(`<div class="act" data-act="perms" data-id="${p.id}">Permissions</div>`);
+    acts.push(`<div class="act more" data-act="menu" data-id="${p.id}">${I.more}</div>`);
+    return `<div class="pl-row ${selId===p.id?'sel':''}" data-sel="${p.id}">
+      <div class="pl-ic">${iconFor(p)}</div>
+      <div class="pl-mid">
+        <div class="pl-top"><span class="pl-name">${esc(p.name)}</span><span class="pl-ver">v${esc(p.ver)}</span></div>
+        <div class="pl-desc">${esc(p.desc)}</div>
+      </div>
+      <div class="pl-right">
+        ${trustBadge(p.trust)} ${stateBadge(p.state)}
+        <div class="row-acts">${acts.join("")}</div>
+      </div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- available cards ---------- */
+function availableCards(){
+  if(!marketOnline){
+    return `<div class="empty">${I.cloud||I.box}<div class="em-ttl">Marketplace offline</div>
+      <div>Could not reach the catalog (P5). Your installed plugins still work.</div>
+      <div class="row-acts" style="margin-top:6px"><div class="act" data-act="retry-market">${I.refresh}Retry</div></div></div>`;
+  }
+  let list = AVAILABLE.slice();
+  if(availFilter==='community') list=list.filter(a=>a.trust==='community');
+  else if(availFilter==='core') list=list.filter(a=>a.trust==='verified');
+  if(search){
+    const q=search.toLowerCase();
+    list=list.filter(a=> a.name.toLowerCase().includes(q) || a.desc.toLowerCase().includes(q));
+  }
+  if(!list.length) return `<div class="empty">${I.search}<div class="em-ttl">No matches</div></div>`;
+  return `<div class="cards">`+list.map(a=>{
+    const blocked = !hostReady;
+    const btn = blocked
+      ? `<button class="btn primary sm" disabled title="Needs plugin host (P4)">${I.download}Install</button>`
+      : `<div class="btn primary sm" data-act="install" data-id="${a.id}">${I.download}Install</div>`;
+    const note = blocked ? `<span class="badge update">needs plugin host · P4</span>` : '';
+    return `<div class="card" data-sel-av="${a.id}">
+      <div class="card-hd"><div class="card-ic">${a.icon||I.plug}</div>
+        <div><div class="card-name">${esc(a.name)}</div><div class="card-ver">v${esc(a.ver)}</div></div></div>
+      <div class="card-desc">${esc(a.desc)}</div>
+      <div class="card-ft">${trustBadge(a.trust)} ${note} <div class="head-spacer"></div>${btn}</div>
+    </div>`;
+  }).join("")+`</div>`;
+}
+
+/* ---------- permissions table ---------- */
+function permTable(){
+  const comm = PLUGINS.filter(p=>p.kind==='community');
+  if(!comm.length){
+    return `<div class="empty">${I.shield}<div class="em-ttl">No community plugins</div>
+      <div>Only core plugins are installed — they run native, outside the grant model.</div></div>`;
+  }
+  const cols=['fs','net','clip','notify','luau'];
+  const colLabel={fs:'Filesystem',net:'Network',clip:'Clipboard',notify:'Notify',luau:'Luau'};
+  const rows = comm.map(p=>{
+    if(search){
+      const q=search.toLowerCase();
+      if(!p.name.toLowerCase().includes(q) && !p.desc.toLowerCase().includes(q)) return '';
+    }
+    const cells = cols.map(c=>{
+      const g = p.perms[c];
+      if(g==='native') return `<td><span class="grant locked">native</span></td>`;
+      const on = g!=='denied';
+      return `<td><div class="grant ${on?'':'off'}" data-grant="${p.id}:${c}">
+        <div class="sw ${on?'on':''}"></div><span class="lbl ${on?'on':''}">${on?'allow':'deny'}</span></div></td>`;
+    }).join("");
+    return `<tr><td class="name">${esc(p.name)}<br><span class="mono" style="font-size:9.5px;color:var(--faint)">${esc(p.source)}</span></td>${cells}</tr>`;
+  }).join("");
+  return `<table class="ptab">
+    <thead><tr><th>Plugin</th>${cols.map(c=>`<th>${colLabel[c]}</th>`).join("")}</tr></thead>
+    <tbody>${rows}</tbody></table>
+    <div class="meta-line" style="margin-top:12px"><span class="k">policy</span><span class="v">deny-by-default · grants stored in config.plugins.grants</span></div>`;
+}
+
+/* ---------- host view ---------- */
+function hostView(){
+  const banner = hostReady ? '' : `<div class="banner">
+    ${I.warn}
+    <div><div class="b-ttl">Plugin host not ready — UI is ahead of the backend (P4)</div>
+    <div class="b-body">Architecture: <span class="mono">wasmtime</span> + <span class="mono">WIT</span> components, isolated runtime, per-plugin grants.
+    Marketplace browse (P5) and install land after the host. Controls below show status only — honest, not faked.</div></div>`;
+  const sandboxOn = hostReady;
+  return `${banner}
+    <div class="host-card" data-od-id="host-card">
+      <div class="host-row"><span class="hk">host</span><span class="hv">wasmtime 22 · WIT 0.4</span></div>
+      <div class="host-row"><span class="hk">runtime</span><span class="hv">isolated · component model</span></div>
+      <div class="host-row"><span class="hk">sandbox</span><span class="dotstat ${sandboxOn?'':'off'}"><span class="d"></span>${sandboxOn?'on':'off'}</span></div>
+      <div class="host-row"><span class="hk">last reload</span><span class="hv">${sandboxOn?'0.4s ago · 5 modules':'—'}</span></div>
+      <div class="host-row"><span class="hk">grants</span><span class="hv">deny-by-default</span></div>
+      <div class="host-row"><span class="hk">core</span><span class="hv">native Rust (git, s3)</span></div>
+    </div>
+    <div class="dt-sec" style="margin-top:16px"><div class="dt-sec-h">Runtime policy</div>
+      <div class="dt-desc">Sandbox, hot-reload and fs-watch are configured under
+      <b>Settings → Plugins</b>. This tab manages what is installed and how — it does not duplicate those toggles.</div>
+      <div class="dt-acts" style="margin-top:10px"><div class="btn ghost" data-act="open-settings">${I.gear}<span>Open Settings → Plugins</span></div>${hostReady?'<div class="btn ghost" data-act="reload-all">'+I.refresh+'<span>Reload all</span></div>':''}</div>
+    </div>`;
+}
+
+/* ---------- detail panel ---------- */
+function detail(){
+  if(view==='available'){
+    const id = (AVAILABLE.find(a=>a.id===selId)) ? selId : (AVAILABLE[0]&&AVAILABLE[0].id);
+    const a = AVAILABLE.find(x=>x.id===id);
+    if(!a) return `<div class="detail"><div class="dt-hd">${I.download}<div class="dt-name">No selection</div></div><div class="dt-body"></div></div>`;
+    const blocked=!hostReady;
+    const btn = blocked
+      ? `<button class="btn primary" disabled title="Needs plugin host (P4)">${I.download}Install</button><span class="badge update">needs plugin host · P4</span>`
+      : `<div class="btn primary" data-act="install" data-id="${a.id}">${I.download}Install</div>`;
+    return `<div class="detail" data-od-id="detail-av">
+      <div class="dt-hd">
+        <div class="dt-top"><div class="dt-ic">${a.icon||I.plug}</div>
+          <div><div class="dt-name">${esc(a.name)}</div><div class="dt-ver">v${esc(a.ver)} · catalog</div></div></div>
+        <div class="dt-badges">${trustBadge(a.trust)}</div>
+      </div>
+      <div class="dt-body">
+        <div class="dt-sec"><div class="dt-sec-h">About</div><div class="dt-desc">${esc(a.desc)}</div></div>
+        <div class="dt-sec"><div class="dt-sec-h">Source</div>
+          <div class="meta-line"><span class="k">origin</span><span class="v">marketplace · ${esc(a.id)}</span></div>
+          <div class="meta-line"><span class="k">trust</span><span class="v">${esc(a.trust)}</span></div></div>
+        <div class="dt-sec"><div class="dt-sec-h">Install</div>
+          <div class="dt-desc" style="margin-bottom:10px">${blocked?'Install is disabled until the plugin host (P4) lands. UI chrome is complete and honest.':'Adds to Installed as a sandboxed community plugin.'}</div>
+          <div class="dt-acts">${btn}</div></div>
+      </div></div>`;
+  }
+  if(view==='permissions' || view==='host'){
+    return `<div class="detail" data-od-id="detail-info">
+      <div class="dt-hd"><div class="dt-top"><div class="dt-ic">${view==='host'?I.term:I.shield}</div>
+        <div><div class="dt-name">${view==='host'?'Host / Runtime':'Permissions'}</div><div class="dt-ver">${view==='host'?'wasmtime · WIT':'grant model'}</div></div></div></div>
+      <div class="dt-body"><div class="dt-desc">Select an installed community plugin (Installed view) to inspect its grants, or use the table on the left.</div></div></div>`;
+  }
+  // installed detail
+  const p = findP(selId) || PLUGINS[0];
+  if(!p) return `<div class="detail"><div class="dt-hd">${I.plug}<div class="dt-name">No plugins</div></div><div class="dt-body"></div></div>`;
+  let headActs='';
+  if(p.kind!=='core'){
+    if(p.state==='active') headActs+=`<div class="act" data-act="disable" data-id="${p.id}">Disable</div>`;
+    else if(p.state==='disabled') headActs+=`<div class="act" data-act="enable" data-id="${p.id}">Enable</div>`;
+    else if(p.state==='error') headActs+=`<div class="act" data-act="reload" data-id="${p.id}">Reload</div>`;
+    headActs+=`<div class="act danger" data-act="uninstall" data-id="${p.id}">${I.trash}Uninstall</div>`;
+  }
+  headActs+=`<div class="act" data-act="open-folder" data-id="${p.id}">${I.folder}Open folder</div>`;
+
+  const perms = Object.keys(p.perms).map(k=>{
+    const v=p.perms[k];
+    const lab={fs:'Filesystem',net:'Network',clip:'Clipboard',notify:'Notifications',luau:'Luau'}[k]||k;
+    return `<div class="meta-line"><span class="k">${lab}</span><span class="v">${esc(v)}</span></div>`;
+  }).join("");
+
+  const errBox = p.state==='error' && p.err ? `<div class="dt-sec"><div class="dt-sec-h">Load error</div><div class="err-box">${esc(p.err)}</div></div>` : '';
+
+  return `<div class="detail" data-od-id="detail">
+    <div class="dt-hd">
+      <div class="dt-top"><div class="dt-ic">${iconFor(p)}</div>
+        <div><div class="dt-name">${esc(p.name)}</div><div class="dt-ver">v${esc(p.ver)}</div></div></div>
+      <div class="dt-badges">${trustBadge(p.trust)} ${stateBadge(p.state)}</div>
+    </div>
+    <div class="dt-body">
+      <div class="dt-sec"><div class="dt-sec-h">Description</div><div class="dt-desc">${esc(p.desc)}</div></div>
+      <div class="dt-sec"><div class="dt-sec-h">Source</div>
+        <div class="meta-line"><span class="k">kind</span><span class="v">${esc(p.kind)}</span></div>
+        <div class="meta-line"><span class="k">path</span><span class="v">${esc(p.source)}</span></div></div>
+      ${errBox}
+      <div class="dt-sec"><div class="dt-sec-h">Permissions</div>${perms}</div>
+      <div class="dt-sec"><div class="dt-sec-h">Readme</div><div class="readme">${esc(p.readme)}</div></div>
+      <div class="dt-sec"><div class="dt-sec-h">Actions</div><div class="dt-acts">${headActs}</div></div>
+    </div></div>`;
+}
+
+/* ---------- render ---------- */
+function render(){
+  const app=document.getElementById("app");
+  let mainBody="";
+  if(view==='installed') mainBody=`<div class="list" data-od-id="list-installed">${installedRows()}</div>`;
+  else if(view==='available') mainBody=`<div class="list" data-od-id="list-available">${availableCards()}</div>`;
+  else if(view==='permissions') mainBody=`<div class="list" data-od-id="list-permissions">${permTable()}</div>`;
+  else if(view==='host') mainBody=`<div class="list" data-od-id="list-host">${hostView()}</div>`;
+
+  app.innerHTML = `
+    ${titlebar()}
+    <div class="body">
+      ${subnav()}
+      <div class="main" data-od-id="main">
+        ${viewHead()}
+        ${mainBody}
+      </div>
+      ${detail()}
+    </div>`;
+  bind();
+}
+
+/* ---------- bind ---------- */
+function bind(){
+  document.querySelectorAll("[data-nav]").forEach(el=>el.onclick=()=>{ view=el.dataset.nav; render(); });
+  const s=document.getElementById("search");
+  if(s) s.oninput=()=>{ search=s.value; render(); };
+  // installed row select
+  document.querySelectorAll("[data-sel]").forEach(el=>el.onclick=(e)=>{
+    if(e.target.closest("[data-act]")) return;
+    selId=el.dataset.sel; render();
+  });
+  // available card select (no nav change, just for symmetry)
+  document.querySelectorAll("[data-sel-av]").forEach(el=>el.onclick=()=>{ selId=el.dataset.selAv; render(); });
+  // seg filter
+  document.querySelectorAll("[data-avf]").forEach(el=>el.onclick=()=>{ availFilter=el.dataset.avf; render(); });
+  // grants
+  document.querySelectorAll("[data-grant]").forEach(el=>el.onclick=()=>{
+    const [id,col]=el.dataset.grant.split(":");
+    const p=findP(id); if(!p) return;
+    const cur=p.perms[col];
+    p.perms[col] = (cur==='denied') ? (col==='fs'?'read · repo':col==='net'?'allow · endpoint':'allow') : 'denied';
+    render();
+    toast(`${p.name}: ${col} ${p.perms[col]==='denied'?'denied':'granted'}`);
+  });
+  // actions
+  document.querySelectorAll("[data-act]").forEach(el=>el.onclick=(e)=>handleAct(el.dataset.act,el,e));
+}
+
+/* ---------- actions ---------- */
+function handleAct(a,el,e){
+  switch(a){
+    case "toggle-host": hostReady=!hostReady; if(!hostReady) marketOnline=false; render(); toast(hostReady?'Plugin host ready (P4)':'Plugin host set to pre-P4 · UI only'); break;
+    case "toggle-market": if(!hostReady){ toast('Enable plugin host (P4) first',true); break; } marketOnline=!marketOnline; render(); break;
+    case "retry-market": marketOnline=true; render(); toast('Marketplace reconnected'); break;
+    case "install-file": openInstallFrom(); break;
+    case "install": {
+      const id=el.dataset.id; const a=AVAILABLE.find(x=>x.id===id);
+      if(!a) break;
+      if(!hostReady){ toast('Install needs plugin host (P4)',true); break; }
+      PLUGINS.push({ id:a.id, name:a.name, ver:a.ver, kind:'community', trust:a.trust, state:'active',
+        source:'marketplace · '+a.id, icon:a.icon, desc:a.desc, readme:'Installed from marketplace.\nRuns in the Luau sandbox with deny-by-default grants.',
+        perms:{ fs:'read · repo', net:'denied', clip:'denied', notify:'allow', luau:'sandbox' }, err:null });
+      AVAILABLE=AVAILABLE.filter(x=>x.id!==id);
+      selId=a.id; view='installed'; render(); toast(`Installed ${a.name}`); break;
+    }
+    case "enable": { const p=findP(el.dataset.id); if(!p)break; p.state='active'; render(); toast(`Enabled ${p.name}`); break; }
+    case "disable": { const p=findP(el.dataset.id); if(!p)break; p.state='disabled'; render(); toast(`Disabled ${p.name}`); break; }
+    case "reload": { const p=findP(el.dataset.id); if(!p)break; p.state='active'; p.err=null; render(); toast(`Reloaded ${p.name}`); break; }
+    case "uninstall": {
+      const p=findP(el.dataset.id); if(!p)break;
+      confirmMenu(el,`Uninstall ${p.name}?`,()=>{
+        PLUGINS=PLUGINS.filter(x=>x.id!==p.id);
+        if(selId===p.id) selId=(PLUGINS[0]&&PLUGINS[0].id)||'';
+        render(); toast(`Uninstalled ${p.name}`);
+      });
+      break;
+    }
+    case "open-folder": { const p=findP(el.dataset.id); if(!p)break; toast(`Opening ${p.source}`); break; }
+    case "perms": { const p=findP(el.dataset.id); if(!p)break; view='permissions'; render(); break; }
+    case "menu": { const p=findP(el.dataset.id); if(!p)break; const r=el.getBoundingClientRect();
+      const items=[{label:'Open folder',icon:'folder',run:()=>toast(`Opening ${p.source}`)}];
+      if(p.kind!=='core'){
+        if(p.state==='active') items.push({label:'Disable',run:()=>{p.state='disabled';render();toast(`Disabled ${p.name}`);}});
+        else if(p.state==='disabled') items.push({label:'Enable',run:()=>{p.state='active';render();toast(`Enabled ${p.name}`);}});
+        items.push({label:'View permissions',icon:'shield',run:()=>{view='permissions';render();}});
+        items.push({sep:true});
+        items.push({label:`Uninstall ${p.name}`,icon:'trash',danger:true,run:()=>{ PLUGINS=PLUGINS.filter(x=>x.id!==p.id); if(selId===p.id) selId=(PLUGINS[0]&&PLUGINS[0].id)||''; render(); toast(`Uninstalled ${p.name}`); }});
+      }
+      openMenu(r.left, r.bottom+6, items);
+      break;
+    }
+    case "toggle-core": onlyCore=!onlyCore; render(); toast(onlyCore?'Showing core only':'Showing all plugins'); break;
+    case "deny-all": PLUGINS.filter(p=>p.kind==='community').forEach(p=>{ p.perms.fs='denied'; p.perms.net='denied'; p.perms.clip='denied'; p.perms.notify='denied'; p.perms.luau='sandbox'; }); render(); toast('All community grants reset to denied'); break;
+    case "open-settings": openSettingsJump(); break;
+    case "reload-all": toast('Reloaded all plugins · 0.4s'); break;
+  }
+}
+function confirmMenu(el,label,run){
+  const r=el.getBoundingClientRect();
+  openMenu(r.left, r.bottom+6, [
+    {label, icon:'warn'},
+    {sep:true},
+    {label:'Confirm', icon:'trash', danger:true, run},
+  ]);
+}
+function openSettingsJump(){
+  const root=document.getElementById("modal-root");
+  root.innerHTML=`<div class="modal-bg" data-close="1"><div class="modal" data-od-id="settings-jump">
+    <div class="modal-hd">${I.gear}<span class="ttl">Open Settings → Plugins</span><div class="sp"></div><div class="tb-icon" data-close="1">${I.close}</div></div>
+    <div class="modal-bd"><div class="readme">Runtime policy lives in Settings → Plugins:
+
+<span class="kw">plugins</span> = {
+  luau_hot_reload = <span class="st">true</span>,
+  luau_sandbox    = <span class="st">true</span>,
+  fs_watch        = <span class="st">true</span>,
+  image_gen       = <span class="st">true</span>,
+  ocr             = <span class="st">false</span>,
+  cloud_mount     = <span class="st">false</span>,
+}</div>
+    <div class="meta-line" style="margin-top:12px"><span class="k">this tab</span><span class="v">manages installed + lifecycle (not these toggles)</span></div></div>
+    <div class="modal-ft"><div class="btn ghost" data-close="1">Close</div><div class="btn primary" data-act="noop">Jump to Settings</div></div>
+  </div></div>`;
+  root.querySelectorAll("[data-close]").forEach(el=>el.onclick=()=>root.innerHTML="");
+  const jump=root.querySelector("[data-act='noop']"); if(jump) jump.onclick=()=>{ root.innerHTML=""; toast('Switch to File Manager → Settings → Plugins'); };
+}
+function openInstallFrom(){
+  const root=document.getElementById("modal-root");
+  root.innerHTML=`<div class="modal-bg" data-close="1"><div class="modal" data-od-id="install-from">
+    <div class="modal-hd">${I.plus}<span class="ttl">Install plugin from file / URL</span><div class="sp"></div><div class="tb-icon" data-close="1">${I.close}</div></div>
+    <div class="modal-bd">
+      <div class="meta-line"><span class="k">file</span><span class="v mono">~/.config/chronos/plugins/foo.luau</span></div>
+      <input class="fld" id="inst-url" placeholder="file://… or https://… or marketplace id" value="~/plugins/example.luau"/>
+      <div class="meta-line" style="margin-top:12px"><span class="k">host</span><span class="v">${hostReady?'wasmtime ready · P4':'pre-P4 — install disabled'}</span></div>
+    </div>
+    <div class="modal-ft">
+      <div class="btn ghost" data-close="1">Cancel</div>
+      <div class="btn primary" id="do-install">${I.download}Install</div>
+    </div>
+  </div></div>`;
+  root.querySelectorAll("[data-close]").forEach(el=>el.onclick=()=>root.innerHTML="");
+  const di=root.querySelector("#do-install"); if(di) di.onclick=()=>{
+    if(!hostReady){ toast('Install needs plugin host (P4)',true); return; }
+    const name='example.luau';
+    PLUGINS.push({ id:'ex-'+Date.now(), name:'Example Plugin', ver:'0.0.1', kind:'community', trust:'community', state:'active',
+      source:'file · ~/plugins/example.luau', icon:I.plug, desc:'User-installed Luau plugin.',
+      readme:'Installed from local file.\nRuns in the Luau sandbox.',
+      perms:{ fs:'read · repo', net:'denied', clip:'denied', notify:'allow', luau:'sandbox' }, err:null });
+    root.innerHTML=""; render(); toast('Installed Example Plugin');
+  };
+}
+
+/* ---------- boot ---------- */
+render();
+</script>
+</body>
+</html>

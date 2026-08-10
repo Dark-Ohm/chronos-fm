@@ -51,7 +51,7 @@ fn render_table_with_header(
 ) -> impl IntoElement + use<> {
     let entity = cx.entity().clone();
 
-    let mut all_sizes = vec![gpui::size(px(table_width), px(48.0))];
+    let mut all_sizes = vec![gpui::size(px(table_width), px(26.0))];
     all_sizes.extend(page.item_sizes.as_ref().iter().copied());
     let all_sizes = Rc::new(all_sizes);
     let scroll_handle = page.virtual_scroll_handle.clone();
@@ -116,8 +116,8 @@ fn render_header_row(
 ) -> impl IntoElement + use<> {
     div()
         .w(px(table_width))
-        .h(px(48.0))
-        .px(px(24.0))
+        .h(px(26.0))
+        .px(px(16.0))
         .bg(theme::bg(cx))
         .border_b_1()
         .border_color(theme::border(cx))
@@ -225,7 +225,10 @@ fn render_column_header(
     cx: &mut Context<ExplorerPane>,
 ) -> gpui::Div {
     let is_active = page.sort_key == key;
-    let label_str = label.to_string();
+    // Mockup §2.7: header labels render uppercase (letter-spacing .03em is
+    // not exposed by gpui's `Styled` trait on this element — no method for
+    // it exists — so that part of the spec is skipped; see task report).
+    let label_str = label.to_uppercase();
     let sort_icon = if is_active {
         Some(if page.sort_asc { "↑" } else { "↓" })
     } else {
@@ -250,20 +253,16 @@ fn render_column_header(
                     .gap_1()
                     .child(
                         div()
-                            .text_xs()
+                            .text_size(px(10.0))
                             .font_weight(gpui::FontWeight::SEMIBOLD)
-                            .text_color(if is_active {
-                                theme::fg(cx)
-                            } else {
-                                theme::fg_secondary(cx)
-                            })
+                            .text_color(theme::muted(cx))
                             .child(label_str),
                     )
                     .when(is_active, |this| {
                         this.child(
                             div()
-                                .text_xs()
-                                .text_color(theme::fg(cx))
+                                .text_size(px(10.0))
+                                .text_color(theme::muted(cx))
                                 .child(sort_icon.unwrap_or("")),
                         )
                     }),

@@ -1,0 +1,1094 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChronOS · Git</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ChronOS registered palette — verbatim */
+    --bg:#181825;
+    --surface:#1e1e2e;
+    --surface1:#1e1e2e;
+    --surface2:#45475a;
+    --fg:#cdd6f4;
+    --muted:rgba(205,214,244,0.58);   /* derived from --fg */
+    --faint:rgba(205,214,244,0.34);
+    --border:#45475a;
+    --border-soft:rgba(205,214,244,0.09);
+    --hairline:rgba(205,214,244,0.07);
+    --accent:#007acc;
+    --accent-2:#cba6f7;
+    --accent-press:#007acc;
+    --add-bg:rgba(0,122,204,0.13);
+    --del-bg:rgba(203,166,247,0.13);
+    --shadow:0 1px 2px rgba(0,0,0,0.30), 0 4px 14px rgba(0,0,0,0.22);
+    --r:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+    font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  .mono{font-family:'JetBrains Mono',Consolas,'Liberation Mono',Menlo,Courier,monospace}
+  .wrap{
+    width:1280px;height:800px;background:var(--bg);
+    border:1px solid var(--border);border-radius:10px;overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:var(--shadow);
+  }
+
+  /* ---- titlebar ---- */
+  .titlebar{
+    flex:none;height:38px;background:var(--bg);
+    border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:10px;padding:0 12px;
+    -webkit-app-region:drag;
+  }
+  .sigil{width:18px;height:18px;color:var(--accent);flex:none}
+  .tb-title{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg);letter-spacing:.02em}
+  .tb-sep{width:1px;height:16px;background:var(--border)}
+  .tb-repo{font-size:12px;color:var(--muted)}
+  .tb-branch{
+    display:flex;align-items:center;gap:5px;font-size:12px;color:var(--fg);
+    font-weight:600;
+  }
+  .tb-branch svg{width:13px;height:13px;color:var(--accent-2)}
+  .tb-spacer{flex:1}
+  .tb-stat{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:11px}
+  .tb-stat .up{color:var(--accent)}
+  .tb-stat .down{color:var(--accent-2)}
+  .tb-sync{
+    display:flex;align-items:center;gap:5px;height:26px;padding:0 11px;border-radius:7px;
+    border:1px solid var(--accent);color:var(--accent);font-size:12px;font-weight:600;
+    cursor:pointer;letter-spacing:.02em;
+  }
+  .tb-sync:hover{background:rgba(0,122,204,0.12)}
+  .tb-sync:active{background:var(--accent-press);color:#cdd6f4;border-color:var(--accent-press)}
+  .tb-icon{
+    width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);cursor:pointer;-webkit-app-region:no-drag;
+  }
+  .tb-icon:hover{background:var(--surface1);color:var(--fg)}
+  .tb-icon svg{width:16px;height:16px}
+
+  /* ---- body ---- */
+  .body{flex:1;min-height:0;display:flex}
+
+  /* ---- sidebar ---- */
+  .sidebar{
+    width:232px;flex:none;background:var(--surface);
+    border-right:1px solid var(--border);
+    display:flex;flex-direction:column;
+  }
+  .repo-head{
+    padding:14px 14px 12px;border-bottom:1px solid var(--border);
+    display:flex;flex-direction:column;gap:9px;
+  }
+  .repo-row{display:flex;align-items:center;gap:9px;min-width:0}
+  .repo-dot{width:22px;height:22px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none}
+  .repo-dot svg{width:13px;height:13px}
+  .repo-name{font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .branch-chip{
+    display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
+    padding:5px 10px;border-radius:7px;background:var(--bg);
+    border:1px solid var(--border);cursor:pointer;max-width:100%;
+  }
+  .branch-chip:hover{border-color:var(--surface2)}
+  .branch-chip svg{width:12px;height:12px;color:var(--accent-2);flex:none}
+  .branch-chip span{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .branch-chip .caret{width:11px;height:11px;color:var(--faint);margin-left:2px}
+  .ahead-behind{display:flex;gap:6px}
+  .ab{
+    display:flex;align-items:center;gap:3px;font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;padding:2px 7px;border-radius:5px;background:var(--bg);border:1px solid var(--border);
+  }
+  .ab.up{color:var(--accent)}
+  .ab.down{color:var(--accent-2)}
+
+  .nav{padding:8px 8px;display:flex;flex-direction:column;gap:2px}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;
+    cursor:pointer;color:var(--muted);position:relative;
+  }
+  .nav-item:hover{background:var(--surface1);color:var(--fg)}
+  .nav-item.active{background:var(--surface1);color:var(--fg)}
+  .nav-item.active::before{
+    content:"";position:absolute;left:-8px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--accent);
+  }
+  .nav-item svg{width:16px;height:16px;flex:none}
+  .nav-item .label{font-size:12.5px;font-weight:500;flex:1}
+  .nav-item .badge{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;min-width:18px;height:18px;
+    padding:0 5px;border-radius:9px;background:var(--surface2);color:var(--fg);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .nav-item .badge.accent{background:var(--accent);color:#cdd6f4}
+  .nav-sep{height:1px;background:var(--border);margin:8px 10px}
+  .nav-foot{margin-top:auto;padding:10px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+  .foot-row{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .foot-row svg{width:12px;height:12px;flex:none;color:var(--muted)}
+
+  /* ---- main ---- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .view-head{
+    flex:none;height:46px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:12px;padding:0 16px;
+  }
+  .view-title{font-size:14px;font-weight:700;color:var(--fg);letter-spacing:-.01em}
+  .view-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+  .head-spacer{flex:1}
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:7px;
+    font-size:12px;font-weight:600;letter-spacing:.01em;cursor:pointer;border:1px solid transparent;
+  }
+  .btn svg{width:14px;height:14px}
+  .btn.ghost{background:var(--surface);border-color:var(--border);color:var(--fg)}
+  .btn.ghost:hover{background:var(--surface1);border-color:var(--surface2)}
+  .btn.ghost:active{background:var(--surface2)}
+  .btn.primary{background:var(--accent);color:#cdd6f4}
+  .btn.primary:hover{background:var(--accent-press)}
+  .btn.primary:disabled{background:var(--surface1);color:var(--faint);cursor:not-allowed}
+  .btn.sm{height:26px;padding:0 9px;font-size:11.5px}
+  .btn.sm svg{width:12px;height:12px}
+  .seg{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:2px;gap:2px}
+  .seg .opt{
+    display:flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:5px;font-size:11.5px;
+    color:var(--muted);cursor:pointer;font-weight:500;
+  }
+  .seg .opt:hover{color:var(--fg)}
+  .seg .opt.on{background:var(--surface1);color:var(--fg)}
+
+  .scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin}
+  .scroll::-webkit-scrollbar{width:8px;height:8px}
+  .scroll::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .scroll::-webkit-scrollbar-track{background:transparent}
+
+  /* ---- changes view ---- */
+  .changes{display:flex;flex-direction:column;height:100%}
+  .changes-toolbar{
+    flex:none;display:flex;align-items:center;gap:8px;padding:10px 16px;border-bottom:1px solid var(--border)
+  }
+  .changes-cols{flex:1;min-height:0;display:flex}
+  .filelist{width:320px;flex:none;border-right:1px solid var(--border);overflow-y:auto;scrollbar-width:thin}
+  .filelist::-webkit-scrollbar{width:8px}
+  .filelist::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .group-hd{
+    display:flex;align-items:center;gap:8px;padding:8px 14px;position:sticky;top:0;
+    background:var(--bg);z-index:2;border-bottom:1px solid var(--hairline);
+  }
+  .group-hd .g-title{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+  .group-hd .g-count{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .group-hd .g-act{margin-left:auto;display:flex;gap:4px}
+  .mini{
+    display:flex;align-items:center;justify-content:center;width:24px;height:24px;border-radius:6px;
+    color:var(--muted);cursor:pointer;
+  }
+  .mini:hover{background:var(--surface1);color:var(--fg)}
+  .mini svg{width:14px;height:14px}
+  .file{
+    display:flex;align-items:center;gap:9px;padding:6px 14px;cursor:pointer;position:relative;
+  }
+  .file:hover{background:var(--surface)}
+  .file.sel{background:var(--surface1)}
+  .file .st{font-family:'JetBrains Mono',monospace;font-size:12px;width:14px;text-align:center;font-weight:600;flex:none}
+  .st-M{color:var(--accent-2)} .st-A{color:var(--accent)} .st-D{color:var(--muted)} .st-R{color:var(--accent-2)} .st-U{color:var(--accent)}
+  .file .nm{flex:1;font-size:12.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .file .dir{color:var(--faint);font-weight:400}
+  .file .plus{color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:10px;flex:none}
+
+  .diffpane{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .diff-hd{flex:none;height:32px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .diff-hd .fpath{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .diff-hd .stat{margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10.5px;display:flex;gap:8px}
+  .diff-hd .add{color:var(--accent)} .diff-hd .del{color:var(--accent-2)}
+  .diff-body{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;font-family:'JetBrains Mono',monospace;font-size:12px;line-height:1.55}
+  .diff-body::-webkit-scrollbar{width:8px;height:8px}
+  .diff-body::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .dline{display:flex;white-space:pre;padding:0 12px}
+  .dline .ln{width:42px;flex:none;color:var(--faint);text-align:right;padding-right:12px;user-select:none;border-right:1px solid var(--hairline)}
+  .dline .code{flex:1;white-space:pre}
+  .dline.add{background:var(--add-bg)} .dline.add .ln{color:var(--accent)}
+  .dline.del{background:var(--del-bg)} .dline.del .ln{color:var(--accent-2)}
+  .dline.hunk{background:var(--surface1);color:var(--muted)}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12.5px;gap:8px}
+  .empty svg{width:18px;height:18px}
+
+  .commitbar{
+    flex:none;border-top:1px solid var(--border);background:var(--surface);padding:10px 16px;
+    display:flex;flex-direction:column;gap:9px;
+  }
+  .commit-box{display:flex;align-items:center;gap:10px}
+  .avatar{width:24px;height:24px;border-radius:50%;background:var(--surface1);color:var(--fg);display:flex;align-items:center;justify-content:center;font-size:10px;font-weight:700;flex:none}
+  .msg-input{
+    flex:1;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:8px 11px;
+    font-family:'Inter',sans-serif;font-size:12.5px;color:var(--fg);resize:none;outline:none;line-height:1.4;
+  }
+  .msg-input:focus{border-color:var(--accent)}
+  .msg-input::placeholder{color:var(--faint)}
+  .commit-actions{display:flex;align-items:center;gap:8px}
+  .commit-actions .spacer{flex:1}
+  .chk{display:flex;align-items:center;gap:7px;font-size:11.5px;color:var(--muted);cursor:pointer;user-select:none}
+  .chk .box{width:16px;height:16px;border-radius:4px;border:1px solid var(--surface2);display:flex;align-items:center;justify-content:center}
+  .chk .box.on{background:var(--accent);border-color:var(--accent);color:#cdd6f4}
+  .chk .box svg{width:10px;height:10px}
+
+  /* ---- history view ---- */
+  .hist{display:flex;flex-direction:column;height:100%}
+  .hist-list{display:flex;flex-direction:column}
+  .commit-row{
+    display:flex;align-items:stretch;border-bottom:1px solid var(--hairline);cursor:pointer;position:relative;
+  }
+  .commit-row:hover{background:var(--surface)}
+  .commit-row.sel{background:var(--surface1)}
+  .graph-col{width:46px;flex:none;display:flex;justify-content:center;position:relative;background:var(--bg)}
+  .graph-svg{display:block}
+  .commit-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:3px;padding:9px 14px}
+  .commit-msg{font-size:13px;color:var(--fg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .commit-row.sel .commit-msg{color:var(--fg)}
+  .commit-meta{display:flex;align-items:center;gap:10px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .commit-meta .hash{color:var(--accent)}
+  .commit-meta .who{color:var(--muted)}
+  .commit-meta .tag{
+    font-size:10px;padding:1px 6px;border-radius:4px;background:var(--surface2);color:var(--fg);font-weight:600;letter-spacing:.02em;
+  }
+  .commit-meta .tag.acc{background:var(--accent);color:#cdd6f4}
+  .commit-meta .tag.acc2{background:var(--accent-2);color:#181825}
+  .dot{position:absolute;left:50%;top:18px;transform:translate(-50%,-50%);width:11px;height:11px;border-radius:50%;background:var(--bg);border:2px solid var(--accent);z-index:3}
+  .dot.head{border-color:var(--accent-2);background:var(--accent-2)}
+
+  .hist-detail{flex:none;border-top:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column;max-height:42%}
+  .hd-hd{flex:none;display:flex;align-items:center;gap:10px;padding:9px 14px;border-bottom:1px solid var(--hairline)}
+  .hd-hd .ttl{font-size:12.5px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .hd-body{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;padding:8px 0}
+  .hd-body::-webkit-scrollbar{width:8px}
+  .hd-body::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .fstat{display:flex;align-items:center;gap:9px;padding:5px 14px;font-family:'JetBrains Mono',monospace;font-size:11.5px}
+  .fstat .nm{flex:1;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fstat .a{color:var(--accent)} .fstat .d{color:var(--accent-2)}
+
+  /* ---- branches view ---- */
+  .br-view{display:flex;flex-direction:column;height:100%}
+  .br-create{
+    flex:none;display:flex;align-items:center;gap:8px;padding:12px 16px;border-bottom:1px solid var(--border);
+  }
+  .br-input{
+    flex:1;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:7px 11px;
+    font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg);outline:none;
+  }
+  .br-input:focus{border-color:var(--accent)}
+  .br-cols{flex:1;min-height:0;display:flex}
+  .br-col{flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid var(--border)}
+  .br-col:last-child{border-right:none}
+  .br-col-hd{flex:none;height:36px;display:flex;align-items:center;gap:8px;padding:0 16px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .br-col-hd .t{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--muted)}
+  .br-col-hd .c{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .br-col-bd{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding:6px}
+  .br-col-bd::-webkit-scrollbar{width:8px}
+  .br-col-bd::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .branch{
+    display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:7px;cursor:pointer;position:relative;
+  }
+  .branch:hover{background:var(--surface)}
+  .branch.cur{background:var(--surface1)}
+  .branch .ic{width:16px;height:16px;color:var(--muted);flex:none}
+  .branch.cur .ic{color:var(--accent-2)}
+  .branch .info{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .branch .bn{font-size:12.5px;color:var(--fg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .branch.cur .bn{font-weight:700}
+  .branch .sub{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint)}
+  .branch .acts{display:flex;gap:3px;opacity:0;transition:opacity .1s}
+  .branch:hover .acts,.branch.cur .acts{opacity:1}
+  .bact{width:24px;height:24px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer}
+  .bact:hover{background:var(--surface2);color:var(--fg)}
+  .bact.danger:hover{color:#181825;background:var(--accent-2);opacity:.85}
+  .bact svg{width:13px;height:13px}
+  .cur-flag{font-size:9.5px;font-weight:700;letter-spacing:.06em;text-transform:uppercase;color:var(--accent-2);border:1px solid var(--accent-2);border-radius:4px;padding:1px 5px}
+
+  /* ---- stashes & remotes ---- */
+  .list-pad{flex:1;overflow-y:auto;scrollbar-width:thin;padding:10px 16px;display:flex;flex-direction:column;gap:8px}
+  .list-pad::-webkit-scrollbar{width:8px}
+  .list-pad::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .card{
+    display:flex;align-items:center;gap:12px;padding:11px 14px;background:var(--surface);
+    border:1px solid var(--border);border-radius:9px;
+  }
+  .card .ci{width:30px;height:30px;border-radius:7px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent-2);flex:none}
+  .card .ci svg{width:15px;height:15px}
+  .card .cb{flex:1;min-width:0;display:flex;flex-direction:column;gap:2px}
+  .card .ct{font-size:12.5px;color:var(--fg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .card .cs{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .card .ca{display:flex;gap:6px}
+  .remote-url{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .pill{font-size:10px;padding:2px 7px;border-radius:5px;background:var(--surface2);color:var(--fg);font-family:'JetBrains Mono',monospace}
+  .pill.fetch{background:rgba(0,122,204,0.18);color:var(--accent)}
+  .pill.push{background:rgba(203,166,247,0.18);color:var(--accent-2)}
+
+  /* ---- toast ---- */
+  .toasts{position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+  .toast{
+    display:flex;align-items:center;gap:9px;padding:10px 13px;background:var(--surface1);
+    border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);font-size:12px;color:var(--fg);
+    min-width:220px;animation:tin .14s ease-out;
+  }
+  .toast svg{width:15px;height:15px;color:var(--accent);flex:none}
+  .toast.warn svg{color:var(--accent-2)}
+  @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* menu */
+  .menu{position:absolute;background:var(--surface1);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:5px;z-index:60;min-width:180px}
+  .menu .mi{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;font-size:12.5px;color:var(--fg);cursor:pointer}
+  .menu .mi:hover{background:var(--surface2)}
+  .menu .mi svg{width:14px;height:14px;color:var(--muted)}
+  .menu .mi.danger{color:var(--accent-2)}
+  .menu .sep{height:1px;background:var(--hairline);margin:4px 0}
+</style>
+</head>
+<body>
+<x-dc>
+<div class="wrap" id="app"></div>
+<div class="toasts" id="toasts"></div>
+</x-dc>
+
+<script>
+/* ============================================================
+   ChronOS · Git tab — standalone, production-style prototype
+   Visual language locked to ChronOS palette + Inter/JetBrains Mono.
+   ============================================================ */
+
+const ACCENT = "#007acc", ACCENT2 = "#cba6f7";
+
+/* ---------- sample repo state ---------- */
+const state = {
+  view: "changes",            // changes | history | branches | stashes | remotes
+  repo: "chronos-shell",
+  branch: "feature/git-tab",
+  remotes: {
+    origin:   { url: "https://github.com/chronos/chronos-shell.git", fetch:true, push:true, ahead:3, behind:1 },
+    upstream: { url: "https://github.com/chronos-org/chronos-shell.git", fetch:true, push:false, ahead:0, behind:0 },
+  },
+  // staged / unstaged / untracked
+  staged: [
+    { path:"src/git/status.rs", dir:"src/git", name:"status.rs", code:"M", add:24, del:6,
+      diff:[
+        ["ctx",null,null,"pub fn collect(path: &Path) -> Result<RepoStatus> {"],
+        ["ctx",null,null,"    let repo = Repository::open(path)?;"],
+        ["del",41,42,"    let mut opts = StatusOptions::new();"],
+        ["add",42,41,"    let mut opts = StatusOptions::new();"],
+        ["add",43,42,"    opts.include_untracked(true).recurse_untracked_dirs(true);"],
+        ["ctx",44,44,"    let statuses = repo.statuses(Some(&mut opts))?;"],
+        ["ctx",null,null,"    let mut out = RepoStatus::default();"],
+        ["del",48,49,"    for s in statuses.iter() {"],
+        ["add",49,50,"    for s in statuses.iter().take(MAX_FILES) {"],
+        ["ctx",null,null,"        // map to our role system"],
+      ]},
+    { path:"src/git/diff.rs", dir:"src/git", name:"diff.rs", code:"A", add:88, del:0,
+      diff:[
+        ["add",1,null,"use gix::prelude::*;"],
+        ["add",2,null,""],
+        ["add",3,null,"pub fn unified(path: &Path, context: usize) -> Result<String> {"],
+        ["add",4,null,"    let repo = Repository::open(path)?;"],
+        ["add",5,null,"    let diff = repo.diff()?"],
+        ["add",6,null,"        .context_lines(context)"],
+        ["add",7,null,"        .names()?"],
+        ["add",8,null,"        .build()?;"],
+        ["add",9,null,"    Ok(render_unified(&diff))"],
+        ["add",10,null,"}"],
+      ]},
+    { path:"assets/sigil.svg", dir:"assets", name:"sigil.svg", code:"M", add:3, del:3,
+      diff:[
+        ["del",2,2,"  <path stroke=\"#cdd6f4\" stroke-width=\"2\"/>"],
+        ["add",3,3,"  <path stroke=\"#007acc\" stroke-width=\"2\" stroke-linecap=\"round\"/>"],
+        ["del",7,7,"  <polygon points=\"0,0 100,100\"/>"],
+        ["add",8,8,"  <polygon points=\"12,12 88,88\" fill=\"none\"/>"],
+      ]},
+  ],
+  unstaged: [
+    { path:"src/git/branch.rs", dir:"src/git", name:"branch.rs", code:"M", add:14, del:9,
+      diff:[
+        ["ctx",null,null,"pub fn create(name: &str) -> Result<()> {"],
+        ["del",22,22,"    let branch = repo.branch(name, &head, false)?;"],
+        ["add",23,23,"    let branch = repo.branch(name, &head, false)"],
+        ["add",24,24,"        .map_err(|e| Error::BranchExists(name.into(), e))?;"],
+        ["ctx",null,null,"    Ok(())"],
+        ["del",31,32,"pub fn list() -> Vec<String> {"],
+        ["add",33,33,"pub fn list() -> Result<Vec<String>> {"],
+      ]},
+    { path:"src/git/mod.rs", dir:"src/git", name:"mod.rs", code:"M", add:5, del:1,
+      diff:[
+        ["del",6,6,"pub mod status;"],
+        ["add",7,7,"pub mod status;"],
+        ["add",8,8,"pub mod diff;"],
+        ["add",9,8,"pub mod stash;"],
+      ]},
+    { path:"Cargo.toml", dir:".", name:"Cargo.toml", code:"M", add:2, del:0,
+      diff:[
+        ["add",18,null,"gix = { version = \"0.68\", features = [\"progress\"] }"],
+      ]},
+  ],
+  untracked: [
+    { path:"src/git/stash.rs", dir:"src/git", name:"stash.rs", code:"U", add:0, del:0,
+      diff:[["ctx",null,null,"// new file — src/git/stash.rs (41 lines)"]] },
+    { path:"tests/git_test.rs", dir:"tests", name:"git_test.rs", code:"U", add:0, del:0,
+      diff:[["ctx",null,null,"// new file — tests/git_test.rs (18 lines)"]] },
+  ],
+  selDiff: { group:"staged", idx:0 },
+  commitMsg: "",
+  amend: false,
+  // history
+  history: [
+    { hash:"a3f9c21", msg:"feat(git): unified diff renderer with role colors", who:"k.architect", when:"2h ago", parents:["b71de40"], tags:["HEAD"] },
+    { hash:"b71de40", msg:"feat(git): branch list with ahead/behind", who:"k.architect", when:"5h ago", parents:["9c2a1d8","1f0b3ee"], tags:[] },
+    { hash:"9c2a1d8", msg:"refactor: extract status mapping into role system", who:"nova", when:"yesterday", parents:["1f0b3ee"], tags:[] },
+    { hash:"1f0b3ee", msg:"feat(git): collect untracked recursively", who:"k.architect", when:"yesterday", parents:["4d77a19"], tags:[] },
+    { hash:"4d77a19", msg:"chore: pin gix 0.68", who:"ci-bot", when:"2d ago", parents:["e90c552"], tags:[] },
+    { hash:"e90c552", msg:"fix(layer-shell): avoid double arm on bottom dock", who:"nova", when:"3d ago", parents:["0a1b8c4"], tags:[] },
+    { hash:"0a1b8c4", msg:"feat(osd): volume capsule with dbus signal", who:"k.architect", when:"3d ago", parents:["77be1f2"], tags:[] },
+    { hash:"77be1f2", msg:"feat(plugin): luau sandbox hot-reload", who:"nova", when:"4d ago", parents:["c5140aa"], tags:["v0.4.0"] },
+    { hash:"c5140aa", msg:"docs: sigil spec for module marks", who:"k.architect", when:"5d ago", parents:["2e9d0f1"], tags:[] },
+    { hash:"2e9d0f1", msg:"feat(bar): workspace pager bindings", who:"nova", when:"6d ago", parents:["aa31c90"], tags:[] },
+    { hash:"aa31c90", msg:"refactor(compositor): drop legacy xdg fallback", who:"k.architect", when:"1w ago", parents:["f07b2d3"], tags:[] },
+    { hash:"f07b2d3", msg:"init: chronos-shell tree", who:"k.architect", when:"2w ago", parents:[], tags:["v0.1.0"] },
+  ],
+  selCommit: "a3f9c21",
+  // branches
+  local: [
+    { name:"feature/git-tab", cur:true, ahead:3, behind:1, upstream:"origin/feature/git-tab" },
+    { name:"main", cur:false, ahead:0, behind:0, upstream:"origin/main" },
+    { name:"develop", cur:false, ahead:4, behind:0, upstream:"origin/develop" },
+    { name:"hotfix/crash", cur:false, ahead:1, behind:0, upstream:null },
+  ],
+  remote: [
+    { name:"origin/main", cur:false },
+    { name:"origin/develop", cur:false },
+    { name:"origin/feature/git-tab", cur:false },
+    { name:"upstream/main", cur:false },
+  ],
+  newBranch: "",
+  // stashes
+  stashes: [
+    { ref:"stash@{0}", msg:"WIP on feature/git-tab: a3f9c21 wip branch switch", when:"14m ago", files:3 },
+    { ref:"stash@{1}", msg:"On main: temp diff viewer wiring", when:"2h ago", files:1 },
+  ],
+  // remotes list
+  remoteList: [
+    { name:"origin", url:"https://github.com/chronos/chronos-shell.git", fetch:true, push:true },
+    { name:"upstream", url:"https://github.com/chronos-org/chronos-shell.git", fetch:true, push:false },
+  ],
+};
+
+/* ---------- icon set (monoline, currentColor) ---------- */
+const I = {
+  git:(s)=>`<svg viewBox="0 0 256 256" fill="none" stroke="currentColor" stroke-width="22" stroke-linecap="round" stroke-linejoin="round">${s}</svg>`,
+  sigil:`<svg class="sigil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><path d="M12 2 V22 M4 7 L20 17 M20 7 L4 17"/><circle cx="12" cy="12" r="2.4"/></svg>`,
+  branch:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M88 24a32 32 0 00-32 32v80a32 32 0 0032 32 32 32 0 006 0v8a24 24 0 0024 24h56a24 24 0 0024-24v-8a32 32 0 0032-32V80a32 32 0 00-64 0v80a8 8 0 01-16 0V56a32 32 0 00-64 0v80a8 8 0 01-16 0V56a32 32 0 00-32-32z" opacity=".0"/><path d="M168 80a24 24 0 10-23-31v-1a24 24 0 1024 24h-32a24 24 0 100 48h32v16a24 24 0 1048 0v-48a24 24 0 00-24-24z"/></svg>`,
+  history:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 24a104 104 0 1024.4 18.5 8 8 0 00-9.6-12.8A88 88 0 11128 40c0 0 30 30 31.5 62H144a8 8 0 000 16h48a8 8 0 008-8V62a8 8 0 00-16 0v15C173 39 153 24 128 24zM180 144l-44 28a8 8 0 01-12-7v-56a8 8 0 0112-7l44 28a8 8 0 010 14z"/></svg>`,
+  archive:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 56v40a8 8 0 01-8 8H40a8 8 0 01-8-8V56a8 8 0 018-8h48v-8a8 8 0 018-8h96a8 8 0 018 8v8h48a8 8 0 018 8zM40 112h176v96a8 8 0 01-8 8H48a8 8 0 01-8-8z"/></svg>`,
+  cloud:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a40 40 0 00-40-40 48 48 0 00-92-12 44 44 0 00-9 87h141a36 36 0 0032-35z"/></svg>`,
+  changes:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M200 32v40h-40a8 8 0 000 16h40v40a8 8 0 0016 0V88h40a8 8 0 000-16h-40V32a8 8 0 00-16 0zM88 168H48a8 8 0 010-16h40V112a8 8 0 016.9-7.9 8 8 0 019.1 7.9v40h40a8 8 0 010 16H88zM48 200h160a8 8 0 000-16H48a8 8 0 000 16z"/></svg>`,
+  check:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 77.3a8 8 0 010 11.3l-104 104a8 8 0 01-11.3 0l-56-56a8 8 0 0111.3-11.3L112 164.7 218.3 88.6a8 8 0 0111.4 0z"/></svg>`,
+  plus:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8h-80v80a8 8 0 01-16 0v-80H40a8 8 0 010-16h80V40a8 8 0 0116 0v80h80a8 8 0 018 8z"/></svg>`,
+  minus:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8H40a8 8 0 010-16h176a8 8 0 018 8z"/></svg>`,
+  discard:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 48h-40v-8a24 24 0 00-24-24h-48a24 24 0 00-24 24v8H40a8 8 0 000 16h10l11 143a24 24 0 0024 22h92a24 24 0 0024-22l11-143h10a8 8 0 000-16zM96 40a8 8 0 018-8h48a8 8 0 018 8v8H96z"/></svg>`,
+  refresh:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.7 186.3A88 88 0 1190 38a8 8 0 00-4.3 14.7A72 72 0 10172 154l-26.3-26.3a8 8 0 00-11.3 11.3L188 181.3a8 8 0 0011.3-1.4z"/></svg>`,
+  sync:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M80 40a8 8 0 00-8 8v32a8 8 0 008 8h32a8 8 0 005.7-13.7L102 72h18a48 48 0 0148 48 8 8 0 0016 0 64 64 0 00-64-64h-8.5l14.7-14.7A8 8 0 0080 40zm96 136H144a8 8 0 00-5.7 13.7L154 184h-18a48 48 0 01-48-48 8 8 0 00-16 0 64 64 0 0064 64h8.5l-14.7 14.7A8 8 0 00144 216h32a8 8 0 008-8v-32a8 8 0 00-8-8z"/></svg>`,
+  merge:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M200 48a32 32 0 00-31 25.4 88 88 0 01-65 67.8V96.7a32 32 0 10-16 0v51.1a32 32 0 1016 0V141a72 72 0 0066-55.3 32 32 0 0030 55.3 32 32 0 000-64z"/></svg>`,
+  switch:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M96 136v64a16 16 0 0016 16h96a16 16 0 0016-16v-64a16 16 0 00-16-16h-96a16 16 0 00-16 16zm92 28a12 12 0 1112-12 12 12 0 01-12 12zM48 56h96a16 16 0 0116 16v48a16 16 0 01-16 16H48a16 16 0 01-16-16V72a16 16 0 0116-16zm92 28a12 12 0 11-12-12 12 12 0 0112 12z"/></svg>`,
+  trash:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 48h-40v-8a24 24 0 00-24-24h-48a24 24 0 00-24 24v8H40a8 8 0 000 16h10l11 143a24 24 0 0024 22h92a24 24 0 0024-22l11-143h10a8 8 0 000-16zM96 40a8 8 0 018-8h48a8 8 0 018 8v8H96z"/></svg>`,
+  stash:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 56H40a16 16 0 00-16 16v112a16 16 0 0016 16h176a16 16 0 0016-16V72a16 16 0 00-16-16zm0 16v76l-42.6-42.6a8 8 0 00-5.6-2.4H136a8 8 0 00-8 8v8H88a8 8 0 00-8 8v24H40V72zM88 168v-24h32a8 8 0 008-8v-8h31.5l50.5 50.5V168z"/></svg>`,
+  remote:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M200 144a16 16 0 10-15.5 12H152a8 8 0 00-8 8v16a16 16 0 1016 16 16 16 0 0016-16v-8h32.5A16 16 0 10200 144zM88 192a16 16 0 1016-16 16 16 0 00-16 16zm88-140a16 16 0 1016 16 16 16 0 00-16-16zM96 48a16 16 0 1016 16 16 16 0 00-16-16zM48 96a16 16 0 1016 16 16 16 0 00-16-16zm0 96a16 16 0 1016 16 16 16 0 00-16-16zM64 112a16 16 0 1016 16 16 16 0 00-16-16z"/></svg>`,
+  caret:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.7 82.3a8 8 0 010 11.4l-80 80a8 8 0 01-11.4 0l-80-80a8 8 0 0111.4-11.4L128 148.7l74.3-74.4a8 8 0 0111.4 0z"/></svg>`,
+  file:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.7 82.3a8 8 0 010 11.4l-80 80a8 8 0 01-11.4 0l-80-80a8 8 0 0111.4-11.4L128 148.7l74.3-74.4a8 8 0 0111.4 0z"/></svg>`,
+  dot: '<svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="128" r="96"/></svg>',
+  warn:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M236.8 188.1L148.7 30.8a24 24 0 00-41.4 0L19.2 188.1a23.9 23.9 0 0020.7 36h176.2a23.9 23.9 0 0020.7-36zM120 104a8 8 0 0116 0v40a8 8 0 01-16 0zm8 88a12 12 0 1112-12 12 12 0 01-12 12z"/></svg>`,
+  link:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M112 64a8 8 0 000 16 24 24 0 010 48 8 8 0 000 16 40 40 0 000-80zm-32 56a8 8 0 008-8 24 24 0 0124-24 8 8 0 000-16 40 40 0 100 80 8 8 0 008-8 24 24 0 01-24-24 8 8 0 00-8-8z"/></svg>`,
+  search:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 218.3l-43.3-43.3a88 88 0 10-11.4 11.4l43.3 43.3a8 8 0 0011.4-11.4zM40 112a72 72 0 1172 72 72 72 0 01-72-72z"/></svg>`,
+};
+const sigilBig = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><path d="M12 2 V22 M4 7 L20 17 M20 7 L4 17"/></svg>`;
+
+/* ---------- helpers ---------- */
+const esc = (s)=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function statusLetter(c){ return c; }
+function totalChanges(){
+  return state.staged.length + state.unstaged.length + state.untracked.length;
+}
+function openMenu(x,y,items){
+  closeMenu();
+  const m = document.createElement("div");
+  m.className="menu"; m.style.left=x+"px"; m.style.top=y+"px";
+  m.innerHTML = items.map((it,i)=> it.sep ? `<div class="sep"></div>`
+    : `<div class="mi ${it.danger?'danger':''}" data-i="${i}">${it.icon?I[it.icon]:''}<span>${esc(it.label)}</span></div>`).join("");
+  document.body.appendChild(m);
+  m.querySelectorAll(".mi").forEach(el=>{
+    el.onclick=(e)=>{ e.stopPropagation(); const it=items[+el.dataset.i]; closeMenu(); it.run&&it.run(); };
+  });
+  setTimeout(()=>document.addEventListener("click",closeMenu,{once:true}),0);
+}
+function closeMenu(){ document.querySelectorAll(".menu").forEach(m=>m.remove()); }
+function toast(msg,warn){
+  const t=document.createElement("div");
+  t.className="toast"+(warn?" warn":"");
+  t.innerHTML = (warn?I.warn:I.check) + `<span>${esc(msg)}</span>`;
+  document.getElementById("toasts").appendChild(t);
+  setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(8px)"; t.style.transition=".2s"; },2200);
+  setTimeout(()=>t.remove(),2500);
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render(){
+  const app = document.getElementById("app");
+  const r = state.remotes.origin;
+  const changes = totalChanges();
+  app.innerHTML = `
+    ${titlebar(r,changes)}
+    <div class="body">
+      ${sidebar(changes)}
+      <div class="main" data-od-id="main">
+        ${viewHead()}
+        <div class="scroll" style="flex:1;display:flex;min-height:0">
+          ${viewBody()}
+        </div>
+      </div>
+    </div>`;
+  bind();
+}
+
+/* ----- titlebar ----- */
+function titlebar(r,changes){
+  return `<div class="titlebar" data-od-id="titlebar">
+    ${I.sigil}
+    <span class="tb-title">chronos-git</span>
+    <div class="tb-sep"></div>
+    <span class="tb-repo mono">~/projects/${esc(state.repo)}</span>
+    <div class="tb-sep"></div>
+    <span class="tb-branch">${I.branch}<span>${esc(state.branch)}</span></span>
+    <div class="tb-spacer"></div>
+    ${changes?`<span class="tb-stat"><span style="color:var(--accent)">${changes}</span> changed</span>`:""}
+    ${r.ahead?`<span class="tb-stat"><span class="up">↑${r.ahead}</span></span>`:""}
+    ${r.behind?`<span class="tb-stat"><span class="down">↓${r.behind}</span></span>`:""}
+    <div class="tb-sync" data-act="pull-push" title="Fetch · Pull · Push">
+      ${I.sync}<span>Sync</span>
+    </div>
+    <div class="tb-icon" data-act="refresh" title="Refresh">${I.refresh}</div>
+  </div>`;
+}
+
+/* ----- sidebar ----- */
+function sidebar(changes){
+  const cur = state.local.find(b=>b.cur);
+  const ahead = cur?cur.ahead:0, behind = cur?cur.behind:0;
+  const nav = [
+    { id:"changes", icon:I.changes, label:"Changes", badge:changes, accent:changes>0 },
+    { id:"history", icon:I.history, label:"History", badge:state.history.length, accent:false },
+    { id:"branches", icon:I.branch, label:"Branches", badge:state.local.length, accent:false },
+    { id:"stashes", icon:I.stash, label:"Stashes", badge:state.stashes.length, accent:false },
+    { id:"remotes", icon:I.remote, label:"Remotes", badge:state.remoteList.length, accent:false },
+  ];
+  return `<div class="sidebar" data-od-id="sidebar">
+    <div class="repo-head">
+      <div class="repo-row">
+        <div class="repo-dot">${sigilBig}</div>
+        <span class="repo-name">${esc(state.repo)}</span>
+      </div>
+      <div class="branch-chip" data-act="open-branches" title="Switch branch">
+        ${I.branch}<span>${esc(state.branch)}</span>${I.caret}
+      </div>
+      <div class="ahead-behind">
+        ${ahead?`<span class="ab up">↑ ${ahead}</span>`:""}
+        ${behind?`<span class="ab down">↓ ${behind}</span>`:""}
+        ${!ahead&&!behind?`<span class="ab" style="color:var(--muted)">up to date</span>`:""}
+      </div>
+    </div>
+    <div class="nav">
+      ${nav.map(n=>`
+        <div class="nav-item ${state.view===n.id?'active':''}" data-view="${n.id}">
+          ${n.icon}
+          <span class="label">${n.label}</span>
+          ${n.badge?`<span class="badge ${n.accent?'accent':''}">${n.badge}</span>`:""}
+        </div>`).join("")}
+    </div>
+    <div class="nav-foot">
+      <div class="foot-row">${I.link}<span>origin · ${esc(state.remotes.origin.ahead)}↑ / ${esc(state.remotes.origin.behind)}↓</span></div>
+      <div class="foot-row">${I.dot}<span>HEAD ${esc(state.history[0].hash)}</span></div>
+      <div class="foot-row">${sigilBig}<span>gix 0.68 · chronos-shell</span></div>
+    </div>
+  </div>`;
+}
+
+/* ----- view head ----- */
+function viewHead(){
+  const h = {
+    changes: `<span class="view-title">Changes</span><span class="view-sub">${totalChanges()} files · working tree</span>`,
+    history: `<span class="view-title">History</span><span class="view-sub">${esc(state.branch)}</span>`,
+    branches: `<span class="view-title">Branches</span><span class="view-sub">${state.local.length} local · ${state.remote.length} remote</span>`,
+    stashes: `<span class="view-title">Stashes</span><span class="view-sub">${state.stashes.length} saved</span>`,
+    remotes: `<span class="view-title">Remotes</span><span class="view-sub">${state.remoteList.length} configured</span>`,
+  }[state.view];
+  let right = "";
+  if(state.view==="changes"){
+    right = `
+      <div class="btn ghost sm" data-act="stage-all">${I.plus}<span>Stage all</span></div>
+      <div class="btn ghost sm" data-act="unstage-all">${I.minus}<span>Unstage all</span></div>
+      <div class="btn ghost sm" data-act="refresh">${I.refresh}<span>Refresh</span></div>`;
+  } else if(state.view==="history"){
+    right = `<div class="btn ghost sm" data-act="fetch-log">${I.refresh}<span>Fetch log</span></div>`;
+  } else if(state.view==="branches"){
+    right = `<div class="btn primary sm" data-act="focus-branch-input">${I.plus}<span>New branch</span></div>`;
+  } else if(state.view==="stashes"){
+    right = `<div class="btn ghost sm" data-act="new-stash">${I.plus}<span>Stash</span></div>`;
+  } else if(state.view==="remotes"){
+    right = `<div class="btn ghost sm" data-act="add-remote">${I.plus}<span>Add remote</span></div>`;
+  }
+  return `<div class="view-head" data-od-id="view-head">${h}<div class="head-spacer"></div>${right}</div>`;
+}
+
+/* ----- view body ----- */
+function viewBody(){
+  switch(state.view){
+    case "changes": return changesView();
+    case "history": return historyView();
+    case "branches": return branchesView();
+    case "stashes": return stashesView();
+    case "remotes": return remotesView();
+  }
+}
+
+/* ===== CHANGES ===== */
+function fileGroup(title, list, group, groupAct){
+  if(!list.length) return "";
+  const rows = list.map((f,i)=>`
+    <div class="file ${state.selDiff.group===group&&state.selDiff.idx===i?'sel':''}" data-diff="${group}:${i}">
+      <span class="st st-${f.code}">${f.code==='U'?'U':f.code}</span>
+      <span class="nm mono"><span class="dir">${esc(f.dir)}/</span>${esc(f.name)}</span>
+      ${(f.add||f.del)?`<span class="plus">+${f.add} −${f.del}</span>`:""}
+    </div>`).join("");
+  return `
+    <div>
+      <div class="group-hd">
+        <span class="g-title">${title}</span>
+        <span class="g-count">${list.length}</span>
+        ${groupAct?`<div class="g-act">${groupAct.map(a=>`<div class="mini" data-gact="${a.act}" data-group="${group}" title="${a.title}">${I[a.icon]}</div>`).join("")}</div>`:""}
+      </div>
+      ${rows}
+    </div>`;
+}
+
+function changesView(){
+  const stagedAct = [{act:"stage-all",icon:"plus",title:"Stage all remaining"}];
+  const unstagedAct = [{act:"stage-all",icon:"plus",title:"Stage all"}];
+  const untrackedAct = [{act:"stage-all",icon:"plus",title:"Add all untracked"}];
+  const fileLists = `
+    <div class="filelist">
+      ${fileGroup("Staged", state.staged, "staged", null)}
+      ${fileGroup("Changes not staged", state.unstaged, "unstaged", [{act:"discard-all",icon:"discard",title:"Discard all changes"}])}
+      ${fileGroup("Untracked", state.untracked, "untracked", null)}
+    </div>`;
+
+  const sel = getSelectedDiff();
+  const diffMarkup = sel ? diffPane(sel) : `<div class="diffpane"><div class="empty">${I.file}<span>Select a file to view its diff</span></div></div>`;
+
+  return `<div class="changes" data-od-id="changes-view" style="flex:1;min-height:0;display:flex;flex-direction:column">
+    <div class="changes-toolbar">
+      <div class="seg">
+        <div class="opt ${!state.amend?'on':''}" data-act="set-commit-mode" data-mode="0">Commit</div>
+        <div class="opt ${state.amend?'on':''}" data-act="set-commit-mode" data-mode="1">Amend</div>
+      </div>
+      <div class="head-spacer"></div>
+      <span class="view-sub mono">${state.staged.length} staged · ${state.unstaged.length+state.untracked.length} pending</span>
+    </div>
+    <div class="changes-cols" style="flex:1;min-height:0">
+      ${fileLists}
+      ${diffMarkup}
+    </div>
+    <div class="commitbar" data-od-id="commit-bar">
+      <div class="commit-box">
+        <div class="avatar">${esc(state.history[0].who.slice(0,2).toUpperCase())}</div>
+        <textarea class="msg-input" id="msg" rows="1" placeholder="${state.amend?'Amend previous commit…':'Commit message — subject line'}" data-act="msg">${esc(state.commitMsg)}</textarea>
+      </div>
+      <div class="commit-actions">
+        <div class="chk" data-act="toggle-amend">
+          <div class="box ${state.amend?'on':''}">${state.amend?I.check:''}</div>
+          <span>Amend last commit</span>
+        </div>
+        <div class="spacer"></div>
+        <div class="btn ghost" data-act="unstage-all">${I.minus}<span>Unstage all</span></div>
+        <div class="btn primary" id="commitBtn" data-act="commit" ${state.staged.length&&state.commitMsg.trim()?'':'disabled'}>
+          ${I.check}<span>${state.amend?'Amend':'Commit'}</span>
+        </div>
+      </div>
+    </div>
+  </div>`;
+}
+
+function getSelectedDiff(){
+  const g = state.selDiff.group;
+  const list = state[g];
+  const f = list[state.selDiff.idx];
+  return f||null;
+}
+
+function diffPane(f){
+  const body = f.diff.map(d=>{
+    const [type,lnOld,lnNew,text]=d;
+    if(type==="hunk") return `<div class="dline hunk"><span class="ln"></span><span class="code">${esc(text)}</span></div>`;
+    const sign = type==="add"?"+":type==="del"?"−":" ";
+    const ln = type==="add"?lnNew:(type==="del"?lnOld:"");
+    return `<div class="dline ${type}"><span class="ln">${ln??""}</span><span class="code">${sign} ${esc(text)}</span></div>`;
+  }).join("");
+  return `<div class="diffpane" data-od-id="diff-pane">
+    <div class="diff-hd">
+      <span class="fpath">${esc(f.path)}</span>
+      <span class="stat"><span class="add">+${f.add||0}</span><span class="del">−${f.del||0}</span></span>
+      ${f.code!=='U'?`<div class="mini" data-fact="discard" data-group="${state.selDiff.group}" data-idx="${state.selDiff.idx}" title="Discard file">${I.discard}</div>`:""}
+      ${f.code==='U'?`<div class="mini" data-fact="rm" data-group="${state.selDiff.group}" data-idx="${state.selDiff.idx}" title="Delete file">${I.trash}</div>`:""}
+    </div>
+    <div class="diff-body">${body}</div>
+  </div>`;
+}
+
+/* ===== HISTORY ===== */
+function historyView(){
+  // simple lane graph: every commit on a single column (merge commits widen)
+  const rows = state.history.map((c,i)=>{
+    const isMerge = c.parents.length>1;
+    const head = c.tags.includes("HEAD");
+    const y = 18;
+    const svg = `<svg class="graph-svg" width="46" height="100%" style="min-height:38px">
+      <line x1="23" y1="0" x2="23" y2="100%" stroke="var(--surface2)" stroke-width="2"/>
+      ${isMerge?`<line x1="11" y1="${y}" x2="23" y2="${y}" stroke="var(--accent-2)" stroke-width="2"/><line x1="23" y1="${y}" x2="35" y2="${y}" stroke="var(--accent-2)" stroke-width="2"/><circle cx="11" cy="${y}" r="3" fill="var(--bg)" stroke="var(--accent-2)" stroke-width="2"/>`:""}
+    </svg>`;
+    const tags = c.tags.map(t=>`<span class="tag ${t==='HEAD'?'acc2':(t.startsWith('v')?'acc':'')}">${esc(t)}</span>`).join("");
+    return `<div class="commit-row ${state.selCommit===c.hash?'sel':''}" data-commit="${c.hash}">
+      <div class="graph-col">${svg}<div class="dot ${head?'head':''}"></div></div>
+      <div class="commit-main">
+        <div class="commit-msg">${esc(c.msg)}</div>
+        <div class="commit-meta">
+          <span class="hash">${esc(c.hash)}</span>
+          <span class="who">${esc(c.who)}</span>
+          <span>· ${esc(c.when)}</span>
+          ${tags}
+        </div>
+      </div>
+    </div>`;
+  }).join("");
+
+  const sel = state.history.find(c=>c.hash===state.selCommit);
+  const detail = sel ? `
+    <div class="hd-hd">
+      <span class="ttl">${esc(sel.msg)}</span>
+      <div class="head-spacer"></div>
+      <span class="view-sub mono">${esc(sel.hash)}</span>
+      <div class="btn ghost sm" data-act="checkout-commit" data-hash="${sel.hash}">${I.switch}<span>Checkout</span></div>
+      <div class="btn ghost sm" data-act="cherry" data-hash="${sel.hash}">${I.plus}<span>Cherry-pick</span></div>
+    </div>
+    <div class="hd-body">
+      ${commitFileStats(sel)}
+    </div>` : "";
+
+  return `<div class="hist" data-od-id="history-view" style="flex:1;min-height:0;display:flex;flex-direction:column">
+    <div class="hist-list scroll" style="flex:1;min-height:0">${rows}</div>
+    <div class="hist-detail" data-od-id="commit-detail">${detail||'<div class="empty">'+I.history+'<span>Select a commit</span></div>'}</div>
+  </div>`;
+}
+
+function commitFileStats(sel){
+  const sample = [
+    {nm:"src/git/diff.rs", a:18, d:2},
+    {nm:"src/git/status.rs", a:6, d:4},
+    {nm:"assets/sigil.svg", a:1, d:1},
+    {nm:"Cargo.toml", a:1, d:0},
+  ];
+  return sample.map(f=>`<div class="fstat"><span class="nm">${esc(f.nm)}</span><span class="a">+${f.a}</span><span class="d">−${f.d}</span></div>`).join("");
+}
+
+/* ===== BRANCHES ===== */
+function branchesView(){
+  const localRows = state.local.map(b=>branchRow(b,"local"));
+  const remoteRows = state.remote.map(b=>branchRow(b,"remote"));
+  return `<div class="br-view" data-od-id="branches-view" style="flex:1;min-height:0;display:flex;flex-direction:column">
+    <div class="br-create">
+      <input class="br-input" id="branchInput" placeholder="new branch name (e.g. feature/foo)" value="${esc(state.newBranch)}" data-act="branch-input"/>
+      <div class="btn ghost sm" data-act="branch-from" data-base="HEAD">${I.branch}<span>From HEAD</span></div>
+      <div class="btn primary sm" data-act="branch-create">${I.plus}<span>Create</span></div>
+    </div>
+    <div class="br-cols" style="flex:1;min-height:0">
+      <div class="br-col">
+        <div class="br-col-hd"><span class="t">Local</span><span class="c">${state.local.length}</span></div>
+        <div class="br-col-bd">${localRows}</div>
+      </div>
+      <div class="br-col">
+        <div class="br-col-hd"><span class="t">Remote</span><span class="c">${state.remote.length}</span></div>
+        <div class="br-col-bd">${remoteRows}</div>
+      </div>
+    </div>
+  </div>`;
+}
+function branchRow(b,kind){
+  const cur = b.cur;
+  const acts = kind==="local" ? `
+    <div class="acts">
+      ${!cur?`<div class="bact" data-bact="switch" data-name="${esc(b.name)}" title="Switch">${I.switch}</div>`:""}
+      ${!cur?`<div class="bact" data-bact="merge" data-name="${esc(b.name)}" title="Merge into current">${I.merge}</div>`:""}
+      ${!cur?`<div class="bact danger" data-bact="del" data-name="${esc(b.name)}" title="Delete">${I.trash}</div>`:""}
+      ${cur?`<span class="cur-flag">current</span>`:""}
+    </div>` : `
+    <div class="acts">
+      <div class="bact" data-bact="track" data-name="${esc(b.name)}" title="Track / checkout">${I.switch}</div>
+    </div>`;
+  const sub = kind==="local"
+    ? `${b.upstream?`tracks ${esc(b.upstream)}`:"no upstream"}${b.ahead?` · ↑${b.ahead}`:""}${b.behind?` · ↓${b.behind}`:""}`
+    : `remote-tracking`;
+  return `<div class="branch ${cur?'cur':''}" data-bname="${esc(b.name)}" data-kind="${kind}">
+    ${I.branch}
+    <div class="info"><span class="bn">${esc(b.name)}</span><span class="sub">${sub}</span></div>
+    ${acts}
+  </div>`;
+}
+
+/* ===== STASHES ===== */
+function stashesView(){
+  if(!state.stashes.length) return `<div class="list-pad"><div class="empty">${I.stash}<span>No stashes — working tree clean</span></div></div>`;
+  return `<div class="list-pad" data-od-id="stashes-view">
+    ${state.stashes.map((s,i)=>`
+      <div class="card">
+        <div class="ci">${I.stash}</div>
+        <div class="cb">
+          <span class="ct mono">${esc(s.ref)}</span>
+          <span class="cs">${esc(s.msg)} · ${esc(s.when)} · ${s.files} files</span>
+        </div>
+        <div class="ca">
+          <div class="btn ghost sm" data-act="stash-apply" data-i="${i}">${I.check}<span>Apply</span></div>
+          <div class="btn ghost sm" data-act="stash-pop" data-i="${i}">${I.sync}<span>Pop</span></div>
+          <div class="btn ghost sm" data-act="stash-drop" data-i="${i}">${I.trash}<span>Drop</span></div>
+        </div>
+      </div>`).join("")}
+  </div>`;
+}
+
+/* ===== REMOTES ===== */
+function remotesView(){
+  return `<div class="list-pad" data-od-id="remotes-view">
+    ${state.remoteList.map(r=>`
+      <div class="card">
+        <div class="ci">${I.remote}</div>
+        <div class="cb">
+          <div style="display:flex;align-items:center;gap:8px">
+            <span class="ct">${esc(r.name)}</span>
+            ${r.fetch?`<span class="pill fetch">fetch</span>`:""}
+            ${r.push?`<span class="pill push">push</span>`:""}
+          </div>
+          <span class="cs remote-url">${esc(r.url)}</span>
+        </div>
+        <div class="ca">
+          <div class="btn ghost sm" data-act="remote-fetch" data-name="${esc(r.name)}">${I.refresh}<span>Fetch</span></div>
+          ${r.push?`<div class="btn ghost sm" data-act="remote-push" data-name="${esc(r.name)}">${I.sync}<span>Push</span></div>`:""}
+          <div class="btn ghost sm" data-act="remote-del" data-name="${esc(r.name)}">${I.trash}</div>
+        </div>
+      </div>`).join("")}
+  </div>`;
+}
+
+/* ============================================================
+   INTERACTIONS
+   ============================================================ */
+function bind(){
+  document.querySelectorAll("[data-view]").forEach(el=>el.onclick=()=>{ state.view=el.dataset.view; render(); });
+
+  // group / file actions
+  document.querySelectorAll("[data-gact]").forEach(el=>el.onclick=(e)=>{
+    e.stopPropagation();
+    const g = el.dataset.group;
+    if(el.dataset.gact==="stage-all") stageAll(g);
+    if(el.dataset.gact==="discard-all") discardAll(g);
+  });
+  document.querySelectorAll("[data-diff]").forEach(el=>el.onclick=()=>{
+    const [g,i]=el.dataset.diff.split(":"); state.selDiff={group:g,idx:+i}; render();
+  });
+  document.querySelectorAll("[data-fact]").forEach(el=>el.onclick=(e)=>{
+    e.stopPropagation();
+    const g=el.dataset.group, i=+el.dataset.idx;
+    if(el.dataset.fact==="discard") discardFile(g,i,e);
+    if(el.dataset.fact==="rm") removeUntracked(i);
+  });
+
+  // commit box
+  const msg=document.getElementById("msg");
+  if(msg){
+    msg.oninput=()=>{ state.commitMsg=msg.value; const b=document.getElementById("commitBtn"); if(b) b.disabled=!(state.staged.length&&state.commitMsg.trim()); };
+    msg.onkeydown=(e)=>{ if((e.metaKey||e.ctrlKey)&&e.key==="Enter") doCommit(); };
+  }
+  document.querySelectorAll("[data-act]").forEach(el=>{
+    const a=el.dataset.act;
+    if(["stage-all","unstage-all","refresh","pull-push","open-branches","set-commit-mode","toggle-amend","commit","focus-branch-input","new-stash","add-remote","fetch-log","checkout-commit","cherry","branch-input","branch-from","branch-create","stash-apply","stash-pop","stash-drop","remote-fetch","remote-push","remote-del"].includes(a))
+      el.onclick=(e)=>handleAct(a,el,e);
+  });
+
+  // branches
+  document.querySelectorAll(".branch").forEach(el=>{
+    el.onclick=(e)=>{
+      const name=el.dataset.bname, kind=el.dataset.kind;
+      if(e.target.closest(".bact")) return;
+      if(kind==="remote") return; // navigate via action
+      if(!el.classList.contains("cur")) switchBranch(name);
+    };
+  });
+  document.querySelectorAll("[data-bact]").forEach(el=>el.onclick=(e)=>{
+    e.stopPropagation();
+    const name=el.dataset.name;
+    if(el.dataset.bact==="switch") switchBranch(name);
+    if(el.dataset.bact==="merge") mergeBranch(name);
+    if(el.dataset.bact==="del") deleteBranch(name,e);
+    if(el.dataset.bact==="track") trackRemote(name);
+  });
+
+  // history
+  document.querySelectorAll("[data-commit]").forEach(el=>el.onclick=()=>{ state.selCommit=el.dataset.commit; render(); });
+}
+
+function handleAct(a,el,e){
+  switch(a){
+    case "stage-all": stageAll(); break;
+    case "unstage-all": unstageAll(); break;
+    case "refresh": toast("Working tree refreshed"); break;
+    case "pull-push": syncMenu(el,e); break;
+    case "open-branches": state.view="branches"; render(); break;
+    case "set-commit-mode": state.amend = el.dataset.mode==="1"; render(); break;
+    case "toggle-amend": state.amend=!state.amend; render(); break;
+    case "commit": doCommit(); break;
+    case "focus-branch-input": state.view="branches"; render(); setTimeout(()=>{const i=document.getElementById("branchInput"); if(i) i.focus();},30); break;
+    case "new-stash": doStash(); break;
+    case "add-remote": toast("Add remote dialog (prototype)"); break;
+    case "fetch-log": toast("Fetched 2 new commits from origin"); break;
+    case "checkout-commit": { const h=el.dataset.hash; toast("Detached HEAD at "+h); break; }
+    case "cherry": { const h=el.dataset.hash; toast("Cherry-picked "+h); break; }
+    case "branch-create": createBranch(el); break;
+    case "branch-from": toast("Branch will fork from HEAD"); break;
+    case "branch-input": /* typing handled below */ break;
+    case "stash-apply": { const i=+el.dataset.i; toast("Applied "+state.stashes[i].ref); break; }
+    case "stash-pop": { const i=+el.dataset.i; toast("Popped "+state.stashes[i].ref); state.stashes.splice(i,1); render(); break; }
+    case "stash-drop": { const i=+el.dataset.i; toast("Dropped "+state.stashes[i].ref,true); state.stashes.splice(i,1); render(); break; }
+    case "remote-fetch": toast("Fetched from "+el.dataset.name); break;
+    case "remote-push": toast("Pushed to "+el.dataset.name); break;
+    case "remote-del": toast("Removed remote "+el.dataset.name,true); state.remoteList=state.remoteList.filter(r=>r.name!==el.dataset.name); render(); break;
+  }
+}
+
+/* branch input live binding */
+document.addEventListener("input",(e)=>{
+  if(e.target && e.target.id==="branchInput"){ state.newBranch=e.target.value; }
+});
+
+/* ---- mutations ---- */
+function moveItem(arr,idx,target){ const [it]=arr.splice(idx,1); target.push(it); }
+function stageAll(group){
+  if(group==="staged") return;
+  if(group==="unstaged"){ moveItem(state.unstaged,0,state.staged); while(state.unstaged.length) moveItem(state.unstaged,0,state.staged); }
+  if(group==="untracked"){ state.untracked.forEach(f=>{f.code="A";}); while(state.untracked.length) moveItem(state.untracked,0,state.staged); }
+  if(!group){ // stage everything
+    while(state.unstaged.length) moveItem(state.unstaged,0,state.staged);
+    state.untracked.forEach(f=>f.code="A"); while(state.untracked.length) moveItem(state.untracked,0,state.staged);
+  }
+  if(state.selDiff.group==="unstaged"||state.selDiff.group==="untracked") state.selDiff={group:"staged",idx:0};
+  toast("Staged changes"); render();
+}
+function unstageAll(){
+  while(state.staged.length) moveItem(state.staged,0,state.unstaged);
+  state.selDiff={group:"unstaged",idx:0};
+  toast("Unstaged all"); render();
+}
+function discardFile(group,idx,e){
+  const f=state[group][idx];
+  openMenu(e.clientX,e.clientY,[
+    {label:`Discard ${f.name}?`, icon:"warn"},
+    {sep:true},
+    {label:"Discard changes", danger:true, icon:"discard", run:()=>{ state[group].splice(idx,1); toast("Discarded "+f.name,true); render(); }},
+  ]);
+}
+function discardAll(group){
+  const n=state[group].length;
+  state[group]=[];
+  toast(`Discarded ${n} file(s)`,true); render();
+}
+function removeUntracked(idx){
+  const f=state.untracked.splice(idx,1)[0];
+  toast("Deleted "+f.name,true); render();
+}
+function doCommit(){
+  if(!state.staged.length){ toast("Nothing staged",true); return; }
+  if(!state.commitMsg.trim()){ toast("Enter a commit message",true); return; }
+  const hash=(Math.random().toString(16).slice(2,9));
+  const newC={ hash, msg:state.commitMsg.trim(), who:"k.architect", when:"just now", parents:[state.history[0].hash], tags: state.amend?["HEAD"]:["HEAD"] };
+  if(state.amend){
+    const cur=state.history[0]; cur.msg=newC.msg; cur.hash=hash; cur.when="just now";
+    state.history[0]=cur;
+  } else {
+    state.history.unshift(newC);
+  }
+  state.staged=[];
+  state.commitMsg=""; state.amend=false;
+  state.remotes.origin.ahead+=1;
+  state.selCommit=hash;
+  toast("Committed "+hash); render();
+}
+function switchBranch(name){
+  state.local.forEach(b=>b.cur=false);
+  const b=state.local.find(x=>x.name===name); if(b) b.cur=true;
+  state.branch=name;
+  toast("Switched to "+name); render();
+}
+function mergeBranch(name){
+  toast("Merged "+name+" → "+state.branch);
+  const b=state.local.find(x=>x.name===name); if(b&&b.ahead) b.ahead=0;
+  render();
+}
+function deleteBranch(name,e){
+  openMenu(e.clientX,e.clientY,[
+    {label:`Delete ${name}?`, icon:"warn"},
+    {sep:true},
+    {label:"Delete branch", danger:true, icon:"trash", run:()=>{ state.local=state.local.filter(b=>b.name!==name); toast("Deleted "+name,true); render(); }},
+  ]);
+}
+function trackRemote(name){
+  if(state.local.find(b=>b.name===name.replace(/^.*\//,""))){ toast("Local branch already exists"); return; }
+  const bn=name.replace(/^.*\//,"");
+  state.local.push({name:bn,cur:false,ahead:0,behind:0,upstream:name});
+  state.remote=state.remote.filter(b=>b.name!==name);
+  toast("Tracking "+name); render();
+}
+function createBranch(el){
+  const nm=state.newBranch.trim();
+  if(!nm){ toast("Enter a branch name",true); return; }
+  if(state.local.find(b=>b.name===nm)){ toast("Branch exists",true); return; }
+  state.local.forEach(b=>b.cur=false);
+  state.local.unshift({name:nm,cur:true,ahead:0,behind:0,upstream:null});
+  state.branch=nm; state.newBranch="";
+  toast("Created & switched to "+nm); render();
+}
+function doStash(){
+  state.stashes.unshift({ref:`stash@{${state.stashes.length}}`, msg:"WIP on "+state.branch+": manual stash", when:"just now", files:state.unstaged.length+state.untracked.length});
+  toast("Stashed working changes"); render();
+}
+function syncMenu(el,e){
+  const r=el.getBoundingClientRect();
+  openMenu(r.left, r.bottom+6, [
+    {label:"Fetch all", icon:"refresh", run:()=>toast("Fetched from origin + upstream")},
+    {label:"Pull (rebase)", icon:"sync", run:()=>{ const c=state.local.find(b=>b.cur); if(c&&c.behind){c.behind=0;} toast("Pulled — tree up to date"); render(); }},
+    {label:"Push to origin", icon:"sync", run:()=>{ const c=state.local.find(b=>b.cur); if(c){c.ahead=0;} state.remotes.origin.ahead=0; toast("Pushed to origin/"+state.branch); render(); }},
+    {sep:true},
+    {label:"Fetch from upstream", icon:"refresh", run:()=>toast("Fetched upstream/main")},
+  ]);
+}
+
+/* ---------- boot ---------- */
+render();
+</script>
+</body>
+</html>

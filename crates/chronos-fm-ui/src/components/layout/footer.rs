@@ -54,7 +54,7 @@ pub fn footer<V: gpui::Render>(
         .items_center()
         .justify_between()
         .px(px(8.0))
-        .bg(theme::gray_200(cx))
+        .bg(theme::bg_secondary(cx))
         .border_t_1()
         .border_color(theme::border(cx))
         .child(
@@ -129,7 +129,7 @@ pub fn footer<V: gpui::Render>(
                                 // Keep the status on one line so a long or
                                 // multi-line message can't overflow the footer.
                                 div()
-                                    .text_xs()
+                                    .text_size(px(10.5))
                                     .whitespace_nowrap()
                                     .overflow_hidden()
                                     .text_color(color)
@@ -178,7 +178,7 @@ fn footer_button<V: gpui::Render>(
         .px(px(8.0))
         .flex()
         .items_center()
-        .gap_1()
+        .gap(px(5.0))
         .rounded(px(4.0))
         .cursor_pointer()
         .hover(|style| style.bg(theme::gray_300(cx)))
@@ -186,7 +186,7 @@ fn footer_button<V: gpui::Render>(
         .when(has_label, |this| {
             this.child(
                 div()
-                    .text_xs()
+                    .text_size(px(10.5))
                     .text_color(theme::gray_700(cx))
                     .child(label),
             )

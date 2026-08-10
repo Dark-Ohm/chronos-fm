@@ -6,9 +6,34 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::Input;
 use gpui_component::list::ListItem;
-use gpui_component::{Icon, IconName};
+use gpui_component::{ActiveTheme, Icon, IconName};
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_ui::theme::theme;
+
+/// Maps a file/dir name (by extension) and entry kind to an icon asset path
+/// under `assets/icons/`. Single source of truth for file-type icon mapping
+/// (T037 §D) — `grid.rs` reuses this rather than duplicating the extension
+/// list. `IconName::*` variants are NOT used here on purpose: `IconName` is
+/// generated from gpui-component's own asset pack and has no file-type
+/// variants for our pack, so the only valid path is
+/// `Icon::new(Icon::empty()).path(..)` (see `root.rs` for the same pattern).
+pub fn icon_path_for(name: &str, kind: &str) -> &'static str {
+    if kind == "dir" {
+        return "icons/folder.svg";
+    }
+    let ext = name
+        .rsplit_once('.')
+        .map(|(_, ext)| ext.to_lowercase())
+        .unwrap_or_default();
+    match ext.as_str() {
+        "rs" | "py" | "js" | "ts" | "go" | "c" | "cpp" | "h" | "json" | "toml" | "yaml"
+        | "yml" | "sh" => "icons/file-code.svg",
+        "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => "icons/file-image.svg",
+        "zip" | "tar" | "gz" | "xz" | "zst" | "7z" | "rar" => "icons/file-archive.svg",
+        "md" | "txt" | "rst" | "log" => "icons/file-text.svg",
+        _ => "icons/file.svg",
+    }
+}
 
 /// Renders a single listing row for the given entry at row index `ix`.
 pub fn render(
@@ -19,16 +44,15 @@ pub fn render(
 ) -> impl IntoElement + use<> {
     use chronos_fm_ui::components::file_list::{format_date, get_file_type, human_bytes};
 
-    let icon_name = match item.kind.as_str() {
-        "dir" => IconName::Folder,
-        _ => IconName::File,
-    };
-    let icon_color = match item.kind.as_str() {
-        "dir" => theme::accent(cx),
-        _ => theme::gray_600(cx),
+    let selected = page.is_selected(ix);
+    let icon_path = icon_path_for(&item.name, &item.kind);
+    let icon_color = if selected {
+        theme::accent(cx)
+    } else {
+        theme::fg_secondary(cx)
     };
 
-    let bg_color = if page.is_selected(ix) {
+    let bg_color = if selected {
         theme::accent_light(cx)
     } else if ix % 2 == 0 {
         theme::bg(cx)
@@ -142,8 +166,8 @@ pub fn render(
         .child(
             ListItem::new(("file-row", ix))
                 .w(px(total_width))
-                .h(px(32.0))
-                .px(px(24.0))
+                .h(px(28.0))
+                .px(px(10.0))
                 .bg(bg_color)
                 .on_click(
                     cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
@@ -216,7 +240,12 @@ pub fn render(
                                     )
                                 })
                                 .when(!has_content_matches, |this| this.child(div().w(px(20.0))))
-                                .child(Icon::new(icon_name).size_4().text_color(icon_color))
+                                .child(
+                                    Icon::new(Icon::empty())
+                                        .path(icon_path)
+                                        .size_4()
+                                        .text_color(icon_color),
+                                )
                                 .child({
                                     let renaming_input = page
                                         .renaming
@@ -239,9 +268,13 @@ pub fn render(
                                             .into_any_element()
                                     } else {
                                         div()
-                                            .text_sm()
+                                            .text_size(px(12.5))
                                             .font_weight(gpui::FontWeight::MEDIUM)
-                                            .text_color(theme::fg(cx))
+                                            .text_color(if selected {
+                                                theme::fg(cx)
+                                            } else {
+                                                theme::fg_secondary(cx)
+                                            })
                                             .overflow_hidden()
                                             .text_ellipsis()
                                             .whitespace_nowrap()
@@ -251,11 +284,16 @@ pub fn render(
                                 }),
                         )
                         .child(
+                            // Mockup §2.7 / §7 #5: Type/Size/Modified are mono
+                            // 10.5, `c.muted`, right-aligned. (Name stays the
+                            // proportional UI font at 12.5.)
                             div()
                                 .w(px(page.col_type_width))
                                 .flex_shrink_0()
-                                .text_sm()
-                                .text_color(theme::fg_secondary(cx))
+                                .text_size(px(10.5))
+                                .font_family(cx.theme().mono_font_family.clone())
+                                .text_color(theme::muted(cx))
+                                .text_right()
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .whitespace_nowrap()
@@ -265,8 +303,10 @@ pub fn render(
                             div()
                                 .w(px(page.col_size_width))
                                 .flex_shrink_0()
-                                .text_sm()
-                                .text_color(theme::fg_secondary(cx))
+                                .text_size(px(10.5))
+                                .font_family(cx.theme().mono_font_family.clone())
+                                .text_color(theme::muted(cx))
+                                .text_right()
                                 .child(match item.kind.as_str() {
                                     "file" => human_bytes(item.size),
                                     "dir" => "-".to_string(),
@@ -277,8 +317,10 @@ pub fn render(
                             div()
                                 .w(px(page.col_modified_width))
                                 .flex_shrink_0()
-                                .text_sm()
-                                .text_color(theme::fg_secondary(cx))
+                                .text_size(px(10.5))
+                                .font_family(cx.theme().mono_font_family.clone())
+                                .text_color(theme::muted(cx))
+                                .text_right()
                                 .overflow_hidden()
                                 .text_ellipsis()
                                 .whitespace_nowrap()
@@ -329,4 +371,42 @@ pub fn render(
                 })
                 .collect::<Vec<_>>(),
         )
+}
+
+#[cfg(test)]
+mod icon_path_tests {
+    use super::icon_path_for;
+
+    #[test]
+    fn directories_get_the_folder_icon_regardless_of_name() {
+        assert_eq!(icon_path_for("src", "dir"), "icons/folder.svg");
+        assert_eq!(icon_path_for("archive.zip", "dir"), "icons/folder.svg");
+    }
+
+    #[test]
+    fn known_extensions_map_to_their_category_icon() {
+        for ext in ["rs", "py", "js", "ts", "go", "c", "cpp", "h", "json", "toml", "yaml", "yml", "sh"] {
+            assert_eq!(icon_path_for(&format!("main.{ext}"), "file"), "icons/file-code.svg", "ext={ext}");
+        }
+        for ext in ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"] {
+            assert_eq!(icon_path_for(&format!("pic.{ext}"), "file"), "icons/file-image.svg", "ext={ext}");
+        }
+        for ext in ["zip", "tar", "gz", "xz", "zst", "7z", "rar"] {
+            assert_eq!(icon_path_for(&format!("bundle.{ext}"), "file"), "icons/file-archive.svg", "ext={ext}");
+        }
+        for ext in ["md", "txt", "rst", "log"] {
+            assert_eq!(icon_path_for(&format!("notes.{ext}"), "file"), "icons/file-text.svg", "ext={ext}");
+        }
+    }
+
+    #[test]
+    fn unknown_or_missing_extension_falls_back_to_the_generic_file_icon() {
+        assert_eq!(icon_path_for("Makefile", "file"), "icons/file.svg");
+        assert_eq!(icon_path_for("data.bin", "file"), "icons/file.svg");
+    }
+
+    #[test]
+    fn extension_matching_is_case_insensitive() {
+        assert_eq!(icon_path_for("Main.RS", "file"), "icons/file-code.svg");
+    }
 }

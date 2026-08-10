@@ -9,7 +9,15 @@ use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::list::ListItem;
-use gpui_component::{Icon, IconName};
+use gpui_component::{Icon, IconName, Sizable};
+
+/// Places sidebar row density (spec §2.6): padding, radius, icon-to-label
+/// gap, icon size, and label size.
+const PLACE_ROW_PADDING: f32 = 6.0;
+const PLACE_ROW_RADIUS: f32 = 6.0;
+const PLACE_ROW_GAP: f32 = 9.0;
+const PLACE_ROW_ICON_SIZE: f32 = 14.0;
+const PLACE_ROW_LABEL_SIZE: f32 = 12.5;
 
 /// Renders the sidebar: a single «Places» card with folders + devices.
 pub fn render(
@@ -17,36 +25,80 @@ pub fn render(
     _window: &mut Window,
     cx: &mut Context<ExplorerPane>,
 ) -> impl IntoElement + use<> {
-    let fg = theme::fg(cx);
-
     // `h_full` makes the single Places card fill the whole sidebar column so
     // the panel doesn't end mid-sidebar with empty space below (T015 open
     // item #4): the card reads as one cohesive Places panel, Dolphin-style.
     let mut card = elevated_card(cx)
         .h_full()
+        .bg(theme::toolbar_bg(cx))
         .child(section_header(cx, "Places", "quick access"));
 
     // ---- Folders (cached shortcuts) ----
     for (i, (label, path)) in page.shortcuts.iter().enumerate() {
         let p = path.clone();
         let lbl = label.clone();
-        card = card.child(
-            ListItem::new(("folder", i))
-                .on_click({
-                    let p = p.clone();
-                    cx.listener(move |this, _, window, cx| {
-                        this.change_dir(p.clone(), window, cx);
-                    })
+        let active = page.cwd == p;
+        let (row_bg, text_color, icon_color) = if active {
+            (
+                Some(theme::bg_hover(cx)),
+                theme::fg(cx),
+                theme::accent(cx),
+            )
+        } else {
+            (None, theme::fg_secondary(cx), theme::muted(cx))
+        };
+        let mut row = ListItem::new(("folder", i))
+            .px(px(PLACE_ROW_PADDING))
+            .py(px(PLACE_ROW_PADDING))
+            .rounded(px(PLACE_ROW_RADIUS))
+            // Mockup §2.6 / §7 #4: the active place carries a 2px accent bar
+            // pinned to the row's left edge, inset 6px top/bottom (`left:0;
+            // top:6; bottom:6; width:2` in the mockup). `ListItem` renders its
+            // base with `relative`, so the absolutely-positioned bar anchors
+            // to the row box; painting it first keeps it behind the content.
+            .when(active, |this| {
+                this.child(
+                    div()
+                        .absolute()
+                        .left_0()
+                        .top(px(6.0))
+                        .bottom(px(6.0))
+                        .w(px(2.0))
+                        .rounded(px(2.0))
+                        .bg(theme::accent(cx)),
+                )
+            })
+            .on_click({
+                let p = p.clone();
+                cx.listener(move |this, _, window, cx| {
+                    this.change_dir(p.clone(), window, cx);
                 })
+            });
+        if let Some(bg) = row_bg {
+            row = row.bg(bg);
+        }
+        card = card.child(row.child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(PLACE_ROW_GAP))
+                .child(
+                    Icon::new(Icon::empty())
+                        .path(folder_icon_path(&lbl))
+                        .with_size(px(PLACE_ROW_ICON_SIZE))
+                        .text_color(icon_color),
+                )
                 .child(
                     div()
-                        .flex()
-                        .items_center()
-                        .gap_2()
-                        .child(Icon::new(folder_icon(&lbl)).size_4().text_color(theme::gray_600(cx)))
-                        .child(div().text_sm().text_color(fg).child(lbl.clone())),
+                        .text_size(px(PLACE_ROW_LABEL_SIZE))
+                        // Mockup §2.6: active label weight 500 (idle 400).
+                        .when(active, |this| {
+                            this.font_weight(gpui::FontWeight::MEDIUM)
+                        })
+                        .text_color(text_color)
+                        .child(lbl.clone()),
                 ),
-        );
+        ));
     }
 
     // ---- Devices ----
@@ -55,6 +107,12 @@ pub fn render(
         if store.devices.is_empty() {
             return card.into_any_element();
         }
+
+        // Mockup §2.6: a 1px hairline separates the places rows from the
+        // devices section (`height:1px;background:border;margin:0 6px`). Pure
+        // chrome — no fake data involved — so it only renders here, where the
+        // devices section actually follows.
+        card = card.child(div().h(px(1.0)).bg(theme::border(cx)).mx(px(6.0)));
 
         let backend = store.backend.clone();
         let devices = store.devices.clone();
@@ -107,9 +165,10 @@ pub fn render(
                             .items_center()
                             .gap_2()
                             .child(
+                                // Mockup §2.6: device icon 15px, `c.muted`.
                                 Icon::new(IconName::HardDrive)
-                                    .size_4()
-                                    .text_color(theme::gray_600(cx)),
+                                    .with_size(px(15.0))
+                                    .text_color(theme::muted(cx)),
                             )
                             .child(
                                 // `flex_1` + `min_w(0)` let this column shrink so
@@ -129,9 +188,13 @@ pub fn render(
                                             .flex()
                                             .flex_col()
                                             .child(
+                                                // Mockup §2.6: device label 12.5,
+                                                // `c.fgSecondary` (the mount path
+                                                // sub-line below is our real-data
+                                                // addition).
                                                 div()
-                                                    .text_sm()
-                                                    .text_color(fg)
+                                                    .text_size(px(12.5))
+                                                    .text_color(theme::fg_secondary(cx))
                                                     .whitespace_nowrap()
                                                     .overflow_hidden()
                                                     .text_ellipsis()
@@ -148,8 +211,8 @@ pub fn render(
                                             )
                                     } else {
                                         div()
-                                            .text_sm()
-                                            .text_color(fg)
+                                            .text_size(px(12.5))
+                                            .text_color(theme::fg_secondary(cx))
                                             .whitespace_nowrap()
                                             .overflow_hidden()
                                             .text_ellipsis()
@@ -180,10 +243,18 @@ pub fn render(
     card.into_any_element()
 }
 
-fn folder_icon(label: &str) -> IconName {
+/// Resolves the Places-row icon asset path from the place's label
+/// (spec §3.2 / §2.6). Falls back to the generic folder glyph for any
+/// place not covered by the mockup's `PLACES_DEF`.
+fn folder_icon_path(label: &str) -> &'static str {
     match label {
-        "Home" => IconName::Folder,
-        _ => IconName::Folder,
+        "Home" => "icons/house.svg",
+        "Desktop" => "icons/monitor.svg",
+        "Downloads" => "icons/download.svg",
+        "Documents" => "icons/file-text.svg",
+        "Pictures" | "Images" => "icons/file-image.svg",
+        "Trash" => "icons/trash-2.svg",
+        _ => "icons/folder.svg",
     }
 }
 

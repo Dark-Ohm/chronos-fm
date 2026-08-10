@@ -229,9 +229,10 @@ impl ExplorerPane {
             focus_requested: false,
             last_click_info: None,
             view_mode: ViewMode::List,
-            // Hidden by default; the root pane is revealed by `ExplorerPage::new`,
-            // split-created panes stay collapsed (issue #164, §2).
-            sidebar_visible: false,
+            // Visible by default so the Places sidebar shows on first launch
+            // (mockup / Dolphin parity). Split-created panes override this
+            // via `ExplorerPage::configure_tab` (issue #164, §2).
+            sidebar_visible: true,
 
             // Search
             search_service,
@@ -558,9 +559,11 @@ fn compute_shortcuts() -> Vec<(String, String)> {
         v.push(("Home".into(), h.clone()));
         for (label, sub) in [
             ("Desktop", "Desktop"),
-            ("Downloads", "Downloads"),
             ("Documents", "Documents"),
+            ("Downloads", "Downloads"),
+            ("Music", "Music"),
             ("Pictures", "Pictures"),
+            ("Videos", "Videos"),
         ] {
             let path = p(sub);
             if std::path::Path::new(&path).exists() {

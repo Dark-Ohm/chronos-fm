@@ -125,9 +125,12 @@ pub mod theme {
     pub fn toolbar_active_bg(cx: &App) -> Hsla {
         cx.theme().list_active
     }
-    /// Active toolbar item text → `sidebar_primary_foreground` (white on accent).
+    /// Active toolbar item text → `sidebar_accent_foreground` (mockup
+    /// `toolbarActiveText` = `fg`, `#cdd6f4`). The active nav icon is not
+    /// white — the selection state is carried by the fill (`toolbar_active_bg`),
+    /// not by the icon color (T037 §1.1.3).
     pub fn toolbar_active_text(cx: &App) -> Hsla {
-        cx.theme().sidebar_primary_foreground
+        cx.theme().sidebar_accent_foreground
     }
     /// Toolbar border → `sidebar_border` (= `border`).
     pub fn toolbar_border(cx: &App) -> Hsla {
@@ -152,5 +155,15 @@ pub mod theme {
     /// Danger / error → `danger` (seed status.error).
     pub fn danger(cx: &App) -> Hsla {
         cx.theme().danger
+    }
+
+    /// Muted color for disabled controls (mockup `disabled` token, `#45475a`).
+    /// No dedicated `ThemeColor` field exists for this; call-site opacity on
+    /// `muted_foreground` is the nearest match (T037 §1.1.2 — the theme JSON
+    /// is deliberately left untouched).
+    pub fn disabled(cx: &App) -> Hsla {
+        let mut color = cx.theme().muted_foreground;
+        color.a *= 0.7;
+        color
     }
 }

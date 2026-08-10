@@ -4,7 +4,7 @@ use crate::explorer::clipboard::{self, ClipboardMode};
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::Input;
-use gpui_component::{Icon, IconName};
+use gpui_component::Icon;
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_ui::theme::theme;
 
@@ -31,7 +31,7 @@ pub fn render(
         .id("grid-scroll")
         .flex_1()
         .overflow_scroll()
-        .px(px(24.0))
+        .px(px(16.0))
         .py(px(16.0))
         .on_mouse_down(
             gpui::MouseButton::Right,
@@ -52,21 +52,12 @@ fn render_grid_item(
     _window: &mut Window,
     cx: &mut Context<ExplorerPane>,
 ) -> AnyElement {
-    use chronos_fm_ui::components::file_list::{format_date, get_file_type, human_bytes};
+    let icon_path = super::row::icon_path_for(&item.name, &item.kind);
 
-    let icon_name = match item.kind.as_str() {
-        "dir" => IconName::Folder,
-        _ => IconName::File,
-    };
-
+    // Mockup §2.8: a grid tile carries icon + name only. Type/size/modified
+    // live in the list view and the preview pane — at 88px wide they render as
+    // ellipsised fragments, which is why the mockup drops them here.
     let name = truncate_middle(&item.name, 28);
-    let file_type = get_file_type(&item.name, &item.kind);
-    let size_text = match item.kind.as_str() {
-        "file" => human_bytes(item.size),
-        "dir" => file_type.clone(),
-        _ => file_type.clone(),
-    };
-    let modified_text = format_date(&item.modified);
     let activation_item = item.clone();
     let preview_item = item.clone();
     let context_menu_path = item.path.clone();
@@ -88,10 +79,10 @@ fn render_grid_item(
 
     div()
         .id(("grid-item-menu", ix))
-        .w(px(180.0))
-        .min_h(px(140.0))
-        .p(px(16.0))
-        .rounded(px(10.0))
+        .w(px(88.0))
+        .px(px(6.0))
+        .py(px(12.0))
+        .rounded(px(8.0))
         .border_1()
         .border_color(border_color)
         .bg(bg_color)
@@ -99,8 +90,11 @@ fn render_grid_item(
         .cursor_pointer()
         .flex()
         .flex_col()
-        .items_start()
-        .gap_3()
+        // Mockup §2.8: the tile is icon + caption, centred, height driven by
+        // content — the old `min_h(140)` was sized for the four metadata lines
+        // below and would turn the 88px tile into a well once they are gone.
+        .items_center()
+        .gap(px(7.0))
         .when(is_cut, |el| el.opacity(0.5))
         .on_mouse_down(
             gpui::MouseButton::Right,
@@ -141,8 +135,9 @@ fn render_grid_item(
             }),
         )
         .child(
-            Icon::new(icon_name)
-                .size_6()
+            Icon::new(Icon::empty())
+                .path(icon_path)
+                .size_8()
                 .text_color(theme::gray_600(cx)),
         )
         .child({
@@ -170,8 +165,9 @@ fn render_grid_item(
                     .into_any_element()
             } else {
                 div()
-                    .text_sm()
-                    .font_weight(gpui::FontWeight::MEDIUM)
+                    .w_full()
+                    .text_size(px(10.5))
+                    .text_center()
                     .text_color(theme::fg(cx))
                     .overflow_hidden()
                     .text_ellipsis()
@@ -180,23 +176,5 @@ fn render_grid_item(
                     .into_any_element()
             }
         })
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme::fg_secondary(cx))
-                .child(file_type),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme::fg_secondary(cx))
-                .child(size_text),
-        )
-        .child(
-            div()
-                .text_xs()
-                .text_color(theme::muted(cx))
-                .child(modified_text),
-        )
         .into_any_element()
 }

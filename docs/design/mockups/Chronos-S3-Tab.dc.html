@@ -1,0 +1,850 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ChronOS · S3</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    /* ChronOS registered palette — verbatim */
+    --bg:#181825;
+    --surface:#1e1e2e;
+    --surface1:#1e1e2e;
+    --surface2:#45475a;
+    --fg:#cdd6f4;
+    --muted:rgba(205,214,244,0.58);   /* derived from --fg */
+    --faint:rgba(205,214,244,0.34);
+    --border:#45475a;
+    --border-soft:rgba(205,214,244,0.09);
+    --hairline:rgba(205,214,244,0.07);
+    --accent:#007acc;
+    --accent-2:#cba6f7;
+    --accent-press:#007acc;
+    --shadow:0 1px 2px rgba(0,0,0,0.30), 0 4px 14px rgba(0,0,0,0.22);
+    --r:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+    font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  .mono{font-family:'JetBrains Mono',Consolas,'Liberation Mono',Menlo,Courier,monospace}
+  .wrap{
+    width:1280px;height:800px;background:var(--bg);
+    border:1px solid var(--border);border-radius:10px;overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:var(--shadow);
+  }
+
+  /* ---- titlebar ---- */
+  .titlebar{
+    flex:none;height:38px;background:var(--bg);
+    border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:10px;padding:0 12px;
+    -webkit-app-region:drag;
+  }
+  .sigil{width:18px;height:18px;color:var(--accent);flex:none}
+  .tb-title{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg);letter-spacing:.02em}
+  .tb-sep{width:1px;height:16px;background:var(--border)}
+  .tb-repo{font-size:12px;color:var(--muted)}
+  .tb-endpoint{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--accent-2)}
+  .tb-spacer{flex:1}
+  .tb-stat{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:11px}
+  .tb-stat .up{color:var(--accent)}
+  .tb-stat .down{color:var(--accent-2)}
+  .tb-sync{
+    display:flex;align-items:center;gap:5px;height:26px;padding:0 11px;border-radius:7px;
+    border:1px solid var(--accent);color:var(--accent);font-size:12px;font-weight:600;
+    cursor:pointer;letter-spacing:.02em;
+  }
+  .tb-sync:hover{background:rgba(0,122,204,0.12)}
+  .tb-sync:active{background:var(--accent-press);color:var(--fg);border-color:var(--accent-press)}
+  .tb-icon{
+    width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);cursor:pointer;-webkit-app-region:no-drag;
+  }
+  .tb-icon:hover{background:var(--surface1);color:var(--fg)}
+  .tb-icon svg{width:16px;height:16px}
+
+  /* ---- body ---- */
+  .body{flex:1;min-height:0;display:flex}
+
+  /* ---- sidebar ---- */
+  .sidebar{
+    width:232px;flex:none;background:var(--surface);
+    border-right:1px solid var(--border);
+    display:flex;flex-direction:column;
+  }
+  .repo-head{
+    padding:14px 14px 12px;border-bottom:1px solid var(--border);
+    display:flex;flex-direction:column;gap:9px;
+  }
+  .repo-row{display:flex;align-items:center;gap:9px;min-width:0}
+  .repo-dot{width:22px;height:22px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none}
+  .repo-dot svg{width:13px;height:13px}
+  .repo-name{font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .branch-chip{
+    display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
+    padding:5px 10px;border-radius:7px;background:var(--bg);
+    border:1px solid var(--border);cursor:pointer;max-width:100%;
+  }
+  .branch-chip:hover{border-color:var(--surface2)}
+  .branch-chip svg{width:12px;height:12px;color:var(--accent-2);flex:none}
+  .branch-chip span{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .branch-chip .caret{width:11px;height:11px;color:var(--faint);margin-left:2px}
+  .ahead-behind{display:flex;gap:6px}
+  .ab{
+    display:flex;align-items:center;gap:3px;font-family:'JetBrains Mono',monospace;
+    font-size:10.5px;padding:2px 7px;border-radius:5px;background:var(--bg);border:1px solid var(--border);
+  }
+  .ab.up{color:var(--accent)}
+  .ab.down{color:var(--accent-2)}
+
+  .nav{padding:8px 8px;display:flex;flex-direction:column;gap:2px}
+  .nav-item{
+    display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;
+    cursor:pointer;color:var(--muted);position:relative;
+  }
+  .nav-item:hover{background:var(--surface1);color:var(--fg)}
+  .nav-item.active{background:var(--surface1);color:var(--fg)}
+  .nav-item.active::before{
+    content:"";position:absolute;left:-8px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--accent);
+  }
+  .nav-item svg{width:16px;height:16px;flex:none}
+  .nav-item .label{font-size:12.5px;font-weight:500;flex:1}
+  .nav-item .badge{
+    font-family:'JetBrains Mono',monospace;font-size:10.5px;min-width:18px;height:18px;
+    padding:0 5px;border-radius:9px;background:var(--surface2);color:var(--fg);
+    display:flex;align-items:center;justify-content:center;
+  }
+  .nav-item .badge.accent{background:var(--accent);color:var(--fg)}
+  .nav-sep{height:1px;background:var(--border);margin:8px 10px}
+  .nav-foot{margin-top:auto;padding:10px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+  .foot-row{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .foot-row svg{width:12px;height:12px;flex:none;color:var(--muted)}
+
+  /* ---- main ---- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .view-head{
+    flex:none;height:46px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:12px;padding:0 16px;
+  }
+  .view-title{font-size:14px;font-weight:700;color:var(--fg);letter-spacing:-.01em}
+  .view-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+  .head-spacer{flex:1}
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:7px;
+    font-size:12px;font-weight:600;letter-spacing:.01em;cursor:pointer;border:1px solid transparent;
+  }
+  .btn svg{width:14px;height:14px}
+  .btn.ghost{background:var(--surface);border-color:var(--border);color:var(--fg)}
+  .btn.ghost:hover{background:var(--surface1);border-color:var(--surface2)}
+  .btn.ghost:active{background:var(--surface2)}
+  .btn.primary{background:var(--accent);color:var(--fg)}
+  .btn.primary:hover{background:var(--accent-press)}
+  .btn.primary:disabled{background:var(--surface1);color:var(--faint);cursor:not-allowed}
+  .btn.sm{height:26px;padding:0 9px;font-size:11.5px}
+  .btn.sm svg{width:12px;height:12px}
+  .seg{display:flex;background:var(--surface);border:1px solid var(--border);border-radius:7px;padding:2px;gap:2px}
+  .seg .opt{
+    display:flex;align-items:center;gap:5px;height:24px;padding:0 9px;border-radius:5px;font-size:11.5px;
+    color:var(--muted);cursor:pointer;font-weight:500;
+  }
+  .seg .opt:hover{color:var(--fg)}
+  .seg .opt.on{background:var(--surface1);color:var(--fg)}
+
+  .scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin}
+  .scroll::-webkit-scrollbar{width:8px;height:8px}
+  .scroll::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+
+  /* ---- toast ---- */
+  .toasts{position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+  .toast{
+    display:flex;align-items:center;gap:9px;padding:10px 13px;background:var(--surface1);
+    border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);font-size:12px;color:var(--fg);
+    min-width:220px;animation:tin .14s ease-out;
+  }
+  .toast svg{width:15px;height:15px;color:var(--accent);flex:none}
+  .toast.warn svg{color:var(--accent-2)}
+  @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* menu */
+  .menu{position:absolute;background:var(--surface1);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:5px;z-index:60;min-width:200px}
+  .menu .mi{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;font-size:12.5px;color:var(--fg);cursor:pointer}
+  .menu .mi:hover{background:var(--surface2)}
+  .menu .mi svg{width:14px;height:14px;color:var(--muted)}
+  .menu .mi.danger{color:var(--accent-2)}
+  .menu .sep{height:1px;background:var(--hairline);margin:4px 0}
+
+  /* ===== S3 specific ===== */
+  .breadcrumb{display:flex;align-items:center;gap:2px;min-width:0;flex:1;overflow:hidden}
+  .crumb{
+    display:inline-flex;align-items:center;gap:5px;height:26px;padding:0 8px;border-radius:6px;
+    font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--fg);cursor:pointer;white-space:nowrap;
+  }
+  .crumb:hover{background:var(--surface1)}
+  .crumb.root{color:var(--muted)}
+  .crumb svg{width:13px;height:13px;color:var(--accent)}
+  .crumb-sep{color:var(--faint);font-size:11px;flex:none}
+  .search-in{
+    height:28px;width:200px;background:var(--bg);border:1px solid var(--border);border-radius:7px;
+    color:var(--fg);font-size:12px;padding:0 10px;font-family:'Inter',sans-serif;outline:none;
+  }
+  .search-in:focus{border-color:var(--surface2)}
+  .search-in::placeholder{color:var(--faint)}
+
+  .explorer{flex:1;min-height:0;display:flex;flex-direction:column}
+  .obj-list{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding:4px 0}
+  .obj-list::-webkit-scrollbar{width:8px}
+  .obj-list::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .obj-head{
+    display:grid;grid-template-columns:1fr 92px 110px 130px;gap:10px;align-items:center;
+    height:30px;padding:0 16px;border-bottom:1px solid var(--border);
+    font-size:11px;letter-spacing:.04em;text-transform:uppercase;color:var(--faint);font-weight:600;
+  }
+  .obj-row{
+    display:grid;grid-template-columns:1fr 92px 110px 130px;gap:10px;align-items:center;
+    height:38px;padding:0 16px;cursor:pointer;border-bottom:1px solid var(--hairline);
+  }
+  .obj-row:hover{background:var(--surface1)}
+  .obj-row.sel{background:var(--surface1)}
+  .obj-row.sel::before{content:"";position:absolute;left:0;top:0;bottom:0;width:3px;background:var(--accent)}
+  .obj-name{display:flex;align-items:center;gap:9px;min-width:0}
+  .obj-name svg{width:17px;height:17px;flex:none;color:var(--muted)}
+  .obj-name.dir svg{color:var(--accent-2)}
+  .obj-name .nm{font-size:13px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .obj-name .nm.dir{color:var(--fg);font-weight:500}
+  .obj-size{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--muted)}
+  .obj-class{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+  .obj-mtime{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--faint)}
+  .obj-pill{font-family:'JetBrains Mono',monospace;font-size:10px;padding:2px 6px;border-radius:5px;background:var(--bg);border:1px solid var(--border);color:var(--muted)}
+  .obj-pill.pub{color:var(--accent-2);border-color:var(--accent-2)}
+
+  /* preview pane */
+  .preview{
+    width:340px;flex:none;background:var(--surface);border-left:1px solid var(--border);
+    display:flex;flex-direction:column;
+  }
+  .pv-head{flex:none;padding:14px 14px 12px;border-bottom:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+  .pv-icon{width:40px;height:40px;border-radius:8px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent)}
+  .pv-icon svg{width:20px;height:20px}
+  .pv-name{font-size:13px;font-weight:600;color:var(--fg);word-break:break-all;line-height:1.3}
+  .pv-prop{flex:1;min-height:0;overflow-y:auto;padding:8px 14px;scrollbar-width:thin}
+  .pv-prop::-webkit-scrollbar{width:8px}
+  .pv-prop::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .prop{display:flex;justify-content:space-between;gap:12px;padding:8px 0;border-bottom:1px solid var(--hairline)}
+  .prop .k{font-size:11.5px;color:var(--faint);flex:none}
+  .prop .v{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg);text-align:right;word-break:break-all}
+  .pv-actions{flex:none;padding:12px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+  .pv-actions .btn{width:100%;justify-content:center}
+  .empty{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;height:100%;color:var(--faint);text-align:center;padding:30px}
+  .empty svg{width:30px;height:30px;color:var(--surface2)}
+  .empty span{font-size:12px;max-width:220px;line-height:1.5}
+
+  /* transfers */
+  .t-list{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding:8px 16px}
+  .t-row{display:flex;align-items:center;gap:12px;padding:11px 0;border-bottom:1px solid var(--hairline)}
+  .t-ico{width:30px;height:30px;border-radius:7px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--muted);flex:none}
+  .t-ico svg{width:15px;height:15px}
+  .t-ico.up svg{color:var(--accent)}
+  .t-ico.down svg{color:var(--accent-2)}
+  .t-main{flex:1;min-width:0}
+  .t-name{font-size:12.5px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .t-meta{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint);margin-top:2px}
+  .t-bar{height:5px;border-radius:3px;background:var(--bg);border:1px solid var(--border);overflow:hidden;margin-top:7px}
+  .t-fill{height:100%;background:var(--accent);border-radius:3px}
+  .t-fill.acc2{background:var(--accent-2)}
+  .t-fill.done{background:var(--surface2)}
+  .t-status{font-family:'JetBrains Mono',monospace;font-size:10.5px;flex:none;width:64px;text-align:right}
+  .t-status.active{color:var(--accent)}
+  .t-status.queued{color:var(--accent-2)}
+  .t-status.done{color:var(--muted)}
+
+  /* properties */
+  .props-wrap{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding:18px 22px;max-width:760px}
+  .props-wrap::-webkit-scrollbar{width:8px}
+  .props-wrap::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .prop-card{border:1px solid var(--border);border-radius:8px;background:var(--surface);margin-bottom:16px;overflow:hidden}
+  .pc-head{padding:12px 14px;border-bottom:1px solid var(--border);display:flex;align-items:center;gap:10px;font-size:13px;font-weight:600;color:var(--fg)}
+  .pc-head svg{width:16px;height:16px;color:var(--accent)}
+  .pc-body{padding:6px 14px}
+  .pc-row{display:flex;justify-content:space-between;gap:16px;padding:9px 0;border-bottom:1px solid var(--hairline)}
+  .pc-row:last-child{border-bottom:none}
+  .pc-row .k{font-size:11.5px;color:var(--faint);flex:none}
+  .pc-row .v{font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--fg);text-align:right;word-break:break-all}
+  .pc-row .v a{color:var(--fg);text-decoration:none;border-bottom:1px solid var(--surface2)}
+  .switch{display:inline-flex;align-items:center;gap:8px;cursor:pointer}
+  .sw{width:38px;height:21px;border-radius:11px;background:var(--bg);border:1px solid var(--border);position:relative;transition:.15s}
+  .sw::after{content:"";position:absolute;top:2px;left:2px;width:15px;height:15px;border-radius:50%;background:var(--surface2);transition:.15s}
+  .sw.on{background:var(--accent);border-color:var(--accent)}
+  .sw.on::after{left:19px;background:var(--fg)}
+  .sw-lbl{font-size:11.5px;color:var(--muted);font-family:'JetBrains Mono',monospace}
+  .acl-row{display:flex;align-items:center;gap:10px;padding:9px 0;border-bottom:1px solid var(--hairline)}
+  .acl-row:last-child{border-bottom:none}
+  .acl-row .who{font-size:12px;color:var(--fg);flex:1}
+  .acl-row .perm{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+</style>
+</head>
+<body>
+<div class="wrap" data-od-id="s3-tab">
+  <div id="app"></div>
+  <div class="toasts" id="toasts"></div>
+</div>
+
+<script>
+/* ============================================================
+   STATE — object store browser (directory = bucket + prefixes)
+   ============================================================ */
+const state = {
+  endpoint:"s3.chronos.internal",
+  view:"explorer",
+  region:"us-east-1",
+  bucket:null,
+  prefix:"",
+  selected:null,
+  search:"",
+  buckets:[
+    { name:"chronos-builds",  region:"us-east-1", objects:1204,   size:812.4*1024*1024*1024,  mtime:"2026-08-08 14:22", public:false },
+    { name:"chronos-assets",  region:"eu-west-1", objects:18902,  size:3.41*1024*1024*1024*1024, mtime:"2026-08-09 09:11", public:true },
+    { name:"chronos-logs",    region:"us-east-1", objects:92311,  size:142.8*1024*1024,        mtime:"2026-08-09 12:00", public:false },
+    { name:"chronos-backups", region:"ap-south-1",objects:1043,   size:24.6*1024*1024*1024*1024, mtime:"2026-08-07 03:40", public:false },
+  ],
+  // flat object list for chronos-builds (the open bucket)
+  objects:[
+    { key:"release/", isDir:true },
+    { key:"release/2026.07/", isDir:true },
+    { key:"release/2026.08/", isDir:true },
+    { key:"release/2026.08/chronos-shell-0.4.0-x86_64.AppImage", size:47.9*1024*1024, mtime:"2026-08-05 17:02", etag:"a3f1c0", storage:"STANDARD", public:false, type:"appimage" },
+    { key:"release/2026.08/chronos-shell-0.4.0-x86_64.tar.zst",  size:39.7*1024*1024, mtime:"2026-08-05 17:02", etag:"b7e2d1", storage:"STANDARD", public:false, type:"archive" },
+    { key:"release/2026.08/chronos-shell-0.4.0-aarch64.AppImage", size:46.1*1024*1024, mtime:"2026-08-05 17:03", etag:"c9a4f2", storage:"STANDARD", public:false, type:"appimage" },
+    { key:"release/2026.08/source.tar.gz",                        size:12.3*1024*1024, mtime:"2026-08-05 16:58", etag:"d1b6a3", storage:"STANDARD", public:false, type:"archive" },
+    { key:"release/2026.08/manifest.json",                       size:4182,            mtime:"2026-08-05 17:04", etag:"e5c8b4", storage:"STANDARD", public:false, type:"json" },
+    { key:"release/2026.07/chronos-shell-0.3.9-x86_64.AppImage",  size:46.2*1024*1024, mtime:"2026-07-28 11:20", etag:"f2d9c5", storage:"STANDARD", public:false, type:"appimage" },
+    { key:"release/2026.07/manifest.json",                       size:3998,            mtime:"2026-07-28 11:21", etag:"a0e1f6", storage:"STANDARD", public:false, type:"json" },
+    { key:"nightly/", isDir:true },
+    { key:"nightly/2026-08-09-0412.AppImage",                    size:48.0*1024*1024, mtime:"2026-08-09 04:12", etag:"11aa22", storage:"STANDARD_IA", public:false, type:"appimage" },
+    { key:"nightly/2026-08-08-0412.AppImage",                    size:47.8*1024*1024, mtime:"2026-08-08 04:12", etag:"33bb44", storage:"STANDARD_IA", public:false, type:"appimage" },
+    { key:"artifacts/logo.svg",                                  size:8421,            mtime:"2026-08-02 10:33", etag:"55cc66", storage:"STANDARD", public:true,  type:"image" },
+    { key:"artifacts/screenshot-dock.png",                       size:312*1024,        mtime:"2026-08-02 10:35", etag:"77dd88", storage:"STANDARD", public:true,  type:"image" },
+  ],
+  transfers:[
+    { name:"chronos-shell-0.4.0-x86_64.AppImage", dir:"up",   bucket:"chronos-builds", size:47.9*1024*1024, progress:100, status:"done" },
+    { name:"nightly/2026-08-09-0412.AppImage",     dir:"down", bucket:"chronos-builds", size:48.0*1024*1024, progress:64,  status:"active" },
+    { name:"release/2026.08/source.tar.gz",        dir:"up",   bucket:"chronos-builds", size:12.3*1024*1024, progress:0,   status:"queued" },
+    { name:"artifacts/logo.svg",                   dir:"down", bucket:"chronos-builds", size:8421,            progress:100, status:"done" },
+  ],
+};
+
+/* ---------- icon set (monoline, currentColor) ---------- */
+const I = {
+  sigil:`<svg class="sigil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><path d="M12 2 V22 M4 7 L20 17 M20 7 L4 17"/><circle cx="12" cy="12" r="2.4"/></svg>`,
+  s3:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M140 40a8 8 0 00-8 8v40a8 8 0 0016 0V96h16a40 40 0 0140 40v48a32 32 0 01-32 32H88a32 32 0 01-32-32v-48a40 40 0 0140-40h16V48a8 8 0 0016 0 8 8 0 00-16 0v8H96a56 56 0 00-56 56v48a48 48 0 0048 48h80a48 48 0 0048-48v-48a56 56 0 00-56-56h-8V48a24 24 0 00-48 0z"/></svg>`,
+  bucket:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 24L216 72a8 8 0 003 15.4V176a8 8 0 01-8 8H45a8 8 0 01-8-8V87.4A8 8 0 0038 72zM80 112h96v48H80zm16 16v16h24v-16z"/></svg>`,
+  folder:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 72H128L104 48H40a16 16 0 00-16 16v128a16 16 0 0016 16h176a16 16 0 0016-16V88a16 16 0 00-16-16z"/></svg>`,
+  file:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.7 82.3l-56-56A8 8 0 00152 24H56a16 16 0 00-16 16v176a16 16 0 0016 16h144a16 16 0 0016-16V88a8 8 0 00-2.3-6.3zM160 51.3L188.7 80H160z"/></svg>`,
+  image:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V56a16 16 0 00-16-16zm-16 112l-32-32-32 32-24-24-40 40V56h160zM84 92a12 12 0 1112 12 12 12 0 01-12-12z"/></svg>`,
+  archive:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 56v40a8 8 0 01-8 8H40a8 8 0 01-8-8V56a8 8 0 018-8h48v-8a8 8 0 018-8h96a8 8 0 018 8v8h48a8 8 0 018 8zM40 112h176v96a8 8 0 01-8 8H48a8 8 0 01-8-8z"/></svg>`,
+  code:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104 44L40 128l64 84a8 8 0 01-12 10l-68-90a8 8 0 010-10l68-90a8 8 0 0112 10zm48 168l64-84-64-84a8 8 0 0112-10l68 90a8 8 0 010 10l-68 90a8 8 0 01-12-10z"/></svg>`,
+  binary:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104 40a8 8 0 00-8 8v160a8 8 0 0016 0V48a8 8 0 00-8-8zm48 0a8 8 0 00-8 8v160a8 8 0 0016 0V48a8 8 0 00-8-8zM80 72h16v24H80zm80 0h16v24h-16zM80 136h16v24H80zm80 0h16v24h-16z"/></svg>`,
+  download:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 144v64a16 16 0 01-16 16H48a16 16 0 01-16-16v-64a8 8 0 0116 0v56h160v-56a8 8 0 0116 0zM114.3 52.7L120 58.3V136a8 8 0 0016 0V58.3l5.7-5.6a8 8 0 0111.3 11.4l-24 24a8 8 0 01-11.3 0l-24-24a8 8 0 0111.3-11.4z"/></svg>`,
+  upload:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 144v64a16 16 0 01-16 16H48a16 16 0 01-16-16v-64a8 8 0 0116 0v56h160v-56a8 8 0 0116 0zM136 136V58.3l5.7 5.7a8 8 0 0011.3-11.4l-24-24a8 8 0 00-11.3 0l-24 24a8 8 0 0011.3 11.4L120 58.3V136a8 8 0 0016 0z"/></svg>`,
+  copy:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 40H88a16 16 0 00-16 16v144a16 16 0 0016 16h128a16 16 0 0016-16V56a16 16 0 00-16-16zm0 160H88V56h128zM56 80H40a16 16 0 00-16 16v144a16 16 0 0016 16h128a16 16 0 0016-16v-16h16v16a32 32 0 01-32 32H40a32 32 0 01-32-32V96a32 32 0 0132-32h16z"/></svg>`,
+  trash:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 48h-40v-8a24 24 0 00-24-24h-48a24 24 0 00-24 24v8H40a8 8 0 000 16h10l11 143a24 24 0 0024 22h92a24 24 0 0024-22l11-143h10a8 8 0 000-16zM96 40a8 8 0 018-8h48a8 8 0 018 8v8H96z"/></svg>`,
+  globe:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 24a104 104 0 100 208 104 104 0 000-208zm0 192a88 88 0 0188-88 104 104 0 01-8 40H120a56 56 0 0052 32 87 87 0 01-44 16zm0-176a88 88 0 0188 88h-20a68 68 0 00-64-44 87 87 0 0144-16 88 88 0 01-48 72zm-48 56h20v16H80zm0 32h20v16H80zm96-32h16a88 88 0 01-8 32h-8z"/></svg>`,
+  lock:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208 96h-8V72a64 64 0 00-128 0v24h-8a16 16 0 00-16 16v112a16 16 0 0016 16h160a16 16 0 0016-16V112a16 16 0 00-16-16zM88 72a40 40 0 0180 0v24H88z"/></svg>`,
+  cloud:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a40 40 0 00-40-40 48 48 0 00-92-12 44 44 0 00-9 87h141a36 36 0 0032-35z"/></svg>`,
+  refresh:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.7 186.3A88 88 0 1190 38a8 8 0 00-4.3 14.7A72 72 0 10172 154l-26.3-26.3a8 8 0 00-11.3 11.3L188 181.3a8 8 0 0011.3-1.4z"/></svg>`,
+  plus:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8h-80v80a8 8 0 01-16 0v-80H40a8 8 0 010-16h80V40a8 8 0 0116 0v80h80a8 8 0 018 8z"/></svg>`,
+  minus:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8H40a8 8 0 010-16h176a8 8 0 018 8z"/></svg>`,
+  check:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 77.3a8 8 0 010 11.3l-104 104a8 8 0 01-11.3 0l-56-56a8 8 0 0111.3-11.3L112 164.7 218.3 88.6a8 8 0 0111.4 0z"/></svg>`,
+  warn:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M236.8 188.1L148.7 30.8a24 24 0 00-41.4 0L19.2 188.1a23.9 23.9 0 0020.7 36h176.2a23.9 23.9 0 0020.7-36zM120 104a8 8 0 0116 0v40a8 8 0 01-16 0zm8 88a12 12 0 1112-12 12 12 0 01-12 12z"/></svg>`,
+  caret:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.7 82.3a8 8 0 010 11.4l-80 80a8 8 0 01-11.4 0l-80-80a8 8 0 0111.4-11.4L128 148.7l74.3-74.4a8 8 0 0111.4 0z"/></svg>`,
+  link:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M112 64a8 8 0 000 16 24 24 0 010 48 8 8 0 000 16 40 40 0 000-80zm-32 56a8 8 0 008-8 24 24 0 0124-24 8 8 0 000-16 40 40 0 100 80 8 8 0 008-8 24 24 0 01-24-24 8 8 0 00-8-8z"/></svg>`,
+  search:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 218.3l-43.3-43.3a88 88 0 10-11.4 11.4l43.3 43.3a8 8 0 0011.4-11.4zM40 112a72 72 0 1172 72 72 72 0 01-72-72z"/></svg>`,
+  tag:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M244 120.4L135.6 12a16 16 0 00-11.3-4.7H40a16 16 0 00-16 16v84.3a16 16 0 004.7 11.3L120.4 212a16 16 0 0022.6 0l101-101a16 16 0 000-22.6zM88 96a16 16 0 1122.6 0A16 16 0 0188 96z"/></svg>`,
+  layers:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 32L16 80l112 48 112-48zM16 128l112 48 112-48M16 176l112 48 112-48"/></svg>`,
+  calendar:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 48v16H40V48a8 8 0 00-16 0v160a8 8 0 008 8h176a8 8 0 008-8V48a8 8 0 00-16 0zm-72 88h-32v32h32z"/></svg>`,
+  dot:`<svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="128" r="96"/></svg>`,
+  switch:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M96 136v64a16 16 0 0016 16h96a16 16 0 0016-16v-64a16 16 0 00-16-16h-96a16 16 0 00-16 16zm92 28a12 12 0 1112-12 12 12 0 01-12 12zM48 56h96a16 16 0 0116 16v48a16 16 0 01-16 16H48a16 16 0 01-16-16V72a16 16 0 0116-16zm92 28a12 12 0 11-12-12 12 12 0 0112 12z"/></svg>`,
+};
+const sigilBig = `<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><path d="M12 2 V22 M4 7 L20 17 M20 7 L4 17"/></svg>`;
+
+/* ---------- helpers ---------- */
+const esc = (s)=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function fmtBytes(b){
+  if(b==null) return "—";
+  const u=["B","KB","MB","GB","TB"]; let i=0;
+  while(b>=1024 && i<u.length-1){ b/=1024; i++; }
+  return (i===0?b:(b>=100?b.toFixed(0):b.toFixed(1)))+" "+u[i];
+}
+function s3uri(){
+  if(!state.bucket) return "s3://";
+  const p = state.prefix ? state.prefix : "";
+  return `s3://${state.bucket}/${p}`;
+}
+function typeIcon(t){
+  return ({appimage:"binary",archive:"archive",json:"code",image:"image"})[t] || "file";
+}
+function children(prefix){
+  const q = state.search.trim().toLowerCase();
+  return state.objects
+    .filter(o=>o.key.startsWith(prefix))
+    .map(o=>({o, name:o.key.slice(prefix.length).replace(/\/$/,"")}))
+    .filter(x=> x.name.length>0)
+    .filter(x=> !x.name.includes("/"))
+    .filter(x=> q ? x.name.toLowerCase().includes(q) : true)
+    .sort((a,b)=> (b.o.isDir?1:0)-(a.o.isDir?1:0) || a.name.localeCompare(b.name));
+}
+function openMenu(x,y,items){
+  closeMenu();
+  const m = document.createElement("div");
+  m.className="menu"; m.style.left=x+"px"; m.style.top=y+"px";
+  m.innerHTML = items.map((it,i)=> it.sep ? `<div class="sep"></div>`
+    : `<div class="mi ${it.danger?'danger':''}" data-i="${i}">${it.icon?I[it.icon]:''}<span>${esc(it.label)}</span></div>`).join("");
+  document.body.appendChild(m);
+  m.querySelectorAll(".mi").forEach(el=>{
+    el.onclick=(e)=>{ e.stopPropagation(); const it=items[+el.dataset.i]; closeMenu(); it.run&&it.run(); };
+  });
+  setTimeout(()=>document.addEventListener("click",closeMenu,{once:true}),0);
+}
+function closeMenu(){ document.querySelectorAll(".menu").forEach(m=>m.remove()); }
+function toast(msg,warn){
+  const t=document.createElement("div");
+  t.className="toast"+(warn?" warn":"");
+  t.innerHTML = (warn?I.warn:I.check) + `<span>${esc(msg)}</span>`;
+  document.getElementById("toasts").appendChild(t);
+  setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(8px)"; t.style.transition=".2s"; },2200);
+  setTimeout(()=>t.remove(),2500);
+}
+
+/* ============================================================
+   RENDER
+   ============================================================ */
+function render(){
+  const app = document.getElementById("app");
+  const cur = state.buckets.find(b=>b.name===state.bucket);
+  const objCount = state.bucket ? children(state.prefix).length : state.buckets.length;
+  app.innerHTML = `
+    ${titlebar(cur,objCount)}
+    <div class="body">
+      ${sidebar()}
+      <div class="main" data-od-id="main">
+        ${viewHead()}
+        <div class="scroll" style="flex:1;display:flex;min-height:0">
+          ${viewBody()}
+        </div>
+      </div>
+    </div>`;
+  bind();
+}
+
+/* ----- titlebar ----- */
+function titlebar(cur,count){
+  return `<div class="titlebar" data-od-id="titlebar">
+    ${I.sigil}
+    <span class="tb-title">chronos-s3</span>
+    <div class="tb-sep"></div>
+    <span class="tb-repo mono">${state.bucket?esc(state.bucket):'no bucket'}</span>
+    <div class="tb-sep"></div>
+    <span class="tb-endpoint">${esc(state.endpoint)}</span>
+    <div class="tb-spacer"></div>
+    ${count!==undefined?`<span class="tb-stat"><span style="color:var(--accent)">${count}</span> objects</span>`:""}
+    <div class="tb-sync" data-act="sync" title="Sync object list">${I.cloud}<span>Sync</span></div>
+    <div class="tb-icon" data-act="refresh" title="Refresh">${I.refresh}</div>
+  </div>`;
+}
+
+/* ----- sidebar ----- */
+function sidebar(){
+  const nav = [
+    { id:"explorer", icon:I.s3,       label:"Explorer",   badge: state.bucket?children(state.prefix).length:state.buckets.length, accent:true },
+    { id:"buckets",  icon:I.bucket,   label:"Buckets",    badge:state.buckets.length, accent:false },
+    { id:"transfers",icon:I.upload,   label:"Transfers",  badge:state.transfers.filter(t=>t.status!=="done").length, accent:false },
+    { id:"props",    icon:I.lock,     label:"Properties", badge:0, accent:false },
+  ];
+  const reg = state.region;
+  return `<div class="sidebar" data-od-id="sidebar">
+    <div class="repo-head">
+      <div class="repo-row">
+        <div class="repo-dot">${sigilBig}</div>
+        <span class="repo-name">Object Store</span>
+      </div>
+      <div class="branch-chip" data-act="open-buckets" title="Select bucket">
+        ${I.bucket}<span>${state.bucket?esc(state.bucket):'All buckets'}</span>${I.caret}
+      </div>
+      <div class="ahead-behind">
+        <span class="ab up">${esc(reg)}</span>
+      </div>
+    </div>
+    <div class="nav">
+      ${nav.map(n=>`
+        <div class="nav-item ${state.view===n.id?'active':''}" data-view="${n.id}">
+          ${n.icon}
+          <span class="label">${n.label}</span>
+          ${n.badge?`<span class="badge ${n.accent?'accent':''}">${n.badge}</span>`:""}
+        </div>`).join("")}
+    </div>
+    <div class="nav-foot">
+      <div class="foot-row">${I.link}<span>${esc(state.endpoint)}</span></div>
+      <div class="foot-row">${I.cloud}<span>${state.bucket?children(state.prefix).length+" objects":"no bucket" }</span></div>
+      <div class="foot-row">${sigilBig}<span>rusoto · chronos-shell</span></div>
+    </div>
+  </div>`;
+}
+
+/* ----- view head ----- */
+function viewHead(){
+  const h = {
+    explorer:  `<span class="view-title">${state.bucket?esc(state.bucket):'Buckets'}</span><span class="view-sub">${state.prefix||'root'}</span>`,
+    buckets:   `<span class="view-title">Buckets</span><span class="view-sub">${state.buckets.length} in ${esc(state.region)}</span>`,
+    transfers: `<span class="view-title">Transfers</span><span class="view-sub">${state.transfers.filter(t=>t.status!=='done').length} active</span>`,
+    props:     `<span class="view-title">Properties</span><span class="view-sub">${state.selected?esc(basename(state.selected)):esc(state.bucket||'—')}</span>`,
+  }[state.view];
+  let right = "";
+  if(state.view==="explorer"){
+    right = `
+      <input class="search-in" id="searchIn" placeholder="filter objects…" value="${esc(state.search)}" data-act="search"/>
+      <div class="btn ghost sm" data-act="upload">${I.upload}<span>Upload</span></div>
+      <div class="btn primary sm" data-act="new-folder">${I.plus}<span>New folder</span></div>`;
+  } else if(state.view==="buckets"){
+    right = `<div class="btn primary sm" data-act="new-bucket">${I.plus}<span>New bucket</span></div>`;
+  } else if(state.view==="transfers"){
+    right = `<div class="btn ghost sm" data-act="clear-done">${I.minus}<span>Clear finished</span></div>`;
+  } else if(state.view==="props"){
+    right = `<div class="btn ghost sm" data-act="refresh">${I.refresh}<span>Reload</span></div>`;
+  }
+  return `<div class="view-head" data-od-id="view-head">
+    ${h}
+    <div class="head-spacer"></div>
+    ${right}
+  </div>`;
+}
+function basename(k){ return k.split("/").filter(Boolean).pop(); }
+
+/* ----- view body ----- */
+function viewBody(){
+  switch(state.view){
+    case "explorer":  return explorerView();
+    case "buckets":   return bucketsView();
+    case "transfers": return transfersView();
+    case "props":     return propsView();
+  }
+}
+
+/* ===== EXPLORER ===== */
+function explorerView(){
+  if(!state.bucket){
+    return `<div class="explorer" data-od-id="explorer-view">
+      <div class="empty">${I.bucket}<span>Select a bucket from the sidebar to browse its objects.</span></div>
+    </div>`;
+  }
+  const crumbs = breadcrumb();
+  const list = children(state.prefix);
+  const rows = list.length ? list.map(({o,name})=>{
+    const sel = state.selected===o.key;
+    if(o.isDir){
+      return `<div class="obj-row ${sel?'sel':''}" data-od-id="obj-folder" data-key="${esc(o.key)}" data-dir="1">
+        <div class="obj-name dir">${I.folder}<span class="nm dir">${esc(name)}/</span></div>
+        <div class="obj-size">—</div>
+        <div class="obj-class">prefix</div>
+        <div class="obj-mtime"></div>
+      </div>`;
+    }
+    return `<div class="obj-row ${sel?'sel':''}" data-od-id="obj-file" data-key="${esc(o.key)}" data-dir="0">
+      <div class="obj-name">${I[typeIcon(o.type)]}<span class="nm">${esc(name)}</span></div>
+      <div class="obj-size">${fmtBytes(o.size)}</div>
+      <div class="obj-class">${esc(o.storage)}</div>
+      <div class="obj-mtime">${esc(o.mtime)} ${o.public?`<span class="obj-pill pub">public</span>`:""}</div>
+    </div>`;
+  }).join("") : `<div class="empty" style="height:auto;padding:40px">${I.file}<span>No objects match this prefix.</span></div>`;
+
+  const preview = state.selected ? previewPane(state.objects.find(o=>o.key===state.selected)) :
+    `<div class="empty">${I.search}<span>Select an object to inspect its metadata.</span></div>`;
+
+  return `<div class="explorer" data-od-id="explorer-view">
+    <div class="view-head" style="height:40px;border-bottom:1px solid var(--border)">
+      ${crumbs}
+    </div>
+    <div class="obj-head" data-od-id="obj-list-head">
+      <span>Name</span><span>Size</span><span>Storage class</span><span>Last modified</span>
+    </div>
+    <div class="obj-list" data-od-id="obj-list">${rows}</div>
+    <div class="preview" data-od-id="preview-pane">${preview}</div>
+  </div>`;
+}
+function breadcrumb(){
+  const parts = [];
+  parts.push({label:"All buckets", prefix:null, root:true});
+  if(state.bucket){
+    const segs = state.prefix ? state.prefix.replace(/\/$/,"").split("/").filter(Boolean) : [];
+    parts.push({label:state.bucket, prefix:""});
+    let acc="";
+    segs.forEach(s=>{ acc+=s+"/"; parts.push({label:s, prefix:acc}); });
+  }
+  return `<div class="breadcrumb" data-od-id="breadcrumb">
+    ${parts.map((p,i)=>`
+      <span class="crumb ${p.root?'root':''}" data-prefix="${p.prefix===null?'__root__':esc(p.prefix)}">
+        ${i===0?I.bucket:(p.prefix===""&&i===1)?I.s3:''}<span>${esc(p.label)}</span>
+      </span>${i<parts.length-1?`<span class="crumb-sep">/</span>`:""}`).join("")}
+  </div>`;
+}
+function previewPane(o){
+  if(!o) return `<div class="empty">${I.warn}<span>Object not found.</span></div>`;
+  const name = basename(o.key);
+  const uri = `s3://${state.bucket}/${o.key}`;
+  return `
+    <div class="pv-head">
+      <div class="pv-icon">${I[typeIcon(o.type)]}</div>
+      <div class="pv-name">${esc(name)}</div>
+    </div>
+    <div class="pv-prop">
+      <div class="prop"><span class="k">Key</span><span class="v">${esc(o.key)}</span></div>
+      <div class="prop"><span class="k">Size</span><span class="v">${fmtBytes(o.size)}</span></div>
+      <div class="prop"><span class="k">Type</span><span class="v">${esc(o.type)}</span></div>
+      <div class="prop"><span class="k">Storage</span><span class="v">${esc(o.storage)}</span></div>
+      <div class="prop"><span class="k">ETag</span><span class="v">${esc(o.etag)}</span></div>
+      <div class="prop"><span class="k">Modified</span><span class="v">${esc(o.mtime)}</span></div>
+      <div class="prop"><span class="k">ACL</span><span class="v">${o.public?'PUBLIC':'private'}</span></div>
+      <div class="prop"><span class="k">S3 URI</span><span class="v">${esc(uri)}</span></div>
+    </div>
+    <div class="pv-actions">
+      <div class="btn primary" data-act="download">${I.download}<span>Download</span></div>
+      <div class="btn ghost" data-act="copy-uri">${I.copy}<span>Copy S3 URI</span></div>
+      <div class="btn ghost" data-act="toggle-public">${o.public?I.lock:I.globe}<span>${o.public?'Make private':'Make public'}</span></div>
+      <div class="btn ghost" data-act="delete" data-key="${esc(o.key)}">${I.trash}<span>Delete</span></div>
+    </div>`;
+}
+
+/* ===== BUCKETS ===== */
+function bucketsView(){
+  const rows = state.buckets.map(b=>`
+    <div class="obj-row" data-od-id="bucket-row" data-bucket="${esc(b.name)}">
+      <div class="obj-name">${I.bucket}<span class="nm">${esc(b.name)}</span></div>
+      <div class="obj-size">${fmtBytes(b.size)}</div>
+      <div class="obj-class">${esc(b.region)}</div>
+      <div class="obj-mtime">${esc(b.mtime)} ${b.public?`<span class="obj-pill pub">public</span>`:""}</div>
+    </div>`).join("");
+  return `<div class="explorer" data-od-id="buckets-view">
+    <div class="obj-head"><span>Bucket</span><span>Size</span><span>Region</span><span>Last modified</span></div>
+    <div class="obj-list" data-od-id="bucket-list">${rows}</div>
+  </div>`;
+}
+
+/* ===== TRANSFERS ===== */
+function transfersView(){
+  const rows = state.transfers.map((t,i)=>{
+    const fill = t.status==="done"?"done":(t.dir==="up"?"":"acc2");
+    const st = `<span class="t-status ${t.status}">${t.status==='done'?'done':t.status==='queued'?'queued':'in progress'}</span>`;
+    const pct = t.status==="queued"?"—":t.progress+"%";
+    return `<div class="t-row" data-od-id="transfer-row" data-i="${i}">
+      <div class="t-ico ${t.dir}">${t.dir==="up"?I.upload:I.download}</div>
+      <div class="t-main">
+        <div class="t-name">${esc(t.name)}</div>
+        <div class="t-meta">${t.dir==="up"?"→":"←"} ${esc(t.bucket)} · ${fmtBytes(t.size)}</div>
+        <div class="t-bar"><div class="t-fill ${fill}" style="width:${t.status==='queued'?0:t.progress}%"></div></div>
+      </div>
+      ${st}
+      <div class="t-status" style="width:48px">${pct}</div>
+    </div>`;
+  }).join("");
+  return `<div class="explorer" data-od-id="transfers-view">
+    <div class="t-list" data-od-id="transfer-list">${rows}</div>
+  </div>`;
+}
+
+/* ===== PROPERTIES ===== */
+function propsView(){
+  if(state.selected){
+    const o = state.objects.find(x=>x.key===state.selected);
+    if(!o) return `<div class="empty">${I.warn}<span>Selected object no longer exists.</span></div>`;
+    const uri = `s3://${state.bucket}/${o.key}`;
+    return `<div class="props-wrap" data-od-id="props-object">
+      <div class="prop-card">
+        <div class="pc-head">${I.file}<span>${esc(basename(o.key))}</span></div>
+        <div class="pc-body">
+          <div class="pc-row"><span class="k">Full key</span><span class="v">${esc(o.key)}</span></div>
+          <div class="pc-row"><span class="k">Bucket</span><span class="v">${esc(state.bucket)}</span></div>
+          <div class="pc-row"><span class="k">Size</span><span class="v">${fmtBytes(o.size)}</span></div>
+          <div class="pc-row"><span class="k">Content type</span><span class="v">${esc(o.type)}</span></div>
+          <div class="pc-row"><span class="k">Storage class</span><span class="v">${esc(o.storage)}</span></div>
+          <div class="pc-row"><span class="k">ETag</span><span class="v">${esc(o.etag)}</span></div>
+          <div class="pc-row"><span class="k">Last modified</span><span class="v">${esc(o.mtime)}</span></div>
+          <div class="pc-row"><span class="k">S3 URI</span><span class="v">${esc(uri)}</span></div>
+        </div>
+      </div>
+      <div class="prop-card">
+        <div class="pc-head">${I.lock}<span>Access control</span></div>
+        <div class="pc-body">
+          <div class="acl-row"><span class="who">Public read (anonymous)</span>
+            <div class="switch" data-act="toggle-public"><div class="sw ${o.public?'on':''}"></div><span class="sw-lbl">${o.public?'on':'off'}</span></div>
+          </div>
+          <div class="acl-row"><span class="who">Owner (FULL_CONTROL)</span><span class="perm">chronos</span></div>
+          <div class="acl-row"><span class="who">Authenticated users</span><span class="perm">none</span></div>
+        </div>
+      </div>
+    </div>`;
+  }
+  // bucket properties
+  const b = state.buckets.find(x=>x.name===state.bucket) || state.buckets[0];
+  return `<div class="props-wrap" data-od-id="props-bucket">
+    <div class="prop-card">
+      <div class="pc-head">${I.bucket}<span>${esc(b.name)}</span></div>
+      <div class="pc-body">
+        <div class="pc-row"><span class="k">Region</span><span class="v">${esc(b.region)}</span></div>
+        <div class="pc-row"><span class="k">Objects</span><span class="v">${b.objects.toLocaleString()}</span></div>
+        <div class="pc-row"><span class="k">Total size</span><span class="v">${fmtBytes(b.size)}</span></div>
+        <div class="pc-row"><span class="k">Last modified</span><span class="v">${esc(b.mtime)}</span></div>
+        <div class="pc-row"><span class="k">Endpoint</span><span class="v">${esc(state.endpoint)}</span></div>
+        <div class="pc-row"><span class="k">ARN</span><span class="v">arn:aws:s3:::${esc(b.name)}</span></div>
+      </div>
+    </div>
+    <div class="prop-card">
+      <div class="pc-head">${I.lock}<span>Access control</span></div>
+      <div class="pc-body">
+        <div class="acl-row"><span class="who">Public read (anonymous)</span>
+          <div class="switch" data-act="toggle-bucket-public" data-bucket="${esc(b.name)}"><div class="sw ${b.public?'on':''}"></div><span class="sw-lbl">${b.public?'on':'off'}</span></div>
+        </div>
+        <div class="acl-row"><span class="who">Block public access</span><span class="perm">${b.public?'off':'on'}</span></div>
+        <div class="acl-row"><span class="who">Versioning</span><span class="perm">Suspended</span></div>
+        <div class="acl-row"><span class="who">Encryption</span><span class="perm">SSE-S3 (AES256)</span></div>
+      </div>
+    </div>
+  </div>`;
+}
+
+/* ============================================================
+   INTERACTIONS
+   ============================================================ */
+function bind(){
+  document.querySelectorAll("[data-view]").forEach(el=>el.onclick=()=>{ state.view=el.dataset.view; render(); });
+
+  document.querySelectorAll("[data-act]").forEach(el=>{
+    const a=el.dataset.act;
+    if(["refresh","sync","open-buckets","upload","new-folder","new-bucket","clear-done","download","copy-uri","toggle-public","delete","toggle-bucket-public","search","open-bucket"].includes(a))
+      el.onclick=(e)=>handleAct(a,el,e);
+  });
+
+  // breadcrumb
+  document.querySelectorAll(".crumb").forEach(el=>el.onclick=()=>{
+    const p = el.dataset.prefix;
+    if(p==="__root__"){ state.bucket=null; state.prefix=""; state.selected=null; }
+    else { if(!state.bucket){ state.bucket=state.buckets[0].name; } state.prefix=p; state.selected=null; }
+    render();
+  });
+
+  // object rows
+  document.querySelectorAll(".obj-row[data-key]").forEach(el=>el.onclick=(e)=>{
+    if(e.target.closest(".pv-actions")) return;
+    const key=el.dataset.key, dir=el.dataset.dir==="1";
+    if(dir){ state.prefix=key; state.selected=null; }
+    else { state.selected=key; }
+    render();
+  });
+
+  // bucket rows
+  document.querySelectorAll(".obj-row[data-bucket]").forEach(el=>el.onclick=()=>{
+    state.bucket=el.dataset.bucket; state.prefix=""; state.selected=null; state.view="explorer"; render();
+  });
+
+  // search input live
+  const s=document.getElementById("searchIn");
+  if(s) s.oninput=(e)=>{ state.search=e.target.value; rerenderList(); };
+}
+function rerenderList(){
+  // re-render only the list region to keep focus in search box
+  const wrap=document.querySelector('[data-od-id="explorer-view"]');
+  if(!wrap) return;
+  const list=wrap.querySelector('[data-od-id="obj-list"]');
+  if(list){
+    const rows = children(state.prefix).map(({o,name})=>{
+      const sel = state.selected===o.key;
+      if(o.isDir){
+        return `<div class="obj-row ${sel?'sel':''}" data-od-id="obj-folder" data-key="${esc(o.key)}" data-dir="1">
+          <div class="obj-name dir">${I.folder}<span class="nm dir">${esc(name)}/</span></div>
+          <div class="obj-size">—</div><div class="obj-class">prefix</div><div class="obj-mtime"></div></div>`;
+      }
+      return `<div class="obj-row ${sel?'sel':''}" data-od-id="obj-file" data-key="${esc(o.key)}" data-dir="0">
+        <div class="obj-name">${I[typeIcon(o.type)]}<span class="nm">${esc(name)}</span></div>
+        <div class="obj-size">${fmtBytes(o.size)}</div><div class="obj-class">${esc(o.storage)}</div>
+        <div class="obj-mtime">${esc(o.mtime)} ${o.public?`<span class="obj-pill pub">public</span>`:""}</div></div>`;
+    }).join("");
+    list.innerHTML = rows || `<div class="empty" style="height:auto;padding:40px">${I.file}<span>No objects match this prefix.</span></div>`;
+    bind();
+  }
+}
+
+function handleAct(a,el,e){
+  switch(a){
+    case "refresh": toast("Object list refreshed"); break;
+    case "sync": toast("Synced 3 new keys from "+state.endpoint); break;
+    case "open-buckets": state.view="buckets"; render(); break;
+    case "open-bucket": state.bucket=el.dataset.bucket; state.prefix=""; state.selected=null; state.view="explorer"; render(); break;
+    case "upload": toast("Upload dialog (prototype)"); break;
+    case "new-folder": {
+      const name="new-folder-"+(state._nf||1); state._nf=(state._nf||1)+1;
+      const key=state.prefix+name+"/";
+      state.objects.push({key, isDir:true});
+      state.selected=key; render(); toast("Created prefix "+key);
+      break;
+    }
+    case "new-bucket": {
+      const name="new-bucket-"+(state._nb||1); state._nb=(state._nb||1)+1;
+      state.buckets.push({name, region:state.region, objects:0, size:0, mtime:"—", public:false});
+      render(); toast("Created bucket "+name);
+      break;
+    }
+    case "clear-done": state.transfers=state.transfers.filter(t=>t.status!=="done"); render(); toast("Cleared finished transfers"); break;
+    case "download": {
+      const o=state.objects.find(x=>x.key===state.selected); if(!o) break;
+      state.transfers.unshift({name:basename(o.key), dir:"down", bucket:state.bucket, size:o.size, progress:0, status:"active"});
+      toast("Downloading "+basename(o.key));
+      break;
+    }
+    case "copy-uri": {
+      const o=state.objects.find(x=>x.key===state.selected); if(!o) break;
+      const uri=`s3://${state.bucket}/${o.key}`;
+      if(navigator.clipboard) navigator.clipboard.writeText(uri).catch(()=>{});
+      toast("Copied "+uri);
+      break;
+    }
+    case "toggle-public": {
+      const o=state.objects.find(x=>x.key===state.selected); if(!o) break;
+      o.public=!o.public; toast(o.public?"Object is now public-readable":"Object is now private"); render();
+      break;
+    }
+    case "toggle-bucket-public": {
+      const b=state.buckets.find(x=>x.name===el.dataset.bucket); if(!b) break;
+      b.public=!b.public; toast((b.public?"":"Un-")+"Blocked public access on "+b.name); render();
+      break;
+    }
+    case "delete": {
+      const key=el.dataset.key || state.selected; if(!key) break;
+      openMenu(e.clientX,e.clientY,[
+        {label:`Delete ${basename(key)}?`, icon:"warn"},
+        {sep:true},
+        {label:"Delete permanently", danger:true, icon:"trash", run:()=>{
+          state.objects=state.objects.filter(x=>x.key!==key && !x.key.startsWith(key));
+          if(state.selected===key) state.selected=null;
+          toast("Deleted "+basename(key),true); render();
+        }},
+      ]);
+      break;
+    }
+    case "search": /* handled live via oninput */ break;
+  }
+}
+
+/* ---------- boot into a bucket for immediate content ---------- */
+state.bucket="chronos-builds";
+state.prefix="release/2026.08/";
+state.selected="release/2026.08/chronos-shell-0.4.0-x86_64.AppImage";
+render();
+</script>
+</body>
+</html>

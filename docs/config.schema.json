@@ -290,7 +290,7 @@
         },
         "mode": {
           "$ref": "#/$defs/ThemeMode",
-          "default": "system",
+          "default": "dark",
           "description": "Light/dark selection, or following the OS."
         }
       },
@@ -311,7 +311,7 @@
         },
         {
           "const": "dark",
-          "description": "Always use the dark appearance.",
+          "description": "Always use the dark appearance.\n\nProduct default as of T037: the mockup baseline is dark, and the\nCatppuccin-derived `chronos.theme.json` \"Chronos Dark\" is the\nreference palette. This only changes the built-in default — an\nexisting user's `~/.config/chronos-fm/config.toml` is untouched.",
           "type": "string"
         }
       ]
@@ -418,7 +418,7 @@
       "$ref": "#/$defs/Theme",
       "default": {
         "accent": "blue",
-        "mode": "system"
+        "mode": "dark"
       },
       "description": "Appearance settings."
     },

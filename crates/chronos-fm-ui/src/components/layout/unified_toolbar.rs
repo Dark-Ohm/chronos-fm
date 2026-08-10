@@ -3,7 +3,7 @@ use gpui::{
     Action, Context, IntoElement, Pixels, Render, WindowControlArea, div, prelude::*, px,
 };
 use gpui_component::{
-    Icon, IconName, Sizable, Size,
+    ActiveTheme, Icon, IconName, Sizable, Size,
     button::{Button, ButtonRounded, ButtonVariant, ButtonVariants},
     menu::DropdownMenu,
 };
@@ -43,16 +43,28 @@ pub fn unified_toolbar<V: Render>(
         account_plan,
     } = props;
 
+    // Mockup §2.2: the product wordmark on the left — JetBrains Mono 12,
+    // `c.fgSecondary` — is the identifying mark of the app in the mockup. It
+    // lives INSIDE the drag region so the whole title bar (wordmark included)
+    // drags the window, matching the mockup where the entire bar is draggable.
+    let product_label = div()
+        .text_size(px(12.0))
+        .font_family(cx.theme().mono_font_family.clone())
+        .text_color(theme::fg_secondary(cx))
+        .child("chronos-fm");
+
     let drag_region = div()
         .id("unified-toolbar-drag-region")
         .flex_1()
         .h_full()
-        .window_control_area(WindowControlArea::Drag);
+        .window_control_area(WindowControlArea::Drag)
+        .child(product_label);
 
     let account_button = Button::new(ACCOUNT_BUTTON_ID)
         .icon(
+            // Mockup §2.2: 26×26 chip with a 16px `circle-user` glyph.
             Icon::new(IconName::CircleUser)
-                .size_5()
+                .size_4()
                 .text_color(theme::fg_secondary(cx)),
         )
         .rounded(ButtonRounded::Large)
@@ -154,7 +166,7 @@ pub fn unified_toolbar<V: Render>(
         .items_center()
         .justify_between()
         .px(px(16.0))
-        .bg(theme::bg(cx))
+        .bg(theme::toolbar_bg(cx))
         .border_b_1()
         .border_color(theme::border(cx))
         .child(drag_region)

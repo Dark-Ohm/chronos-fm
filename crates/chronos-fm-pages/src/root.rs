@@ -17,7 +17,7 @@ use gpui::{
     InteractiveElement, Render, WeakEntity, Window, div, prelude::*, px,
 };
 use gpui_component::resizable::ResizableState;
-use gpui_component::{Icon, Root, Theme, ThemeMode as GpuiThemeMode};
+use gpui_component::{Icon, Root, Sizable, Theme, ThemeMode as GpuiThemeMode};
 use chronos_fm_core::config::{self, Config, ConfigOverride, ConfigWatcher};
 use chronos_fm_core::telemetry::LogErr;
 use chronos_fm_services::search::SearchService;
@@ -57,6 +57,14 @@ pub struct RootView {
     // explorer's transient status) so it is not cleared by an explorer
     // directory reload and survives across pages.
     config_status: Option<String>,
+    // False until `apply_config` has pushed a theme into gpui at least once.
+    // The mode/accent branches below are diff-driven (hot reload only wants to
+    // re-theme on an actual change), but a diff against `Config::default()` is
+    // silent when the loaded config *equals* the default — which is exactly the
+    // common case now that the product default is dark (T037). Without this
+    // flag the registry's own default (light) would survive startup and no
+    // dark-mode user would ever see dark on first paint.
+    theme_applied: bool,
     // Kept alive for the window's lifetime so the OS watch is not dropped.
     _config_watcher: Option<ConfigWatcher>,
 }
@@ -112,6 +120,7 @@ impl RootView {
             config_path,
             config_overrides,
             config_status: None,
+            theme_applied: false,
             _config_watcher: None,
         };
         view.start_progress_loop(window, cx);
@@ -130,7 +139,7 @@ impl RootView {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if config.theme.mode != self.config.theme.mode {
+        if !self.theme_applied || config.theme.mode != self.config.theme.mode {
             let mode = match config.theme.mode {
                 config::ThemeMode::Light => GpuiThemeMode::Light,
                 config::ThemeMode::Dark => GpuiThemeMode::Dark,
@@ -176,6 +185,8 @@ impl RootView {
             }
             Theme::change(mode, Some(window), cx);
         }
+
+        self.theme_applied = true;
 
         // Condense the (possibly multi-line) diagnostic to a single line plus the
         // file path for the one-line status bar; full detail is in the logs.
@@ -475,9 +486,10 @@ impl RootView {
                 view.set_page(page, cx);
             }))
             .child(
+                // Mockup §2.3: nav glyphs are 19px in a 48×48 chip.
                 Icon::new(Icon::empty())
                     .path(page.icon_path())
-                    .size_5()
+                    .with_size(px(19.0))
                     .text_color(if active {
                         theme::toolbar_active_text(cx)
                     } else {

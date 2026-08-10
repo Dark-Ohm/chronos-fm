@@ -4,6 +4,7 @@ use gpui::prelude::*;
 use gpui::*;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::list::ListItem;
+use gpui_component::ActiveTheme;
 use gpui_component::{Icon, IconName};
 use chronos_fm_ui::theme::theme;
 
@@ -71,14 +72,14 @@ pub fn render(
     let entry_count = page.filtered_entries.len();
 
     div()
-        .bg(theme::bg(cx))
+        .bg(theme::toolbar_bg(cx))
         .border_b_1()
         .border_color(theme::border(cx))
         .flex()
         .items_center()
         .text_color(theme::fg(cx))
-        .px(px(24.0))
-        .py(px(12.0))
+        .px(px(14.0))
+        .py(px(6.0))
         .gap_2()
         .child(
             div()
@@ -86,32 +87,20 @@ pub fn render(
                 .items_center()
                 .gap_2()
                 .flex_shrink_0()
-                .child(
-                    ListItem::new("nav-back")
-                        .px(px(8.0))
-                        .py(px(6.0))
-                        .rounded(px(6.0))
-                        .when(!can_go_back, |this| this.opacity(0.3))
-                        .when(can_go_back, |this| {
-                            this.on_click(
-                                cx.listener(|view, _, window, cx| view.go_back(window, cx)),
-                            )
-                        })
-                        .child(div().text_sm().text_color(theme::gray_600(cx)).child("←")),
-                )
-                .child(
-                    ListItem::new("nav-forward")
-                        .px(px(8.0))
-                        .py(px(6.0))
-                        .rounded(px(6.0))
-                        .when(!can_go_forward, |this| this.opacity(0.3))
-                        .when(can_go_forward, |this| {
-                            this.on_click(
-                                cx.listener(|view, _, window, cx| view.go_forward(window, cx)),
-                            )
-                        })
-                        .child(div().text_sm().text_color(theme::gray_600(cx)).child("→")),
-                )
+                .child(nav_button(
+                    "nav-back",
+                    "icons/chevron-left.svg",
+                    can_go_back,
+                    cx.listener(|view, _, window, cx| view.go_back(window, cx)),
+                    cx,
+                ))
+                .child(nav_button(
+                    "nav-forward",
+                    "icons/chevron-right.svg",
+                    can_go_forward,
+                    cx.listener(|view, _, window, cx| view.go_forward(window, cx)),
+                    cx,
+                ))
                 .child(
                     div()
                         .w(px(1.0))
@@ -125,7 +114,33 @@ pub fn render(
                 .flex_1()
                 .overflow_hidden()
                 .min_w(px(0.0))
-                .child(div().flex().items_center().child(bc)),
+                .flex()
+                .items_center()
+                .gap_2()
+                .child(
+                    Icon::new(Icon::empty())
+                        .path("icons/folder.svg")
+                        .w(px(12.0))
+                        .h(px(12.0))
+                        .flex_none()
+                        .text_color(theme::muted(cx)),
+                )
+                .child(
+                    div()
+                        .flex_1()
+                        .overflow_hidden()
+                        .min_w(px(0.0))
+                        .bg(theme::bg(cx))
+                        .border_1()
+                        .border_color(theme::border(cx))
+                        .rounded(px(5.0))
+                        .px(px(8.0))
+                        .py(px(3.0))
+                        .text_size(px(11.5))
+                        .font_family(cx.theme().mono_font_family.clone())
+                        .text_color(theme::fg_secondary(cx))
+                        .child(div().flex().items_center().child(bc)),
+                ),
         )
         .child(
             div()
@@ -157,6 +172,39 @@ pub fn render(
                             },
                         )),
                 ),
+        )
+}
+
+fn nav_button(
+    id: &'static str,
+    icon_path: &'static str,
+    enabled: bool,
+    on_click: impl Fn(&ClickEvent, &mut Window, &mut App) + 'static,
+    cx: &mut Context<ExplorerPane>,
+) -> impl IntoElement {
+    div()
+        .id(id)
+        .w(px(22.0))
+        .h(px(22.0))
+        .flex()
+        .items_center()
+        .justify_center()
+        .rounded(px(6.0))
+        .when(enabled, |this| {
+            this.cursor_pointer()
+                .hover(|style| style.bg(theme::bg_hover(cx)))
+                .on_click(on_click)
+        })
+        .child(
+            Icon::new(Icon::empty())
+                .path(icon_path)
+                .w(px(13.0))
+                .h(px(13.0))
+                .text_color(if enabled {
+                    theme::gray_600(cx)
+                } else {
+                    theme::disabled(cx)
+                }),
         )
 }
 

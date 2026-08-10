@@ -1,0 +1,887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1"/>
+<title>ChronOS · File Manager — Settings</title>
+<style>
+  :root{
+    /* ChronOS registered palette — verbatim */
+    --bg:#181825;
+    --surface:#1e1e2e;
+    --surface1:#1e1e2e;
+    --surface2:#45475a;
+    --fg:#cdd6f4;
+    --muted:rgba(205,214,244,0.58);   /* derived from --fg */
+    --faint:rgba(205,214,244,0.34);
+    --border:#45475a;
+    --border-soft:rgba(205,214,244,0.09);
+    --hairline:rgba(205,214,244,0.07);
+    --accent:#007acc;
+    --accent-2:#cba6f7;
+    --accent-press:#007acc;
+    --add-bg:rgba(0,122,204,0.13);
+    --del-bg:rgba(203,166,247,0.13);
+    --shadow:0 1px 2px rgba(0,0,0,0.30), 0 4px 14px rgba(0,0,0,0.22);
+    --r:8px;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%}
+  body{
+    margin:0;background:var(--bg);color:var(--fg);
+    font-family:'Inter',system-ui,-apple-system,'Segoe UI','Helvetica Neue',Arial,sans-serif;
+    font-size:13px;line-height:1.45;-webkit-font-smoothing:antialiased;
+    display:flex;align-items:center;justify-content:center;
+    overflow:hidden;
+  }
+  .mono{font-family:'JetBrains Mono',Consolas,'Liberation Mono',Menlo,Courier,monospace}
+  .wrap{
+    width:1320px;height:820px;background:var(--bg);
+    border:1px solid var(--border);border-radius:10px;overflow:hidden;
+    display:flex;flex-direction:column;box-shadow:var(--shadow);
+  }
+
+  /* ---- titlebar ---- */
+  .titlebar{
+    flex:none;height:38px;background:var(--bg);
+    border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:10px;padding:0 12px;
+    -webkit-app-region:drag;
+  }
+  .sigil{width:18px;height:18px;color:var(--accent);flex:none}
+  .tb-title{font-family:'JetBrains Mono',monospace;font-size:12px;color:var(--fg);letter-spacing:.02em}
+  .tb-sep{width:1px;height:16px;background:var(--border)}
+  .tb-repo{font-size:12px;color:var(--muted)}
+  .tb-branch{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--fg);font-weight:600}
+  .tb-branch svg{width:13px;height:13px;color:var(--accent-2)}
+  .tb-spacer{flex:1}
+  .tb-stat{display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:11px}
+  .tb-stat .up{color:var(--accent)}
+  .tb-icon{
+    width:28px;height:28px;border-radius:7px;display:flex;align-items:center;justify-content:center;
+    color:var(--muted);cursor:pointer;-webkit-app-region:no-drag;
+  }
+  .tb-icon:hover{background:var(--surface1);color:var(--fg)}
+  .tb-icon svg{width:16px;height:16px}
+  .tb-search{
+    display:flex;align-items:center;gap:6px;height:26px;padding:0 9px;width:230px;
+    background:var(--surface);border:1px solid var(--border);border-radius:7px;color:var(--muted);
+  }
+  .tb-search svg{width:14px;height:14px;flex:none}
+  .tb-search input{
+    background:transparent;border:none;outline:none;color:var(--fg);
+    font-family:'Inter',sans-serif;font-size:12px;width:100%;
+  }
+  .tb-search input::placeholder{color:var(--faint)}
+  .tb-search:focus-within{border-color:var(--accent)}
+
+  /* ---- body ---- */
+  .body{flex:1;min-height:0;display:flex}
+
+  /* ---- sidebar (categories) ---- */
+  .sidebar{
+    width:236px;flex:none;background:var(--surface);
+    border-right:1px solid var(--border);
+    display:flex;flex-direction:column;
+  }
+  .side-head{
+    padding:14px 14px 12px;border-bottom:1px solid var(--border);
+    display:flex;flex-direction:column;gap:9px;
+  }
+  .repo-row{display:flex;align-items:center;gap:9px;min-width:0}
+  .repo-dot{width:22px;height:22px;border-radius:6px;background:var(--bg);border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);flex:none}
+  .repo-dot svg{width:13px;height:13px}
+  .repo-name{font-size:13px;font-weight:600;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .branch-chip{
+    display:inline-flex;align-items:center;gap:6px;align-self:flex-start;
+    padding:5px 10px;border-radius:7px;background:var(--bg);
+    border:1px solid var(--border);max-width:100%;
+  }
+  .branch-chip svg{width:12px;height:12px;color:var(--accent-2);flex:none}
+  .branch-chip span{font-size:11.5px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .nav{padding:8px 8px;display:flex;flex-direction:column;gap:2px;overflow-y:auto;scrollbar-width:thin}
+  .nav::-webkit-scrollbar{width:8px}.nav::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .cat{
+    display:flex;align-items:center;gap:10px;height:34px;padding:0 10px;border-radius:7px;
+    cursor:pointer;color:var(--muted);position:relative;
+  }
+  .cat:hover{background:var(--surface1);color:var(--fg)}
+  .cat.active{background:var(--surface1);color:var(--fg)}
+  .cat.active::before{content:"";position:absolute;left:-8px;top:7px;bottom:7px;width:3px;border-radius:2px;background:var(--accent)}
+  .cat svg{width:16px;height:16px;flex:none}
+  .cat .label{font-size:12.5px;font-weight:500;flex:1}
+  .cat .badge{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint)}
+  .nav-foot{margin-top:auto;padding:10px 14px;border-top:1px solid var(--border);display:flex;flex-direction:column;gap:8px}
+  .foot-row{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .foot-row svg{width:12px;height:12px;flex:none;color:var(--muted)}
+
+  /* ---- main ---- */
+  .main{flex:1;min-width:0;display:flex;flex-direction:column;background:var(--bg)}
+  .view-head{
+    flex:none;height:46px;border-bottom:1px solid var(--border);
+    display:flex;align-items:center;gap:12px;padding:0 16px;
+  }
+  .view-title{font-size:14px;font-weight:700;color:var(--fg);letter-spacing:-.01em}
+  .view-sub{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted)}
+  .head-spacer{flex:1}
+  .btn{
+    display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 12px;border-radius:7px;
+    font-size:12px;font-weight:600;letter-spacing:.01em;cursor:pointer;border:1px solid transparent;
+  }
+  .btn svg{width:14px;height:14px}
+  .btn.ghost{background:var(--surface);border-color:var(--border);color:var(--fg)}
+  .btn.ghost:hover{background:var(--surface1);border-color:var(--surface2)}
+  .btn.ghost:active{background:var(--surface2)}
+  .btn.primary{border:1px solid var(--accent);color:var(--accent)}
+  .btn.primary:hover{background:rgba(0,122,204,0.12)}
+  .btn.primary:active{background:var(--accent-press);color:var(--fg);border-color:var(--accent-press)}
+
+  .split{flex:1;min-height:0;display:flex}
+  .scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin}
+  .scroll::-webkit-scrollbar{width:8px;height:8px}
+  .scroll::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .scroll::-webkit-scrollbar-track{background:transparent}
+
+  /* ---- settings panel ---- */
+  .set-panel{flex:1;min-width:0;display:flex;flex-direction:column}
+  .set-search{
+    flex:none;display:flex;align-items:center;gap:8px;margin:14px 18px 4px;height:32px;padding:0 11px;
+    background:var(--surface);border:1px solid var(--border);border-radius:8px;
+  }
+  .set-search svg{width:15px;height:15px;color:var(--muted);flex:none}
+  .set-search input{background:transparent;border:none;outline:none;color:var(--fg);font-size:12.5px;width:100%}
+  .set-search input::placeholder{color:var(--faint)}
+  .set-search:focus-within{border-color:var(--accent)}
+  .set-scroll{flex:1;min-height:0;overflow-y:auto;scrollbar-width:thin;padding:6px 4px 30px}
+  .set-scroll::-webkit-scrollbar{width:8px}.set-scroll::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .set-group-hd{padding:16px 18px 8px;display:flex;align-items:baseline;gap:10px}
+  .set-group-hd .gt{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--accent-2)}
+  .set-group-hd .gs{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint)}
+  .set-row{
+    display:flex;align-items:center;gap:16px;padding:11px 18px;border-bottom:1px solid var(--hairline);
+    cursor:default;
+  }
+  .set-row:hover{background:var(--surface)}
+  .set-main{flex:1;min-width:0}
+  .set-label{font-size:13px;color:var(--fg);font-weight:500}
+  .set-desc{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--faint);margin-top:2px}
+  .set-ctrl{flex:none;display:flex;align-items:center;gap:8px}
+  .set-val{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);min-width:54px;text-align:right}
+
+  /* switch */
+  .sw{width:40px;height:22px;border-radius:11px;background:var(--surface2);position:relative;cursor:pointer;flex:none;transition:background .12s}
+  .sw.on{background:var(--accent)}
+  .sw .knob{position:absolute;top:2px;left:2px;width:18px;height:18px;border-radius:50%;background:var(--bg);transition:left .12s;box-shadow:0 1px 2px rgba(0,0,0,.4)}
+  .sw.on .knob{left:20px}
+
+  /* select / field */
+  .sel,.fld{
+    background:var(--bg);border:1px solid var(--border);border-radius:7px;color:var(--fg);
+    font-family:'JetBrains Mono',monospace;font-size:12px;padding:6px 10px;outline:none;
+  }
+  .sel{height:30px;cursor:pointer}
+  .sel:focus,.fld:focus{border-color:var(--accent)}
+  .fld{width:170px}
+
+  /* range */
+  .rng-wrap{display:flex;align-items:center;gap:10px;width:200px}
+  input[type=range].rng{-webkit-appearance:none;appearance:none;flex:1;height:4px;border-radius:2px;background:var(--surface2);outline:none;cursor:pointer}
+  input[type=range].rng::-webkit-slider-thumb{-webkit-appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);cursor:pointer}
+  input[type=range].rng::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--bg);cursor:pointer}
+  .rng-val{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);min-width:30px;text-align:right}
+
+  /* keybind rows */
+  .kb-row{display:flex;align-items:center;gap:16px;padding:10px 18px;border-bottom:1px solid var(--hairline);cursor:default}
+  .kb-row:hover{background:var(--surface)}
+  .kb-main{flex:1;min-width:0}
+  .kb-keys{display:flex;gap:5px;align-items:center}
+  .kbd{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg);background:var(--bg);border:1px solid var(--border);border-bottom-width:2px;border-radius:5px;padding:3px 7px;min-width:22px;text-align:center}
+  .kbd.plus{background:transparent;border:none;color:var(--faint)}
+  .kb-rebind{font-size:10.5px;color:var(--accent);font-family:'JetBrains Mono',monospace}
+  .kb-rebinding .kbd{animation:blink 1s steps(2) infinite}
+  @keyframes blink{50%{opacity:.35}}
+
+  /* ---- live preview pane ---- */
+  .preview-col{width:430px;flex:none;border-left:1px solid var(--border);display:flex;flex-direction:column;background:var(--surface)}
+  .pv-hd{flex:none;height:38px;display:flex;align-items:center;gap:8px;padding:0 14px;border-bottom:1px solid var(--border)}
+  .pv-hd .ttl{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;color:var(--muted)}
+  .pv-hd .live{margin-left:auto;display:flex;align-items:center;gap:5px;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--accent)}
+  .pv-hd .live .dot{width:7px;height:7px;border-radius:50%;background:var(--accent)}
+  .pv-status{flex:none;font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--faint);padding:6px 14px;border-bottom:1px solid var(--hairline)}
+  .fm{flex:1;min-height:0;display:flex;flex-direction:column;background:var(--bg);--accent:#007acc;--rowh:30px;--iconsz:18px}
+  .fm-bar{flex:none;height:34px;display:flex;align-items:center;gap:8px;padding:0 11px;border-bottom:1px solid var(--border);background:var(--surface)}
+  .fm-bar .sigil{width:14px;height:14px}
+  .fm-path{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fm-bar .sp{flex:1}
+  .fm-pill{font-family:'JetBrains Mono',monospace;font-size:10px;color:var(--muted);background:var(--surface);border:1px solid var(--border);border-radius:5px;padding:2px 7px}
+  .fm-vtog{display:flex;gap:2px;background:var(--surface);border:1px solid var(--border);border-radius:6px;padding:2px}
+  .fm-vtog .v{width:22px;height:20px;border-radius:4px;display:flex;align-items:center;justify-content:center;color:var(--muted);cursor:pointer}
+  .fm-vtog .v.on{background:var(--bg);color:var(--accent)}
+  .fm-vtog .v svg{width:13px;height:13px}
+  .fm-body{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;display:flex}
+  .fm-body::-webkit-scrollbar{width:8px}.fm-body::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .fm-list{flex:1;min-width:0;display:flex;flex-direction:column}
+  .fm-head-row{flex:none;display:flex;align-items:center;gap:10px;padding:4px 12px;font-family:'JetBrains Mono',monospace;font-size:10px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);border-bottom:1px solid var(--hairline);position:sticky;top:0;background:var(--bg);z-index:2}
+  .fm-row{display:flex;align-items:center;gap:10px;padding:0 12px;height:var(--rowh);border-bottom:1px solid var(--hairline);cursor:pointer}
+  .fm-row:hover{background:var(--surface)}
+  .fm-row.sys{opacity:.5;text-decoration:line-through}
+  .fm-ic{width:var(--iconsz);height:var(--iconsz);flex:none;color:var(--accent-2)}
+  .fm-ic.dir{color:var(--accent)}
+  .fm-ic.file{color:var(--muted)}
+  .fm-name{flex:1;min-width:0;font-size:12px;color:var(--fg);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fm-cell{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .fm-cell.size{min-width:64px;text-align:right}
+  .fm-cell.mtime{min-width:78px}
+  .fm-cell.perm{min-width:96px;color:var(--faint)}
+  .fm-cell.owner{min-width:88px;color:var(--faint)}
+  .fm-trash{width:22px;height:22px;border-radius:5px;display:none;align-items:center;justify-content:center;color:var(--muted);cursor:pointer}
+  .fm-row:hover .fm-trash{display:flex}
+  .fm-trash:hover{color:var(--accent-2);background:var(--surface2)}
+  .fm-trash svg{width:13px;height:13px}
+  .fm-grid{flex:1;min-width:0;display:grid;grid-template-columns:repeat(auto-fill,minmax(86px,1fr));gap:8px;padding:12px;align-content:start}
+  .fm-tile{display:flex;flex-direction:column;align-items:center;gap:6px;padding:10px 4px;border-radius:8px;cursor:pointer;border:1px solid transparent}
+  .fm-tile:hover{background:var(--surface);border-color:var(--border)}
+  .fm-tile .fm-ic{width:var(--iconsz);height:var(--iconsz)}
+  .fm-tile .tn{font-size:10.5px;color:var(--fg);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:78px}
+  .fm-prev{flex:none;width:46%;border-left:1px solid var(--border);background:var(--surface);display:flex;flex-direction:column}
+  .fm-prev-hd{flex:none;height:30px;display:flex;align-items:center;gap:7px;padding:0 11px;border-bottom:1px solid var(--hairline);font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted)}
+  .fm-prev-bd{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;padding:11px}
+  .fm-prev-bd::-webkit-scrollbar{width:8px}.fm-prev-bd::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .prev-img{height:120px;border-radius:7px;border:1px solid var(--border);display:flex;align-items:center;justify-content:center;color:var(--accent);background:var(--bg);margin-bottom:9px}
+  .prev-img svg{width:42px;height:42px;opacity:.7}
+  .prev-meta{display:flex;flex-direction:column;gap:5px}
+  .prev-line{display:flex;gap:8px;font-family:'JetBrains Mono',monospace;font-size:10.5px}
+  .prev-line .k{color:var(--faint);min-width:54px}
+  .prev-line .v{color:var(--fg)}
+  .code-line{font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--muted);white-space:pre;line-height:1.55}
+  .code-line .kw{color:var(--accent)}
+  .code-line .st{color:var(--accent-2)}
+  .empty{flex:1;display:flex;align-items:center;justify-content:center;color:var(--faint);font-size:12px;gap:8px}
+  .empty svg{width:18px;height:18px}
+
+  /* ---- modal ---- */
+  .modal-bg{position:absolute;inset:0;background:rgba(0,0,0,0.5);display:flex;align-items:center;justify-content:center;z-index:80}
+  .modal{width:560px;max-height:70%;background:var(--surface);border:1px solid var(--border);border-radius:10px;box-shadow:var(--shadow);display:flex;flex-direction:column;overflow:hidden}
+  .modal-hd{flex:none;display:flex;align-items:center;gap:9px;padding:13px 16px;border-bottom:1px solid var(--border)}
+  .modal-hd .ttl{font-size:13px;font-weight:600;color:var(--fg)}
+  .modal-hd .sp{flex:1}
+  .modal-bd{flex:1;min-height:0;overflow:auto;scrollbar-width:thin;padding:14px 16px}
+  .modal-bd::-webkit-scrollbar{width:8px}.modal-bd::-webkit-scrollbar-thumb{background:var(--surface2);border-radius:4px}
+  .modal-code{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--muted);white-space:pre;line-height:1.5;background:var(--bg);border:1px solid var(--border);border-radius:7px;padding:12px;max-height:320px;overflow:auto}
+  .modal-ft{flex:none;display:flex;gap:8px;justify-content:flex-end;padding:12px 16px;border-top:1px solid var(--border)}
+
+  /* toast */
+  .toasts{position:absolute;right:16px;bottom:16px;display:flex;flex-direction:column;gap:8px;z-index:50}
+  .toast{
+    display:flex;align-items:center;gap:9px;padding:10px 13px;background:var(--surface1);
+    border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);font-size:12px;color:var(--fg);
+    min-width:220px;animation:tin .14s ease-out;
+  }
+  .toast svg{width:15px;height:15px;color:var(--accent);flex:none}
+  .toast.warn svg{color:var(--accent-2)}
+  @keyframes tin{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:none}}
+
+  /* menu */
+  .menu{position:absolute;background:var(--surface1);border:1px solid var(--border);border-radius:8px;box-shadow:var(--shadow);padding:5px;z-index:60;min-width:190px}
+  .menu .mi{display:flex;align-items:center;gap:9px;padding:7px 10px;border-radius:6px;font-size:12.5px;color:var(--fg);cursor:pointer}
+  .menu .mi:hover{background:var(--surface2)}
+  .menu .mi svg{width:14px;height:14px;color:var(--muted)}
+  .menu .mi.danger{color:var(--accent-2)}
+  .menu .sep{height:1px;background:var(--hairline);margin:4px 0}
+</style>
+</head>
+<body>
+<x-dc>
+<div class="wrap" id="app"></div>
+<div id="modal-root"></div>
+<div class="toasts" id="toasts"></div>
+</x-dc>
+
+<script>
+/* ============================================================
+   ChronOS · File Manager — Settings tab (standalone prototype)
+   Visual language locked to ChronOS palette + Inter/JetBrains Mono.
+   Live preview of the FM reflects every setting in real time.
+   ============================================================ */
+
+const I = {
+  sigil:`<svg class="sigil" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M12 2 L20 7 V17 L12 22 L4 17 V7 Z"/><path d="M12 2 V22 M4 7 L20 17 M20 7 L4 17"/></svg>`,
+  folder:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 72H128l-16-16H40a16 16 0 00-16 16v128a16 16 0 0016 16h176a16 16 0 0016-16V88a16 16 0 00-16-16z"/></svg>`,
+  file:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M213.7 82.3a8 8 0 010 11.4l-80 80a8 8 0 01-11.4 0l-80-80a8 8 0 0111.4-11.4L128 148.7l74.3-74.4a8 8 0 0111.4 0z"/></svg>`,
+  image:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V56a16 16 0 00-16-16zM93.6 149.6l-26.6-26.6a8 8 0 00-11.3 0L40 138.7V96h176l-64 64zM64 88a12 12 0 1112 12 12 12 0 01-12-12z"/></svg>`,
+  code:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104 44L32 128l72 84 16-18-54-62 54-62zm48 0l-16 18 54 62-54 62 16 18 72-84z"/></svg>`,
+  grid:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M96 32H64a32 32 0 00-32 32v32a32 32 0 0032 32h32a32 32 0 0032-32V64a32 32 0 00-32-32zm0 120H64a32 32 0 00-32 32v32a32 32 0 0032 32h32a32 32 0 0032-32v-32a32 32 0 00-32-32zM192 32h-32a32 32 0 00-32 32v32a32 32 0 0032 32h32a32 32 0 0032-32V64a32 32 0 00-32-32zm0 120h-32a32 32 0 00-32 32v32a32 32 0 0032 32h32a32 32 0 0032-32v-32a32 32 0 00-32-32z"/></svg>`,
+  list:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M80 40H40a16 16 0 00-16 16v16a16 16 0 0016 16h40a16 16 0 0016-16V56a16 16 0 00-16-16zm0 80H40a16 16 0 00-16 16v16a16 16 0 0016 16h40a16 16 0 0016-16v-16a16 16 0 00-16-16zm0 80H40a16 16 0 00-16 16v16a16 16 0 0016 16h40a16 16 0 0016-16v-16a16 16 0 00-16-16zM96 56h120v16H96zm0 80h120v16H96zm0 80h120v16H96z"/></svg>`,
+  search:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 218.3l-43.3-43.3a88 88 0 10-11.4 11.4l43.3 43.3a8 8 0 0011.4-11.4zM40 112a72 72 0 1172 72 72 72 0 01-72-72z"/></svg>`,
+  plus:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8h-80v80a8 8 0 01-16 0v-80H40a8 8 0 010-16h80V40a8 8 0 0116 0v80h80a8 8 0 018 8z"/></svg>`,
+  trash:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M216 48h-40v-8a24 24 0 00-24-24h-48a24 24 0 00-24 24v8H40a8 8 0 000 16h10l11 143a24 24 0 0024 22h92a24 24 0 0024-22l11-143h10a8 8 0 000-16zM96 40a8 8 0 018-8h48a8 8 0 018 8v8H96z"/></svg>`,
+  warn:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M236.8 188.1L148.7 30.8a24 24 0 00-41.4 0L19.2 188.1a23.9 23.9 0 0020.7 36h176.2a23.9 23.9 0 0020.7-36zM120 104a8 8 0 0116 0v40a8 8 0 01-16 0zm8 88a12 12 0 1112-12 12 12 0 01-12 12z"/></svg>`,
+  check:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M229.7 77.3a8 8 0 010 11.3l-104 104a8 8 0 01-11.3 0l-56-56a8 8 0 0111.3-11.3L112 164.7 218.3 88.6a8 8 0 0111.4 0z"/></svg>`,
+  dot:'<svg viewBox="0 0 256 256" fill="currentColor"><circle cx="128" cy="128" r="96"/></svg>',
+  link:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M112 64a8 8 0 000 16 24 24 0 010 48 8 8 0 000 16 40 40 0 100-80zm-32 56a8 8 0 008-8 24 24 0 0124-24 8 8 0 000-16 40 40 0 100 80 8 8 0 008-8 24 24 0 01-24-24 8 8 0 00-8-8z"/></svg>`,
+  refresh:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M197.7 186.3A88 88 0 1190 38a8 8 0 00-4.3 14.7A72 72 0 10172 154l-26.3-26.3a8 8 0 00-11.3 11.3L188 181.3a8 8 0 0011.3-1.4z"/></svg>`,
+  files:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 72v136a16 16 0 01-16 16H48a16 16 0 01-16-16V48a16 16 0 0116-16h104l24 24h40a16 16 0 0116 16v16h-32a16 16 0 00-16 16v8h48zM128 104a12 12 0 1012 12 12 12 0 00-12-12zm0 56a12 12 0 1012 12 12 12 0 00-12-12z"/></svg>`,
+  brush:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M224 96a32 32 0 00-54.3-22.7L74.5 169a24 24 0 00-34 34l-14 14a16 16 0 0022.6 22.6l14-14a24 24 0 0034-34l95.7-95.2A32 32 0 00224 96zM72 200H40a16 16 0 010-32h32z"/></svg>`,
+  eye:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 56c-48 0-88 32-104 72 16 40 56 72 104 72s88-32 104-72c-16-40-56-72-104-72zm0 112a40 40 0 110-80 40 40 0 010 80z"/></svg>`,
+  bolt:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M152 32L56 144h56l-16 80 96-112H136z"/></svg>`,
+  gear:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 80a48 48 0 1048 48 48 48 0 00-48-48zm-8 120h16l4 28 20 12 20-16 24 8 12-20 20-12-8-22 16-18-16-18 8-22-20-12-12 20-24-8-20 18 16 20-16 18 8 22-20 12-12-20-24 8-20-18 16-20z"/></svg>`,
+  term:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M104 148l-32 32 32 32 16-16-16-16 16-16zm40-40h48v16h-48zm56-56H32a16 16 0 00-16 16v144a16 16 0 0016 16h192a16 16 0 0016-16V68a16 16 0 00-16-16zM216 200H40V72h176z"/></svg>`,
+  plug:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M112 24a8 8 0 018 8v40a8 8 0 01-16 0V32a8 8 0 018-8zm64 0a8 8 0 018 8v40a8 8 0 01-16 0V32a8 8 0 018-8zM160 120v40a80 80 0 01-160 0v-40a8 8 0 0116 0v40a64 64 0 00128 0v-40a8 8 0 0116 0zm-48 72a8 8 0 018 8v40a8 8 0 01-16 0v-40a8 8 0 018-8z"/></svg>`,
+  key:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M208 80a48 48 0 10-37.3 46.2L32 185v39h39l2-2 82.8-82.8A48 48 0 10208 80zm-72 32a16 16 0 1116-16 16 16 0 01-16 16z"/></svg>`,
+  info:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M128 24a104 104 0 100 208 104 104 0 000-208zm0 40a16 16 0 110 32 16 16 0 010-32zm16 128h-32a8 8 0 010-16h8v-40h-8a8 8 0 010-16h24a8 8 0 018 8v48h8a8 8 0 010 16z"/></svg>`,
+  close:`<svg viewBox="0 0 256 256" fill="currentColor"><path d="M205.7 194.3a8 8 0 010 11.3 8 8 0 01-11.3 0L128 139.3l-66.3 66.3a8 8 0 01-11.3-11.3L116.7 128 50.4 61.7a8 8 0 0111.3-11.3L128 116.7l66.3-66.3a8 8 0 0111.3 11.3L139.3 128z"/></svg>`,
+};
+
+/* ---------- settings model ---------- */
+function defaults(){
+  return {
+    files:{
+      hidden:true, system:false, dirsFirst:true, caseSensitive:false,
+      singleClick:false, confirmDelete:true, confirmTrash:false,
+      colSort:"name", sizeUnit:"binary",
+    },
+    appearance:{
+      theme:"blue", gridView:false, thumbnails:false, iconSize:18,
+      rowHeight:30, dateFormat:"relative", showPreview:true, previewSide:"right",
+    },
+    preview:{
+      showSize:true, showMtime:true, showPerms:false, showOwner:false,
+      imageThumbs:true, syntaxHighlight:true,
+    },
+    behavior:{
+      openWith:"xdg-open", trash:true, dnd:true, pasteOverwrite:"ask",
+      selectOnFocus:true, focusNewTab:true,
+    },
+    terminal:{
+      term:"alacritty", shell:"zsh", cwdOnOpen:true, splitOnLaunch:false,
+    },
+    plugins:{
+      luauHotReload:true, luauSandbox:true, fsWatch:true, imageGen:true,
+      ocr:false, cloudMount:false,
+    },
+    keybinds:{
+      "Open":["Return"], "New tab":["Ctrl","T"], "Close tab":["Ctrl","W"],
+      "Split view":["Ctrl","E"], "Copy":["Ctrl","C"], "Move to trash":["Delete"],
+      "Toggle hidden":["Ctrl","H"], "Command palette":["Ctrl","P"],
+      "Go up":["Alt","Up"], "Refresh":["F5"],
+    },
+  };
+}
+let S = defaults();
+let view = "files";
+let search = "";
+let rebinding = null;
+
+const CATS = [
+  { id:"files",      label:"Files & Folders", icon:I.files },
+  { id:"appearance", label:"Appearance",      icon:I.brush },
+  { id:"preview",    label:"Preview Panel",    icon:I.eye },
+  { id:"behavior",   label:"Behavior",        icon:I.bolt },
+  { id:"terminal",   label:"Terminal",        icon:I.term },
+  { id:"plugins",    label:"Plugins",         icon:I.plug },
+  { id:"keybinds",   label:"Keybindings",     icon:I.key },
+  { id:"about",      label:"About",           icon:I.info },
+];
+
+/* ---------- helpers ---------- */
+const esc = (s)=>String(s).replace(/[&<>]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+function toast(msg,warn){
+  const t=document.createElement("div");
+  t.className="toast"+(warn?" warn":"");
+  t.innerHTML=(warn?I.warn:I.check)+`<span>${esc(msg)}</span>`;
+  document.getElementById("toasts").appendChild(t);
+  setTimeout(()=>{ t.style.opacity="0"; t.style.transform="translateY(8px)"; t.style.transition=".2s"; },2200);
+  setTimeout(()=>t.remove(),2500);
+}
+function openMenu(x,y,items){
+  closeMenu();
+  const m=document.createElement("div");
+  m.className="menu"; m.style.left=x+"px"; m.style.top=y+"px";
+  m.innerHTML=items.map((it,i)=> it.sep?`<div class="sep"></div>`
+    :`<div class="mi ${it.danger?'danger':''}" data-i="${i}">${(it.icon?I[it.icon]:'')}<span>${esc(it.label)}</span></div>`).join("");
+  document.body.appendChild(m);
+  m.querySelectorAll(".mi").forEach(el=>{
+    el.onclick=(e)=>{ e.stopPropagation(); const it=items[+el.dataset.i]; closeMenu(); it.run&&it.run(); };
+  });
+  setTimeout(()=>document.addEventListener("click",closeMenu,{once:true}),0);
+}
+function closeMenu(){ document.querySelectorAll(".menu").forEach(m=>m.remove()); }
+
+/* ---------- control renderers ---------- */
+function ctrlSwitch(cat,key){
+  return `<div class="sw ${S[cat][key]?'on':''}" data-toggle="${cat}:${key}"><div class="knob"></div></div>`;
+}
+function ctrlSelect(cat,key,opts){
+  const o=opts.map(v=>`<option value="${v}" ${S[cat][key]===v?'selected':''}>${esc(v)}</option>`).join("");
+  return `<select class="sel" data-select="${cat}:${key}">${o}</select>`;
+}
+function ctrlRange(cat,key,min,max,step){
+  const v=S[cat][key];
+  return `<div class="rng-wrap"><input type="range" class="rng" min="${min}" max="${max}" step="${step}" value="${v}" data-range="${cat}:${key}"/><span class="rng-val" id="rv-${cat}-${key}">${v}</span></div>`;
+}
+function ctrlField(cat,key,ph){
+  return `<input class="fld" type="text" value="${esc(S[cat][key])}" placeholder="${ph||''}" data-field="${cat}:${key}"/>`;
+}
+
+/* ---------- settings groups (static descriptors) ---------- */
+function groupRows(cat){
+  const D = {
+    files:[
+      {key:"hidden",label:"Show hidden files",desc:"Dotfiles — .config, .git, .cache",type:"switch"},
+      {key:"system",label:"Show system & OS files",desc:"Cross-hatched /proc /sys /dev entries",type:"switch"},
+      {key:"dirsFirst",label:"Directories first",desc:"Sort folders above files",type:"switch"},
+      {key:"caseSensitive",label:"Case-sensitive sort",desc:"A sorts before a",type:"switch"},
+      {key:"singleClick",label:"Single-click to open",desc:"Replace double-click default",type:"switch"},
+      {key:"confirmDelete",label:"Confirm before delete",desc:"Safety gate on Shift+Delete",type:"switch"},
+      {key:"confirmTrash",label:"Confirm before move to trash",desc:"Prompt when trashing files",type:"switch"},
+      {key:"colSort",label:"Default sort column",desc:"Column used on folder open",type:"select",opts:["name","size","mtime","type"]},
+      {key:"sizeUnit",label:"File size units",desc:"Binary (KiB) vs decimal (KB)",type:"select",opts:["binary","decimal"]},
+    ],
+    appearance:[
+      {key:"theme",label:"Accent theme",desc:"FM accent color role",type:"select",opts:["blue","mauve","mono"]},
+      {key:"gridView",label:"Grid view",desc:"Icon grid instead of list",type:"switch"},
+      {key:"thumbnails",label:"Show thumbnails",desc:"Render image previews in grid",type:"switch"},
+      {key:"iconSize",label:"Icon size",desc:"List & grid glyph px",type:"range",min:12,max:32,step:2},
+      {key:"rowHeight",label:"Row height",desc:"List row px",type:"range",min:22,max:44,step:2},
+      {key:"dateFormat",label:"Date format",desc:"Relative vs absolute mtime",type:"select",opts:["relative","absolute"]},
+      {key:"showPreview",label:"Show preview panel",desc:"Inspector beside the file list",type:"switch"},
+      {key:"previewSide",label:"Preview side",desc:"Inspector dock position",type:"select",opts:["right","left"]},
+    ],
+    preview:[
+      {key:"showSize",label:"Show file size",desc:"Size column in list view",type:"switch"},
+      {key:"showMtime",label:"Show modified time",desc:"mtime column",type:"switch"},
+      {key:"showPerms",label:"Show permissions",desc:"Unix mode string (rwx)",type:"switch"},
+      {key:"showOwner",label:"Show owner",desc:"user:group column",type:"switch"},
+      {key:"imageThumbs",label:"Image thumbnails",desc:"Render PNG/JPG in preview",type:"switch"},
+      {key:"syntaxHighlight",label:"Syntax highlight",desc:"Tok-color text previews",type:"switch"},
+    ],
+    behavior:[
+      {key:"openWith",label:"Default open handler",desc:"Program for unknown types",type:"select",opts:["xdg-open","chronos-open","handlr"]},
+      {key:"trash",label:"Use trash (not rm)",desc:"Delete → trash by default",type:"switch"},
+      {key:"dnd",label:"Drag & drop",desc:"Reorder / copy via pointer",type:"switch"},
+      {key:"pasteOverwrite",label:"Paste overwrite",desc:"Conflict resolution policy",type:"select",opts:["ask","overwrite","skip"]},
+      {key:"selectOnFocus",label:"Select on focus",desc:"Highlight name on row focus",type:"switch"},
+      {key:"focusNewTab",label:"Focus new tab",desc:"Jump to new tab on open",type:"switch"},
+    ],
+    terminal:[
+      {key:"term",label:"Terminal emulator",desc:"Spawned by the FM",type:"select",opts:["alacritty","kitty","foot","ghostty"]},
+      {key:"shell",label:"Default shell",desc:"Login shell inside terminal",type:"select",opts:["zsh","bash","fish","nu"]},
+      {key:"cwdOnOpen",label:"Open at current dir",desc:"Spawn in active folder",type:"switch"},
+      {key:"splitOnLaunch",label:"Split on launch",desc:"Open terminal as a split pane",type:"switch"},
+    ],
+    plugins:[
+      {key:"luauHotReload",label:"Luau hot-reload",desc:"Reload plugins without restart",type:"switch"},
+      {key:"luauSandbox",label:"Luau sandbox",desc:"Isolate plugin runtime",type:"switch"},
+      {key:"fsWatch",label:"Filesystem watch",desc:"Live refresh on external change",type:"switch"},
+      {key:"imageGen",label:"Image generation",desc:"Generate wallpapers via ChronOS media",type:"switch"},
+      {key:"ocr",label:"OCR on images",desc:"Extract text from screenshots",type:"switch"},
+      {key:"cloudMount",label:"Cloud mount",desc:"Mount remote buckets inline",type:"switch"},
+    ],
+  };
+  return (D[cat]||[]).map(r=>{
+    let ctl="";
+    if(r.type==="switch") ctl=ctrlSwitch(cat,r.key);
+    else if(r.type==="select") ctl=ctrlSelect(cat,r.key,r.opts);
+    else if(r.type==="range") ctl=ctrlRange(cat,r.key,r.min,r.max,r.step);
+    else if(r.type==="field") ctl=ctrlField(cat,r.key,r.ph);
+    return `<div class="set-row" data-od-id="set-${cat}-${r.key}">
+      <div class="set-main"><div class="set-label">${esc(r.label)}</div><div class="set-desc">${esc(r.desc)}</div></div>
+      <div class="set-ctrl">${ctl}</div></div>`;
+  }).join("");
+}
+
+/* ---------- keybindings view ---------- */
+function keybindRows(){
+  return Object.keys(S.keybinds).map(k=>{
+    const combo=S.keybinds[k];
+    const keys=combo.map((c,i)=>`<span class="kbd ${rebinding===k?'':''}">${esc(c)}</span>${i<combo.length-1?'<span class="kbd plus">+</span>':''}`).join("");
+    return `<div class="kb-row ${rebinding===k?'kb-rebinding':''}" data-rebind="${esc(k)}">
+      <div class="kb-main"><div class="kb-keys">${keys}</div></div>
+      <div class="set-ctrl">${rebinding===k?'<span class="kb-rebind">press keys…</span>':'<span class="set-desc">double-click to rebind</span>'}</div>
+    </div>`;
+  }).join("");
+}
+
+/* ---------- about view ---------- */
+function aboutView(){
+  return `
+    <div class="set-group-hd"><span class="gt">ChronOS File Manager</span><span class="gs">v0.4.0 · gpui-native</span></div>
+    <div class="set-row"><div class="set-main">
+      <div class="set-label">A self-contained desktop shell file browser</div>
+      <div class="set-desc">GPUI retained-mode GPU UI · layer-shell · Luau plugin runtime</div></div><div class="set-ctrl">${I.sigil}</div></div>
+    <div class="set-row"><div class="set-main"><div class="set-label">Build</div><div class="set-desc mono">chronos-fm 0.4.0 (gix 0.68 · rusoto)</div></div><div class="set-ctrl"><span class="set-val">stable</span></div></div>
+    <div class="set-row"><div class="set-main"><div class="set-label">Reset all settings</div><div class="set-desc">Restore factory defaults for every category</div></div>
+      <div class="set-ctrl"><div class="btn ghost sm" data-act="reset">${I.refresh}<span>Reset</span></div></div></div>
+    <div class="set-row"><div class="set-main"><div class="set-label">Export configuration</div><div class="set-desc">Dump to fm.conf (Luau table) or JSON</div></div>
+      <div class="set-ctrl"><div class="btn primary sm" data-act="export">${I.link}<span>Export</span></div></div></div>`;
+}
+
+/* ---------- live FM preview ---------- */
+const FM = {
+  cwd:"~/projects/chronos-shell",
+  entries:[
+    {n:"src",t:"dir",size:0,mtime:"2h ago",abs:"2026-08-09 12:10",perm:"drwxr-xr-x",owner:"neo:users"},
+    {n:"assets",t:"dir",size:0,mtime:"1d ago",abs:"2026-08-08 09:32",perm:"drwxr-xr-x",owner:"neo:users"},
+    {n:".git",t:"dir",hidden:true,size:0,mtime:"3m ago",abs:"2026-08-09 14:01",perm:"drwxr-xr-x",owner:"neo:users"},
+    {n:".config",t:"dir",hidden:true,size:0,mtime:"5d ago",abs:"2026-08-04 18:20",perm:"drwxr-xr-x",owner:"neo:users"},
+    {n:"Cargo.toml",t:"file",ext:"toml",size:1820,mtime:"2h ago",abs:"2026-08-09 12:11",perm:"-rw-r--r--",owner:"neo:users"},
+    {n:"chronos-shell",t:"file",ext:"bin",size:8420000,mtime:"4h ago",abs:"2026-08-09 10:02",perm:"-rwxr-xr-x",owner:"neo:users"},
+    {n:"sigil.svg",t:"file",ext:"svg",size:3120,mtime:"yesterday",abs:"2026-08-08 22:12",perm:"-rw-r--r--",owner:"neo:users"},
+    {n:"screenshot.png",t:"file",ext:"png",size:248000,mtime:"6h ago",abs:"2026-08-09 08:14",perm:"-rw-r--r--",owner:"neo:users"},
+    {n:"README.md",t:"file",ext:"md",size:9210,mtime:"1d ago",abs:"2026-08-08 09:40",perm:"-rw-r--r--",owner:"neo:users"},
+    {n:"Makefile",t:"file",ext:"mk",size:640,mtime:"2d ago",abs:"2026-08-07 11:00",perm:"-rw-r--r--",owner:"neo:users"},
+  ],
+  sys:[{n:"/proc",t:"dir"},{n:"/sys",t:"dir"}],
+};
+
+function fmtSize(b,unit){
+  if(b===0) return "—";
+  const U = unit==="decimal"
+    ? [{v:1000,s:"B"},{v:1e6,s:"KB"},{v:1e9,s:"MB"},{v:1e12,s:"GB"}]
+    : [{v:1024,s:"B"},{v:1048576,s:"KiB"},{v:1073741824,s:"MiB"},{v:1099511627776,s:"GiB"}];
+  let s="B",val=b;
+  for(const u of U){ if(b>=u.v){ s=u.s; val=b/u.v; } }
+  return (val>=10||s==="B"?Math.round(val):val.toFixed(1))+" "+s;
+}
+function sortEntries(list){
+  const col=S.files.colSort;
+  const dirs=list.filter(e=>e.t==="dir"), files=list.filter(e=>e.t==="file");
+  const cmp=(a,b)=>{
+    let r=0;
+    if(col==="size") r=(a.size-b.size);
+    else if(col==="mtime") r=(a.mtime>b.mtime?-1:1);
+    else if(col==="type") r=a.ext.localeCompare(b.ext);
+    else r=a.n.localeCompare(b.n);
+    if(!S.files.caseSensitive) r=String(a.n).toLowerCase().localeCompare(String(b.n).toLowerCase());
+    return r;
+  };
+  dirs.sort(cmp); files.sort(cmp);
+  return S.files.dirsFirst ? dirs.concat(files) : files.concat(dirs);
+}
+function entryIcon(e){
+  if(e.t==="dir") return `<svg class="fm-ic dir" viewBox="0 0 256 256" fill="currentColor"><path d="M216 72H128l-16-16H40a16 16 0 00-16 16v128a16 16 0 0016 16h176a16 16 0 0016-16V88a16 16 0 00-16-16z"/></svg>`;
+  if(e.ext==="png"||e.ext==="jpg") return `<svg class="fm-ic file" viewBox="0 0 256 256" fill="currentColor"><path d="M216 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V56a16 16 0 00-16-16zM93.6 149.6l-26.6-26.6a8 8 0 00-11.3 0L40 138.7V96h176l-64 64zM64 88a12 12 0 1112 12 12 12 0 01-12-12z"/></svg>`;
+  if(e.ext==="toml"||e.ext==="mk"||e.ext==="md") return `<svg class="fm-ic file" viewBox="0 0 256 256" fill="currentColor"><path d="M104 44L32 128l72 84 16-18-54-62 54-62zm48 0l-16 18 54 62-54 62 16 18 72-84z"/></svg>`;
+  return `<svg class="fm-ic file" viewBox="0 0 256 256" fill="currentColor"><path d="M213.7 82.3a8 8 0 010 11.4l-80 80a8 8 0 01-11.4 0l-80-80a8 8 0 0111.4-11.4L128 148.7l74.3-74.4a8 8 0 0111.4 0z"/></svg>`;
+}
+function previewPane(){
+  const A={
+    blue:"#007acc", mauve:"#cba6f7", mono:"#cdd6f4"
+  }[S.appearance.theme] || "#007acc";
+  const acc=`style="--accent:${A};--rowh:${S.appearance.rowHeight}px;--iconsz:${S.appearance.iconSize}px"`;
+
+  let list = FM.entries.slice();
+  if(!S.files.hidden) list = list.filter(e=>!e.hidden);
+  if(S.files.system) FM.sys.forEach(s=>list.push(s));
+  list = sortEntries(list);
+
+  const cols=[];
+  cols.push(`<div class="fm-cell" style="flex:1">name</div>`);
+  if(S.preview.showSize) cols.push(`<div class="fm-cell size">size</div>`);
+  if(S.preview.showMtime) cols.push(`<div class="fm-cell mtime">${S.appearance.dateFormat==="absolute"?"modified":"mtime"}</div>`);
+  if(S.preview.showPerms) cols.push(`<div class="fm-cell perm">perms</div>`);
+  if(S.preview.showOwner) cols.push(`<div class="fm-cell owner">owner</div>`);
+
+  let bodyInner;
+  if(S.appearance.gridView){
+    bodyInner = `<div class="fm-grid">`+list.map(e=>`
+      <div class="fm-tile">
+        ${entryIcon(e)}
+        <div class="tn">${esc(e.n)}</div>
+      </div>`).join("")+`</div>`;
+  } else {
+    const rows = list.map(e=>{
+      const mtime = S.appearance.dateFormat==="absolute"? e.abs : e.mtime;
+      const cells=[`<div class="fm-cell" style="flex:1;display:flex;align-items:center;gap:10px">${entryIcon(e)}<span class="fm-name">${esc(e.n)}</span></div>`];
+      if(S.preview.showSize) cells.push(`<div class="fm-cell size">${fmtSize(e.size,S.files.sizeUnit)}</div>`);
+      if(S.preview.showMtime) cells.push(`<div class="fm-cell mtime">${esc(mtime)}</div>`);
+      if(S.preview.showPerms) cells.push(`<div class="fm-cell perm">${esc(e.perm)}</div>`);
+      if(S.preview.showOwner) cells.push(`<div class="fm-cell owner">${esc(e.owner)}</div>`);
+      return `<div class="fm-row ${e.t==="dir"&&e.hidden?'':''} ${!S.files.system&&e.t==="dir"&&FM.sys.includes(e)?'sys':''}">
+        ${cells.join("")}
+        <div class="fm-trash" data-trash="${esc(e.n)}">${I.trash}</div>
+      </div>`;
+    }).join("");
+    bodyInner = `<div class="fm-list"><div class="fm-head-row">${cols.join("")}<div class="fm-cell" style="width:22px"></div></div>${rows}</div>`;
+  }
+
+  let prev="";
+  if(S.appearance.showPreview){
+    const sel = list.find(e=>e.t==="file")||FM.entries[0];
+    let pbody="";
+    if(S.preview.imageThumbs && (sel.ext==="png"||sel.ext==="jpg")){
+      pbody=`<div class="prev-img">${I.image}</div>`;
+    } else if(S.preview.syntaxHighlight && sel.ext==="toml"){
+      pbody=`<div class="code-line"><span class="kw">[package]</span>
+name <span class="st">"chronos-shell"</span>
+version <span class="st">"0.4.0"</span>
+edition <span class="st">"2021"</span>
+
+<span class="kw">[dependencies]</span>
+gix = <span class="st">"0.68"</span>
+rusoto_s3 = <span class="st">"0.48"</span></div>`;
+    } else {
+      pbody=`<div class="code-line">${esc(sel.n)}\n${fmtSize(sel.size,S.files.sizeUnit)}\n${S.appearance.dateFormat==="absolute"?sel.abs:sel.mtime}</div>`;
+    }
+    pbody+=`<div class="prev-meta">
+      <div class="prev-line"><span class="k">name</span><span class="v">${esc(sel.n)}</span></div>
+      <div class="prev-line"><span class="k">size</span><span class="v">${fmtSize(sel.size,S.files.sizeUnit)}</span></div>
+      <div class="prev-line"><span class="k">type</span><span class="v">${esc(sel.ext||"dir")}</span></div>
+      <div class="prev-line"><span class="k">modified</span><span class="v">${esc(S.appearance.dateFormat==="absolute"?sel.abs:sel.mtime)}</span></div>
+    </div>`;
+    const side = S.appearance.previewSide;
+    prev = `<div class="fm-prev" ${side==="left"?'style="order:-1;border-left:none;border-right:1px solid var(--border)"':''}>
+      <div class="fm-prev-hd">${I.eye}<span>${esc(sel.n)}</span></div>
+      <div class="fm-prev-bd">${pbody}</div></div>`;
+  }
+
+  const sortLabel = S.files.dirsFirst? "dirs↑ " : "";
+  const vtog = `<div class="fm-vtog">
+      <div class="v ${!S.appearance.gridView?'on':''}" title="List">${I.list}</div>
+      <div class="v ${S.appearance.gridView?'on':''}" title="Grid">${I.grid}</div></div>`;
+
+  return `<div class="fm" id="preview" ${acc}>
+    <div class="fm-bar">
+      ${I.sigil}<span class="fm-path">${esc(FM.cwd)}</span>
+      <div class="sp"></div>
+      ${vtog}
+      <span class="fm-pill">${esc(S.files.sizeUnit)}</span>
+      <span class="fm-pill">${esc(sortLabel+S.files.colSort)}</span>
+    </div>
+    <div class="fm-body">${bodyInner}${prev}</div>
+  </div>`;
+}
+
+/* ---------- render ---------- */
+function render(){
+  const app=document.getElementById("app");
+  const totalKeys = Object.values(S).reduce((n,o)=>n+Object.keys(o).length,0);
+  app.innerHTML = `
+    ${titlebar(totalKeys)}
+    <div class="body">
+      ${sidebar()}
+      <div class="main" data-od-id="main">
+        ${viewHead()}
+        <div class="split">
+          ${settingsPanel()}
+          <div class="preview-col" data-od-id="preview-col">
+            <div class="pv-hd"><span class="ttl">Live preview</span><div class="live"><span class="dot"></span>real-time</div></div>
+            <div class="pv-status" id="pv-status">${previewStatus()}</div>
+            ${previewPane()}
+          </div>
+        </div>
+      </div>
+    </div>`;
+  bind();
+}
+function titlebar(totalKeys){
+  return `<div class="titlebar" data-od-id="titlebar">
+    ${I.sigil}
+    <span class="tb-title">chronos-fm</span>
+    <div class="tb-sep"></div>
+    <span class="tb-repo">Settings</span>
+    <div class="tb-spacer"></div>
+    <div class="tb-search">${I.search}<input id="search" type="text" placeholder="Search settings…" value="${esc(search)}"/></div>
+    <div class="tb-icon" data-act="reset" title="Reset all">${I.refresh}</div>
+    <div class="tb-icon" data-act="export" title="Export config">${I.link}</div>
+  </div>`;
+}
+function sidebar(){
+  const cats = CATS.filter(c=>{
+    if(!search) return true;
+    return c.label.toLowerCase().includes(search.toLowerCase());
+  });
+  return `<div class="sidebar" data-od-id="sidebar">
+    <div class="side-head">
+      <div class="repo-row"><div class="repo-dot">${I.folder}</div><span class="repo-name">File Manager</span></div>
+      <div class="branch-chip">${I.gear}<span>Settings</span></div>
+    </div>
+    <div class="nav">
+      ${cats.map(c=>`<div class="cat ${view===c.id?'active':''}" data-cat="${c.id}">${c.icon}<span class="label">${esc(c.label)}</span></div>`).join("")}
+    </div>
+    <div class="nav-foot">
+      <div class="foot-row">${I.sigil}<span>gpui · layer-shell</span></div>
+      <div class="foot-row">${I.link}<span>Luau sandbox</span></div>
+    </div>
+  </div>`;
+}
+function viewHead(){
+  const c = CATS.find(x=>x.id===view);
+  const right = view==="keybinds"
+    ? `<div class="btn ghost sm" data-act="reset-keys">${I.refresh}<span>Reset keys</span></div>`
+    : view==="about"
+    ? `<div class="btn primary sm" data-act="export">${I.link}<span>Export</span></div>`
+    : `<div class="btn ghost sm" data-act="reset-cat">${I.refresh}<span>Reset category</span></div>`;
+  return `<div class="view-head" data-od-id="view-head">
+    <span class="view-title">${esc(c?c.label:"Settings")}</span>
+    <span class="view-sub">${Object.keys(S[view]||{}).length} keys</span>
+    <div class="head-spacer"></div>${right}</div>`;
+}
+function settingsPanel(){
+  if(search){
+    // flat results across all categories
+    let rows="";
+    CATS.forEach(c=>{
+      const grp = groupRows(c.id);
+      if(grp) rows += grp;
+    });
+    return `<div class="set-panel" data-od-id="settings-panel">
+      <div class="set-scroll">
+        <div class="set-group-hd"><span class="gt">Search</span><span class="gs">${esc(search)}</span></div>
+        ${rows||'<div class="empty">No matching settings</div>'}
+      </div></div>`;
+  }
+  if(view==="keybinds"){
+    return `<div class="set-panel" data-od-id="settings-panel">
+      <div class="set-scroll">
+        <div class="set-group-hd"><span class="gt">Keybindings</span><span class="gs">${Object.keys(S.keybinds).length} shortcuts</span></div>
+        ${keybindRows()}
+      </div></div>`;
+  }
+  if(view==="about"){
+    return `<div class="set-panel" data-od-id="settings-panel"><div class="set-scroll">${aboutView()}</div></div>`;
+  }
+  const grp = groupRows(view);
+  return `<div class="set-panel" data-od-id="settings-panel">
+    <div class="set-scroll">
+      <div class="set-group-hd"><span class="gt">${esc(CATS.find(c=>c.id===view).label)}</span><span class="gs">${Object.keys(S[view]).length} keys</span></div>
+      ${grp}
+    </div></div>`;
+}
+function previewStatus(){
+  const a=S.appearance, f=S.files;
+  const bits=[`${a.gridView?'grid':'list'}`,`${a.theme} accent`,`hidden ${f.hidden?'on':'off'}`,`${f.dirsFirst?'dirs↑':''}`];
+  return bits.filter(Boolean).join("  ·  ");
+}
+
+/* ---------- bind ---------- */
+function bind(){
+  // category nav
+  document.querySelectorAll("[data-cat]").forEach(el=>el.onclick=()=>{ view=el.dataset.cat; render(); });
+  // search
+  const s=document.getElementById("search");
+  if(s){ s.oninput=()=>{ search=s.value; render(); }; }
+  // toggles
+  document.querySelectorAll("[data-toggle]").forEach(el=>el.onclick=()=>{
+    const [c,k]=el.dataset.toggle.split(":"); S[c][k]=!S[c][k]; render();
+  });
+  // selects
+  document.querySelectorAll("[data-select]").forEach(el=>el.onchange=()=>{
+    const [c,k]=el.dataset.select.split(":"); S[c][k]=el.value; render();
+  });
+  // fields
+  document.querySelectorAll("[data-field]").forEach(el=>el.oninput=()=>{
+    const [c,k]=el.dataset.field.split(":"); S[c][k]=el.value;
+  });
+  // ranges — live, no full re-render (keeps drag focus)
+  document.querySelectorAll("[data-range]").forEach(el=>el.oninput=()=>{
+    const [c,k]=el.dataset.range.split(":"); S[c][k]=+el.value;
+    const bub=document.getElementById("rv-"+c+"-"+k); if(bub) bub.textContent=el.value;
+    const pv=document.getElementById("preview"); if(pv) pv.outerHTML=previewPane();
+    const st=document.getElementById("pv-status"); if(st) st.textContent=previewStatus();
+  });
+  // trash demo in preview
+  document.querySelectorAll("[data-trash]").forEach(el=>el.onclick=(e)=>{
+    e.stopPropagation();
+    const name=el.dataset.trash;
+    if(S.files.confirmDelete){
+      const r=el.getBoundingClientRect();
+      openMenu(r.left,r.bottom+6,[
+        {label:`Delete ${name}?`, icon:"warn"},
+        {sep:true},
+        {label:"Move to trash", danger:true, icon:"trash", run:()=>toast(`Moved ${name} to trash`)},
+      ]);
+    } else {
+      toast(`Deleted ${name}`);
+    }
+  });
+  // keybind rebind
+  document.querySelectorAll("[data-rebind]").forEach(el=>el.ondblclick=()=>{
+    rebinding=el.dataset.rebind; render();
+  });
+  // actions
+  document.querySelectorAll("[data-act]").forEach(el=>el.onclick=(e)=>handleAct(el.dataset.act,e));
+}
+
+/* ---------- actions ---------- */
+function handleAct(a,el){
+  switch(a){
+    case "reset": confirmReset(()=>{ S=defaults(); toast("All settings reset to defaults"); render(); }); break;
+    case "reset-cat": confirmReset(()=>{ S[view]=defaults()[view]; toast(`${CATS.find(c=>c.id===view).label} reset`); render(); }, "Reset this category?"); break;
+    case "reset-keys": confirmReset(()=>{ S.keybinds=defaults().keybinds; toast("Keybindings reset"); render(); }, "Reset all keybindings?"); break;
+    case "export": openExport(); break;
+  }
+}
+function confirmReset(run, label){
+  openMenu(window.innerWidth/2-95, window.innerHeight/2-40, [
+    {label:label||"Reset all settings?", icon:"warn"},
+    {sep:true},
+    {label:"Reset", danger:true, icon:"trash", run},
+  ]);
+}
+function toLua(){
+  const lines=["fm = {"];
+  for(const cat of Object.keys(S)){
+    lines.push(`  ${cat} = {`);
+    const o=S[cat];
+    for(const k of Object.keys(o)){
+      const v=o[k];
+      let repr;
+      if(typeof v==="boolean") repr=v?"true":"false";
+      else if(typeof v==="number") repr=String(v);
+      else if(Array.isArray(v)) repr="{"+v.map(x=>`"${x}"`).join(", ")+"}";
+      else repr=`"${v}"`;
+      lines.push(`    ${k} = ${repr},`);
+    }
+    lines.push("  },");
+  }
+  lines.push("}");
+  return lines.join("\n");
+}
+function toJSON(){ return JSON.stringify(S,null,2); }
+function openExport(){
+  const lua=toLua();
+  const root=document.getElementById("modal-root");
+  root.innerHTML=`<div class="modal-bg" data-close="1">
+    <div class="modal" data-od-id="export-modal">
+      <div class="modal-hd">${I.link}<span class="ttl">Export configuration</span><div class="sp"></div>
+        <div class="btn primary sm" data-copy="1">${I.check}<span>Copy Lua</span></div>
+        <div class="tb-icon" data-close="1">${I.close}</div></div>
+      <div class="modal-bd"><div class="modal-code" id="export-code">${esc(lua)}</div></div>
+      <div class="modal-ft">
+        <div class="btn ghost" data-copy="json">${I.file}<span>Copy JSON</span></div>
+        <div class="btn ghost" data-close="1">Close</div>
+      </div>
+    </div></div>`;
+  root.querySelectorAll("[data-close]").forEach(el=>el.onclick=()=>root.innerHTML="");
+  root.querySelectorAll("[data-copy]").forEach(el=>el.onclick=()=>{
+    const json=el.dataset.copy==="json";
+    const txt=json?toJSON():toLua();
+    if(navigator.clipboard&&navigator.clipboard.writeText){ navigator.clipboard.writeText(txt).then(()=>toast(`Copied ${json?"JSON":"Lua"} config`),()=>toast("Copy failed",true)); }
+    else toast(`${json?"JSON":"Lua"} config ready · ${txt.length} bytes`);
+  });
+}
+
+/* ---------- global keybind capture ---------- */
+document.addEventListener("keydown",(e)=>{
+  if(!rebinding) return;
+  e.preventDefault();
+  if(e.key==="Escape"){ rebinding=null; render(); return; }
+  if(["Control","Shift","Alt","Meta"].includes(e.key)) return;
+  let combo=[];
+  if(e.ctrlKey) combo.push("Ctrl");
+  if(e.altKey) combo.push("Alt");
+  if(e.shiftKey) combo.push("Shift");
+  if(e.metaKey) combo.push("Meta");
+  combo.push(e.key.length===1?e.key.toUpperCase():e.key);
+  S.keybinds[rebinding]=combo;
+  rebinding=null;
+  toast(`Rebound "${rebinding||''}" → ${combo.join("+")}`);
+  render();
+});
+
+/* ---------- boot ---------- */
+render();
+</script>
+</body>
+</html>

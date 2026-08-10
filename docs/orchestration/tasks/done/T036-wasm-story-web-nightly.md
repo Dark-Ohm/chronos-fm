@@ -1,5 +1,18 @@
 # T036 — Fork: story-web WASM needs nightly (`wasm_thread` feature)
 
+> ## ✅ ARCHITECT VERDICT: **CLOSED / ACCEPT** (2026-08-09)
+>
+> **Path A** (rustup + nightly for wasm only). Build green:
+> `gpui_component_story_web_bg.wasm` 85MB + JS 120KB.
+> Isolation verified: default toolchain still **stable** via
+> `rust-toolchain.toml`; `/usr/bin/rustc` 1.97.1 untouched.
+> Side effects: `Source/assets` → `../assets` symlink; font-variant
+> stubs → Regular. Dev server `http://localhost:3000/gpui-component/gallery/`
+> serves HTML+WASM 200. Browser frame captured (Vivaldi) — dark canvas
+> (expected with 0-byte font stubs; not a wasm build failure).
+> Report: `report-log/T036-wasm-story-web-nightly-report.md`.
+
+
 **Приоритет:** P3 — WASM gallery is not on the daily FM path.
 **Скоуп:** toolchain + `Source/gpui-component` story-web (no forced rustup
 install without architect go).

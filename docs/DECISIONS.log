@@ -130,3 +130,143 @@ adaptation to FM paths and conventions.
 
 Architect ratified all four decisions interactively (T024, 2026-08-09).
 Code: none — decision-only ticket.
+[38;5;8m   1[0m 
+[38;5;8m   2[0m [37m### Decision — T036 story-web WASM: path A (rustup + nightly)[0m
+[38;5;8m   3[0m 
+[38;5;8m   4[0m [37m**Date:** 2026-08-09  [0m
+[38;5;8m   5[0m [37m**Choice:** Install rustup + nightly **only for wasm** (`RUSTUP_TOOLCHAIN=nightly`).[0m
+[38;5;8m   6[0m [37mSystem `/usr/bin/rustc` 1.97.1 and FM `rust-toolchain.toml` (stable) unchanged.[0m
+[38;5;8m   7[0m [37m**Rejected:** B (stable wasm_thread) — not available; C (defer) — unblocked in-session.[0m
+[38;5;8m   8[0m [37m**Side effects:** `Source/assets` symlink; zero-byte font variant stubs → Regular.[0m
+[38;5;8m   9[0m [37m**Status:** ACCEPT — build green; browser canvas dark (font stubs).[0m
+[38;5;8m  10[0m 
+[38;5;8m   1[0m 
+[38;5;8m   2[0m [37m### Decision — T037 mockup is shell visual SoT[0m
+[38;5;8m   3[0m 
+[38;5;8m   4[0m [37m**Date:** 2026-08-09  [0m
+[38;5;8m   5[0m [37m**Artifact:** `docs/design/mockups/chronos-file-manager.dc.html`  [0m
+[38;5;8m   6[0m [37m**Rule:** Explorer shell chrome structure/density matches mockup; icons from[0m
+[38;5;8m   7[0m [37m`crates/chronos-fm-ui/assets/icons/` only. Dark Chronos palette is product[0m
+[38;5;8m   8[0m [37mdemo default; light remains supported. Secondary pages (Git/S3/…) full[0m
+[38;5;8m   9[0m [37mmockup parity = residual after T037 explorer shell.[0m
+[38;5;8m  10[0m [37m**Ticket:** `active/T037-visual-shell-mockup-parity.md`[0m
+[38;5;8m  11[0m 
+[38;5;8m   1[0m 
+[38;5;8m   2[0m [37m### Decision — T038 Git tab mockup is visual SoT for Git page[0m
+[38;5;8m   3[0m 
+[38;5;8m   4[0m [37m**Date:** 2026-08-09  [0m
+[38;5;8m   5[0m [37m**Artifact:** `docs/design/mockups/Chronos-Git-Tab.dc.html`  [0m
+[38;5;8m   6[0m [37m**Rule:** Git tab layout/density/views match mockup; icons from our pack;[0m
+[38;5;8m   7[0m [37mSource/crates are code truth; facts-only + vision accept. Functional T010[0m
+[38;5;8m   8[0m [37mpreserved. Shell chrome remains T037.[0m
+[38;5;8m   9[0m [37m**Ticket:** `active/T038-git-tab-mockup-parity.md`[0m
+[38;5;8m  10[0m 
+[38;5;8m   1[0m 
+[38;5;8m   2[0m [37m### Decision — T039 S3 tab mockup is visual SoT for S3 page[0m
+[38;5;8m   3[0m 
+[38;5;8m   4[0m [37m**Date:** 2026-08-09  [0m
+[38;5;8m   5[0m [37m**Artifact:** `docs/design/mockups/Chronos-S3-Tab.dc.html`  [0m
+[38;5;8m   6[0m [37m**Rule:** S3 tab layout/density/views match mockup; icons from our pack;[0m
+[38;5;8m   7[0m [37mSource/crates code truth; facts-only + vision accept. T011 connect/browse[0m
+[38;5;8m   8[0m [37mpreserved. No secrets in repo/report. Shell = T037; Git = T038.[0m
+[38;5;8m   9[0m [37m**Ticket:** `active/T039-s3-tab-mockup-parity.md`[0m
+[38;5;8m  10[0m 
+[38;5;8m   1[0m 
+[38;5;8m   2[0m [37m### Decision — T040 Settings mockup is product vision SoT[0m
+[38;5;8m   3[0m 
+[38;5;8m   4[0m [37m**Date:** 2026-08-09  [0m
+[38;5;8m   5[0m [37m**Artifact:** `docs/design/mockups/Chronos-File-Manager-Settings.dc.html`  [0m
+[38;5;8m   6[0m [37m**Rule:** Settings IA/density match mockup as product vision. Live may lag;[0m
+[38;5;8m   7[0m [37mdelivery uses Must/Should/May — never delete mockup sections as "extra".[0m
+[38;5;8m   8[0m [37mSource/crates = code truth; facts + vision accept; icons ours.[0m
+[38;5;8m   9[0m [37m**Ticket:** `active/T040-settings-tab-mockup-parity.md`[0m
+[38;5;8m  10[0m 
+[38;5;8m   1[0m 
+[38;5;8m   2[0m [37m### Decision — T042 smart pixel-copy program (Phase V then F)[0m
+[38;5;8m   3[0m 
+[38;5;8m   4[0m [37m**Date:** 2026-08-09  [0m
+[38;5;8m   5[0m [37m**Rule:** All page mockups delivered as **Phase V visual/IA** first (honest[0m
+[38;5;8m   6[0m [37mempty/disabled for missing backend), then **Phase F** function. Mockup is[0m
+[38;5;8m   7[0m [37mproduct vision — never censored to live. Epic T042. Children: T037 shell, T038 Git,[0m
+[38;5;8m   8[0m [37mT039 S3, T040 Settings, T041 Extensions. Vision executor + Source truth +[0m
+[38;5;8m   9[0m [37mfacts-only remain mandatory.[0m
+[38;5;8m  10[0m 
+
+### Decision — Shell mockup rev 2026-08-10
+
+**Date:** 2026-08-10  
+**Canonical:** `docs/design/mockups/chronos-file-manager.dc.html`  
+**Client alias:** `docs/design/mockups/chronos-file-manager.dc.html` (same bytes)  
+**Previous:** `archive/chronos-file-manager.v2-2026-08-09.dc.html`  
+**Note:** Density pass (e.g. 32px rows in new HTML). T037 Phase V tracks this SoT.
+**Alt discarded:** `archive/chronos-file-manager.alt-spaced-2026-08-10.dc.html` (different larger draft with spaces in name).
+
+### Decision — Source fix: T014-A frame layout memo silently dropped text (T043 real root cause)
+
+**Date:** 2026-08-10
+**Ticket:** T043 (blocks T037 §7 Places), also the true root cause behind
+T037's "sparse list" / missing header/breadcrumb text symptoms.
+
+**Context.** T043's report ("FIX-ACCEPT", self-closed, no architect verdict)
+claimed the Places-empty bug was `h_resizable` not allocating sidebar space,
+fixed by bypassing `resizable_panel()` with a fixed-width `div()`. That bypass
+is real and harmless, but a fresh release-binary + live grim (this session,
+`chronos-fm --theme dark`, settle 8-15s) showed the sidebar panel painting
+with **icons only — zero text**, including the "Places" section header
+itself, matching T037's earlier "no Places content" / "sparse list" reports.
+The claimed "81,979 FG text pixels" evidence in the T043 report does not
+match live behavior and was not reproducible.
+
+**Root cause (Claim → Evidence).** `Source/gpui/src/taffy.rs`'s T014-A
+frame-level layout memo (`TaffyLayoutEngine::compute_layout`) skips
+`taffy.compute_layout_with_measure` entirely whenever this frame's layout
+fingerprint (styles + child counts + content keys, in request order) matches
+the previous frame's. `request_layout`/`request_measured_layout_with_content_key`
+rebuild the full element tree — including a brand-new `TextLayout`
+(`Rc<RefCell<None>>`, `Source/gpui/src/elements/text.rs`) — every single
+render, regardless of whether the memo later skips computing. When it skips,
+that frame's freshly-built `TextLayout` never gets its `measure` closure
+invoked, so `TextLayoutInner` (glyph shaping, size) is never populated.
+T035 (2026-08-09, ACCEPTed) turned the resulting `unwrap()` panic in
+`TextLayout::prepaint`/`paint` into a silent early-return — correct for
+genuinely un-laid-out zero-size elements, but it also **masked** this memo
+bug: instead of crashing, affected text simply stops painting, with no log,
+no test coverage, no visible signal. Any UI whose layout tree repeats
+identically frame-to-frame (i.e. most idle UI, not just Chronos-FM) loses
+its text after the first "memo hit" frame. Confirmed by disabling the memo
+fast path and observing Places labels ("Home", "Desktop", …), the "Places"
+header, and toolbar/breadcrumb text all reappear on a fresh release grim.
+
+**Fix (Source, `taffy.rs`).** Added `frame_has_measured_leaf: bool`, set by
+`request_measured_layout_with_content_key` (covers `request_measured_layout`
+too) and reset in `clear()`. The T014-A fast path in `compute_layout` now
+requires `!self.frame_has_measured_leaf` in addition to the existing
+fingerprint/available-space match, so any frame containing a measured leaf
+(text, or any future custom `request_measured_layout*` element) always runs
+the real `compute_layout_with_measure` pass. Pure box-layout frames (no text)
+still get the memo's perf win. Two new unit tests
+(`measured_leaf_disables_frame_memo_fast_path`,
+`plain_layout_leaves_memo_fast_path_eligible`) plus the three existing
+T014-A tests pass (`cargo test -p gpui --lib taffy`, 6/6 green).
+
+**Verification.** `cargo build --release -p chronos-fm` clean; live grim
+(`script/dev/t037_smoke.sh`, 15s settle, real `hyprctl`-verified
+`class=chronos-fm` window) shows: "Places" header + "quick access" subtitle,
+all seven place labels (Home/Desktop/Documents/Downloads/Music/Pictures/
+Videos), two device rows (VTOYEFI, Ventoy), toolbar breadcrumb path text,
+"40 Items" count, List/Grid toggle labels — all rendering correctly. Evidence
+screenshot reviewed directly (vision), not programmatic pixel-only analysis.
+
+**Residual (new, not this fix).** Same grim shows the Grid content pane
+**empty** despite "40 Items" in the breadcrumb — `filtered_entries` is
+apparently not reaching `grid::render` even though `ensure_loaded`/`reload`/
+`apply_filter` run synchronously before it in the same render pass. This is
+a distinct defect (listing-state plumbing, not text painting) — filed as
+**T044** rather than folded into T043's text-rendering fix.
+
+**Why this belongs in Source, not Chronos-FM.** The bug is in the shared
+GPUI fork's layout engine and can affect any consumer (ChronOS shell
+included) whose render tree repeats between frames — not specific to
+Chronos-FM's sidebar. Fixing it in Chronos-FM would mean avoiding
+memo-triggering render patterns app-wide, which is not tractable.
+

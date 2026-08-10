@@ -55,9 +55,9 @@ impl PageKind {
         match self {
             PageKind::Explorer => "icons/folder.svg",
 
-            PageKind::Git => "icons/github.svg",
-            PageKind::S3 => "icons/database.svg",
-            PageKind::Extensions => "icons/layout-dashboard.svg",
+            PageKind::Git => "icons/git-branch.svg",
+            PageKind::S3 => "icons/cloud.svg",
+            PageKind::Extensions => "icons/puzzle.svg",
             PageKind::Settings => "icons/settings.svg",
         }
     }

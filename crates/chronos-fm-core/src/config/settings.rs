@@ -101,7 +101,7 @@ pub struct Theme {
 impl Default for Theme {
     fn default() -> Self {
         Self {
-            mode: ThemeMode::System,
+            mode: ThemeMode::Dark,
             accent: "blue".to_string(),
         }
     }
@@ -406,11 +406,16 @@ pub struct DiagnosticsStore {
 /// Light/dark appearance selection.
 pub enum ThemeMode {
     /// Follow the operating system's light/dark preference.
-    #[default]
     System,
     /// Always use the light appearance.
     Light,
     /// Always use the dark appearance.
+    ///
+    /// Product default as of T037: the mockup baseline is dark, and the
+    /// Catppuccin-derived `chronos.theme.json` "Chronos Dark" is the
+    /// reference palette. This only changes the built-in default — an
+    /// existing user's `~/.config/chronos-fm/config.toml` is untouched.
+    #[default]
     Dark,
 }
 
@@ -713,7 +718,7 @@ impl Config {
              schema_version = {CURRENT_SCHEMA_VERSION}\n\
              \n\
              [theme]\n\
-             mode = \"system\"   # \"system\" | \"light\" | \"dark\"\n\
+             mode = \"dark\"   # \"system\" | \"light\" | \"dark\"\n\
              accent = \"blue\"   # named colour or hex (full customization in P5)\n\
              \n\
              [ui]\n\
@@ -1277,7 +1282,7 @@ mod tests {
     fn defaults_match_spec() {
         let config = Config::default();
         assert_eq!(config.schema_version, 1);
-        assert_eq!(config.theme.mode, ThemeMode::System);
+        assert_eq!(config.theme.mode, ThemeMode::Dark);
         assert_eq!(config.theme.accent, "blue");
         assert_eq!(config.ui.default_sort, SortOrder::Name);
         assert!(!config.ui.show_hidden);
@@ -1462,7 +1467,7 @@ mod tests {
         // No errors: the file still loads.
         assert!(errors(&diagnostics).is_empty());
         // Bad fields fall back to defaults; others are untouched.
-        assert_eq!(config.theme.mode, ThemeMode::System);
+        assert_eq!(config.theme.mode, ThemeMode::Dark);
         assert_eq!(config.ui.default_sort, SortOrder::Name);
         assert!(!config.ui.show_hidden);
         // Three warnings: mode, default_sort, show_hidden.

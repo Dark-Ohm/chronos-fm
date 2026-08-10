@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+body{margin:0;font-family:'Inter',sans-serif}
+a{color:{{ c.accent }};text-decoration:none}
+a:hover{color:{{ c.accentHover }}}
+.cfm-scroll{scrollbar-width:thin}
+.cfm-scroll::-webkit-scrollbar{width:8px;height:8px}
+.cfm-scroll::-webkit-scrollbar-thumb{background:{{ c.border }};border-radius:4px}
+</style>
+</helmet>
+
+<div style="width:1280px;height:800px;background:{{ c.bg }};display:flex;flex-direction:column;color:{{ c.fg }};box-sizing:border-box;border:1px solid {{ c.border }};border-radius:10px;overflow:hidden">
+
+  <div style="flex:none;height:36px;background:{{ c.bg }};border-bottom:1px solid {{ c.border }};display:flex;align-items:center;justify-content:space-between;padding:0 14px">
+    <span style="font-family:'JetBrains Mono',monospace;font-size:12px;color:{{ c.fgSecondary }}">chronos-fm</span>
+    <div style="width:26px;height:26px;border-radius:8px;display:flex;align-items:center;justify-content:center;color:{{ c.fgSecondary }};cursor:pointer" style-hover="background:{{ c.toolbarHover }}">
+      <svg width="16" height="16" viewBox="0 0 256 256" fill="currentColor"><path d="M230.92 212c-15.23-26.33-38.7-45-66.09-53.34a72 72 0 10-73.66 0c-27.39 8.35-50.86 27-66.09 53.34a8 8 0 1013.85 8c18.84-32.56 52.14-52 89.07-52s70.23 19.44 89.07 52a8 8 0 1013.85-8zM72 96a56 56 0 11101.71 32.19A55.61 55.61 0 01128 152a56 56 0 01-56-56z"/></svg>
+    </div>
+  </div>
+
+  <div style="flex:1;min-height:0;display:flex">
+
+    <div style="width:64px;flex:none;background:{{ c.toolbarBg }};border-right:1px solid {{ c.toolbarBorder }};display:flex;flex-direction:column;align-items:center;padding:16px 0;gap:8px">
+      <sc-for list="{{ navItems }}" as="n" hint-placeholder-count="5">
+        <div onclick="{{ n.onClick }}" title="{{ n.label }}" style="width:48px;height:48px;border-radius:8px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ n.bg }};box-shadow:{{ n.shadow }}" style-hover="background:{{ c.toolbarHoverBg }}">
+          {{ n.iconEl }}
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+
+      <sc-if value="{{ isExplorer }}" hint-placeholder-val="{{ true }}">
+
+        <div style="flex:1;min-height:0;display:flex">
+
+          <sc-for list="{{ panes }}" as="pane" hint-placeholder-count="1">
+            <div style="flex:1;min-width:0;display:flex;flex-direction:column;border-right:1px solid {{ pane.divider }}">
+
+              <div style="flex:none;height:32px;display:flex;align-items:center;padding:0 6px;gap:4px;background:{{ c.toolbarBg }};border-bottom:1px solid {{ c.border }}">
+                <sc-for list="{{ pane.tabs }}" as="tab" hint-placeholder-count="1">
+                  <div onclick="{{ tab.onClick }}" style="display:flex;align-items:center;gap:6px;height:24px;padding:0 10px;border-radius:6px;font-size:12px;cursor:pointer;background:{{ tab.bg }};color:{{ tab.color }}" style-hover="background:{{ tab.hoverBg }}">
+                    <span>{{ tab.label }}</span>
+                    <sc-if value="{{ tab.showClose }}" hint-placeholder-val="{{ false }}">
+                      <span onclick="{{ tab.onClose }}" style="width:14px;height:14px;display:flex;align-items:center;justify-content:center;border-radius:4px" style-hover="background:{{ c.toolbarHoverBg }}">
+                        <svg width="9" height="9" viewBox="0 0 256 256" fill="currentColor"><path d="M205.66 194.34a8 8 0 01-11.32 11.32L128 139.31l-66.34 66.35a8 8 0 01-11.32-11.32L116.69 128 50.34 61.66a8 8 0 0111.32-11.32L128 116.69l66.34-66.35a8 8 0 0111.32 11.32L139.31 128z"/></svg>
+                      </span>
+                    </sc-if>
+                  </div>
+                </sc-for>
+                <div onclick="{{ pane.addTab }}" style="width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:{{ c.muted }}" style-hover="background:{{ c.toolbarHoverBg }}">
+                  <svg width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8h-80v80a8 8 0 01-16 0v-80H40a8 8 0 010-16h80V40a8 8 0 0116 0v80h80a8 8 0 018 8z"/></svg>
+                </div>
+                <div style="flex:1"></div>
+                <sc-if value="{{ pane.showSidebarToggle }}" hint-placeholder-val="{{ false }}">
+                  <div onclick="{{ toggleSplit }}" style="display:flex;align-items:center;gap:5px;padding:3px 7px;border-radius:5px;cursor:pointer;color:{{ c.toolbarText }}" style-hover="background:{{ c.toolbarHoverBg }}">
+                    <svg width="12" height="12" viewBox="0 0 256 256" fill="currentColor"><path d="M216 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V56a16 16 0 00-16-16zm0 16v40H40V56zM40 200V112h72v88zm176 0h-88v-88h88v88z"/></svg>
+                    <span style="font-size:11px">Split</span>
+                  </div>
+                </sc-if>
+                <div style="display:flex;align-items:center;gap:1px;flex:none">
+                  <div onclick="{{ pane.setListView }}" style="width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ pane.listBg }};color:{{ pane.listColor }}">
+                    <svg width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M224 128a8 8 0 01-8 8H40a8 8 0 010-16h176a8 8 0 018 8zm-8-64H40a8 8 0 000 16h176a8 8 0 000-16zm0 128H40a8 8 0 000 16h176a8 8 0 000-16z"/></svg>
+                  </div>
+                  <div onclick="{{ pane.setGridView }}" style="width:20px;height:20px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;background:{{ pane.gridBg }};color:{{ pane.gridColor }}">
+                    <svg width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M104 40H56a16 16 0 00-16 16v48a16 16 0 0016 16h48a16 16 0 0016-16V56a16 16 0 00-16-16zm0 96H56a16 16 0 00-16 16v48a16 16 0 0016 16h48a16 16 0 0016-16v-48a16 16 0 00-16-16zm96-96h-48a16 16 0 00-16 16v48a16 16 0 0016 16h48a16 16 0 0016-16V56a16 16 0 00-16-16zm0 96h-48a16 16 0 00-16 16v48a16 16 0 0016 16h48a16 16 0 0016-16v-48a16 16 0 00-16-16z"/></svg>
+                  </div>
+                </div>
+                <sc-if value="{{ pane.showClosePane }}" hint-placeholder-val="{{ false }}">
+                  <div onclick="{{ pane.closePane }}" style="width:22px;height:22px;border-radius:5px;display:flex;align-items:center;justify-content:center;cursor:pointer;color:{{ c.fg }}" style-hover="background:{{ c.toolbarHoverBg }}">
+                    <svg width="11" height="11" viewBox="0 0 256 256" fill="currentColor"><path d="M205.66 194.34a8 8 0 01-11.32 11.32L128 139.31l-66.34 66.35a8 8 0 01-11.32-11.32L116.69 128 50.34 61.66a8 8 0 0111.32-11.32L128 116.69l66.34-66.35a8 8 0 0111.32 11.32L139.31 128z"/></svg>
+                  </div>
+                </sc-if>
+              </div>
+
+              <div style="flex:none;display:flex;align-items:center;gap:8px;padding:6px 14px;background:{{ c.bgTertiary }};border-bottom:1px solid {{ c.border }}">
+                <div style="display:flex;align-items:center;gap:2px;flex:none">
+                  <div style="width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:{{ c.fgSecondary }};cursor:pointer" style-hover="background:{{ c.bgHover }}">
+                    <svg width="13" height="13" viewBox="0 0 256 256" fill="currentColor"><path d="M165.66 202.34a8 8 0 01-11.32 11.32l-80-80a8 8 0 010-11.32l80-80a8 8 0 0111.32 11.32L91.31 128z"/></svg>
+                  </div>
+                  <div style="width:22px;height:22px;border-radius:6px;display:flex;align-items:center;justify-content:center;color:{{ c.disabled }};cursor:not-allowed">
+                    <svg width="13" height="13" viewBox="0 0 256 256" fill="currentColor"><path d="M90.34 53.66a8 8 0 0111.32-11.32l80 80a8 8 0 010 11.32l-80 80a8 8 0 01-11.32-11.32L164.69 128z"/></svg>
+                  </div>
+                </div>
+                <svg width="12" height="12" viewBox="0 0 256 256" fill="{{ c.muted }}" style="flex:none"><path d="M216 72h-84.69l-19.2-25.6A8 8 0 00105.6 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V88a16 16 0 00-16-16z"/></svg>
+                <div style="flex:1;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:{{ c.fgSecondary }};background:{{ c.bg }};border:1px solid {{ c.border }};border-radius:5px;padding:3px 8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ pane.addressPath }}</div>
+              </div>
+
+              <div style="flex:1;min-height:0;display:flex">
+
+                <sc-if value="{{ pane.showSidebar }}" hint-placeholder-val="{{ false }}">
+                  <div class="cfm-scroll" style="width:212px;flex:none;background:{{ c.bgTertiary }};border-right:1px solid {{ c.border }};overflow-y:auto;padding:14px 10px;box-sizing:border-box;display:flex;flex-direction:column;gap:16px">
+
+                    <div style="display:flex;flex-direction:column;gap:4px;padding:0 6px">
+                      <div style="display:flex;align-items:center;gap:6px">
+                        <div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div>
+                        <span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">Places</span>
+                      </div>
+                      <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:{{ c.muted }}">quick access</span>
+                    </div>
+
+                    <div style="display:flex;flex-direction:column;gap:1px">
+                      <sc-for list="{{ pane.places }}" as="p" hint-placeholder-count="7">
+                        <div onclick="{{ p.onClick }}" style="display:flex;align-items:center;gap:9px;padding:6px;border-radius:6px;cursor:pointer;background:{{ p.bg }};position:relative" style-hover="background:{{ c.bgHover }}">
+                          <sc-if value="{{ p.active }}" hint-placeholder-val="{{ false }}">
+                            <div style="position:absolute;left:0;top:6px;bottom:6px;width:2px;border-radius:2px;background:{{ c.accent }}"></div>
+                          </sc-if>
+                          {{ p.iconEl }}
+                          <span style="font-size:12.5px;color:{{ p.textColor }};font-weight:{{ p.weight }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ p.label }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+
+                    <div style="height:1px;background:{{ c.border }};margin:0 6px"></div>
+
+                    <div style="display:flex;flex-direction:column;gap:8px">
+                      <sc-for list="{{ pane.devices }}" as="d" hint-placeholder-count="1">
+                        <div style="display:flex;flex-direction:column;gap:5px;padding:6px;border-radius:6px" style-hover="background:{{ c.bgHover }}">
+                          <div style="display:flex;align-items:center;gap:9px">
+                            <svg width="15" height="15" viewBox="0 0 256 256" fill="{{ c.muted }}" style="flex:none"><path d="M240 96h-16.42L189.64 39a8 8 0 00-7-4H73.32a8 8 0 00-7 4L32.42 96H16a8 8 0 000 16h4.32L16 130.63V208a16 16 0 0016 16h192a16 16 0 0016-16v-77.37L235.68 112H240a8 8 0 000-16zM78 51h100l25.9 45H52.1z"/></svg>
+                            <span style="font-size:12.5px;color:{{ c.fgSecondary }}">{{ d.label }}</span>
+                          </div>
+                          <div style="height:3px;border-radius:2px;background:{{ c.border }};position:relative;margin-left:24px">
+                            <div style="position:absolute;left:0;top:0;bottom:0;width:{{ d.pct }}%;border-radius:2px;background:{{ c.accent }}"></div>
+                          </div>
+                        </div>
+                      </sc-for>
+                    </div>
+
+                    <div style="height:1px;background:{{ c.border }};margin:0 6px"></div>
+
+                    <div style="display:flex;align-items:center;gap:9px;padding:6px;border-radius:6px;cursor:pointer" style-hover="background:{{ c.bgHover }}">
+                      <svg width="15" height="15" viewBox="0 0 256 256" fill="{{ c.muted }}" style="flex:none"><path d="M216 48H40a16 16 0 00-16 16v96a16 16 0 0016 16h176a16 16 0 0016-16V64a16 16 0 00-16-16zm-8 96H48V72h160zM128 200a8 8 0 018 8v8h32a8 8 0 010 16H88a8 8 0 010-16h32v-8a8 8 0 018-8z"/></svg>
+                      <span style="font-size:12.5px;color:{{ c.fgSecondary }}">Trash</span>
+                      <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:{{ c.disabled }}">12</span>
+                    </div>
+
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ pane.isList }}" hint-placeholder-val="{{ true }}">
+                  <div style="flex:1;min-width:0;min-height:0;display:flex;flex-direction:column">
+                    <div style="flex:none;display:flex;align-items:center;padding:6px 16px;border-bottom:1px solid {{ c.border }};font-size:10px;font-weight:600;letter-spacing:.03em;color:{{ c.muted }};text-transform:uppercase">
+                      <span style="flex:1">Name</span>
+                      <span style="width:60px;text-align:right">Size</span>
+                      <span style="width:80px;text-align:right">Modified</span>
+                    </div>
+                    <div class="cfm-scroll" style="flex:1;min-height:0;overflow-y:auto;padding:4px 8px">
+                      <sc-for list="{{ pane.files }}" as="f" hint-placeholder-count="8">
+                        <div onclick="{{ f.onClick }}" style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-radius:6px;cursor:default;background:{{ f.bg }}" style-hover="background:{{ c.bgHover }}">
+                          {{ f.iconEl }}
+                          <span style="flex:1;font-size:12.5px;color:{{ f.textColor }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ f.name }}</span>
+                          <span style="width:60px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">{{ f.size }}</span>
+                          <span style="width:80px;text-align:right;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">{{ f.modified }}</span>
+                        </div>
+                      </sc-for>
+                    </div>
+                  </div>
+                </sc-if>
+                <sc-if value="{{ pane.isGrid }}" hint-placeholder-val="{{ false }}">
+                  <div class="cfm-scroll" style="flex:1;min-height:0;overflow-y:auto;padding:16px;display:grid;grid-template-columns:repeat(auto-fill,minmax(88px,1fr));gap:8px;align-content:start">
+                    <sc-for list="{{ pane.files }}" as="f" hint-placeholder-count="8">
+                      <div onclick="{{ f.onClick }}" style="display:flex;flex-direction:column;align-items:center;gap:7px;padding:12px 6px;border-radius:8px;cursor:default;background:{{ f.bg }}" style-hover="background:{{ c.bgHover }}">
+                        {{ f.iconElLg }}
+                        <span style="font-size:10.5px;color:{{ f.textColor }};text-align:center;line-height:1.25;max-width:100%;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical">{{ f.name }}</span>
+                      </div>
+                    </sc-for>
+                  </div>
+                </sc-if>
+
+                <sc-if value="{{ pane.showPreview }}" hint-placeholder-val="{{ false }}">
+                  <div style="width:220px;flex:none;display:flex;flex-direction:column;border-left:1px solid {{ c.border }};background:{{ c.bg }}">
+                    <div style="padding:10px 16px;border-bottom:1px solid {{ c.border }}">
+                      <span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">{{ pane.previewTitle }}</span>
+                    </div>
+                    <div style="flex:1;display:flex;align-items:center;justify-content:center;padding:20px">
+                      <sc-if value="{{ pane.hasSelection }}" hint-placeholder-val="{{ false }}">
+                        <div style="display:flex;flex-direction:column;align-items:center;gap:14px">
+                          {{ pane.previewIconEl }}
+                          <span style="font-size:12px;font-weight:500;color:{{ c.fg }};text-align:center;word-break:break-all">{{ pane.previewName }}</span>
+                          <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">{{ pane.previewMeta }}</span>
+                        </div>
+                      </sc-if>
+                      <sc-if value="{{ !pane.hasSelection }}" hint-placeholder-val="{{ true }}">
+                        <span style="font-size:12px;color:{{ c.muted }}">No file selected</span>
+                      </sc-if>
+                    </div>
+                  </div>
+                </sc-if>
+
+              </div>
+            </div>
+          </sc-for>
+
+        </div>
+
+      </sc-if>
+
+      <sc-if value="{{ isGit }}" hint-placeholder-val="{{ false }}">
+        <div class="cfm-scroll" style="flex:1;min-height:0;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px;max-width:760px">
+
+          <div style="display:flex;flex-direction:column;gap:10px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:12px">
+              <div style="display:flex;align-items:center;gap:8px;font-size:13px;min-width:0">
+                <span style="color:{{ c.muted }};white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ gitWorkdir }} </span>
+                <span style="color:{{ c.accent }};font-weight:700;white-space:nowrap">⏵ {{ gitBranch }}</span>
+              </div>
+              <div style="display:flex;align-items:center;gap:6px;flex:none">
+                <div onclick="{{ gitRefresh }}" style="padding:4px 10px;border-radius:6px;background:{{ c.bgHover }};color:{{ c.fg }};font-size:11.5px;cursor:pointer;opacity:{{ gitRefreshing ? 0.5 : 1 }}" style-hover="background:{{ c.border }}">↻ Refresh</div>
+                <div onclick="{{ gitTogglePin }}" style="padding:4px 10px;border-radius:6px;background:{{ gitPinnedBg }};color:{{ c.fg }};font-size:11.5px;cursor:pointer" style-hover="background:{{ c.border }}">📌 {{ gitPinLabel }}</div>
+                <div onclick="{{ gitPull }}" style="padding:4px 10px;border-radius:6px;background:{{ c.bgHover }};color:{{ c.fg }};font-size:11.5px;cursor:pointer" style-hover="background:{{ c.border }}">Pull</div>
+                <div onclick="{{ gitPush }}" style="padding:4px 10px;border-radius:6px;background:{{ c.bgHover }};color:{{ c.fg }};font-size:11.5px;cursor:pointer" style-hover="background:{{ c.border }}">Push</div>
+              </div>
+            </div>
+            <sc-if value="{{ gitStatusMessage }}" hint-placeholder-val="{{ false }}">
+              <div style="font-size:11.5px;color:{{ gitStatusColor }}">{{ gitStatusMessage }}</div>
+            </sc-if>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div>
+                <span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">Branches</span>
+              </div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">{{ branches.length }} local</span>
+            </div>
+            <div style="display:flex;flex-wrap:wrap;gap:6px">
+              <sc-for list="{{ branches }}" as="b" hint-placeholder-count="3">
+                <div onclick="{{ b.onClick }}" style="padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;background:{{ b.bg }};color:{{ b.color }};font-weight:{{ b.weight }}" style-hover="background:{{ b.hoverBg }}">{{ b.label }}</div>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;margin-top:4px">
+              <input value="{{ newBranchName }}" oninput="{{ setNewBranchName }}" placeholder="New branch name" style="flex:1;background:{{ c.bg }};border:1px solid {{ c.border }};border-radius:6px;padding:6px 10px;font-size:12px;color:{{ c.fg }};font-family:inherit;outline:none" style-focus="border-color:{{ c.accent }}" />
+              <div onclick="{{ createBranch }}" style="padding:6px 12px;border-radius:6px;background:{{ c.accent }};color:{{ c.onAccent }};font-size:12px;font-weight:700;cursor:pointer;white-space:nowrap" style-hover="background:{{ c.accentHover }}">Create &amp; switch</div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:6px">
+                <div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div>
+                <span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">Stash</span>
+              </div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">{{ stashes.length }} entries</span>
+            </div>
+            <sc-if value="{{ hasStashes }}" hint-placeholder-val="{{ false }}">
+              <div style="border:1px solid {{ c.border }};border-radius:8px;overflow:hidden">
+                <sc-for list="{{ stashes }}" as="s" hint-placeholder-count="1">
+                  <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px" style-hover="background:{{ c.bgHover }}">
+                    <span style="font-size:12px;color:{{ c.fgSecondary }};overflow:hidden;text-overflow:ellipsis;white-space:nowrap">{{ s.label }}</span>
+                    <div style="display:flex;gap:6px;flex:none">
+                      <span onclick="{{ s.onPop }}" style="padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:500;background:{{ c.bgHover }};color:{{ c.fg }};cursor:pointer" style-hover="background:{{ c.border }}">Pop</span>
+                      <span onclick="{{ s.onDrop }}" style="padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:500;background:{{ c.bgHover }};color:{{ c.danger }};cursor:pointer" style-hover="background:{{ c.border }}">Drop</span>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+            </sc-if>
+            <div style="display:flex;align-items:center;gap:8px">
+              <input value="{{ stashMessage }}" oninput="{{ setStashMessage }}" placeholder="Stash message" style="flex:1;background:{{ c.bg }};border:1px solid {{ c.border }};border-radius:6px;padding:6px 10px;font-size:12px;color:{{ c.fg }};font-family:inherit;outline:none" style-focus="border-color:{{ c.accent }}" />
+              <div onclick="{{ stashPush }}" style="padding:6px 12px;border-radius:6px;background:{{ c.bgHover }};color:{{ c.fg }};font-size:12px;font-weight:600;cursor:pointer;white-space:nowrap" style-hover="background:{{ c.border }}">Stash</div>
+            </div>
+          </div>
+
+          <sc-for list="{{ gitSections }}" as="sec" hint-placeholder-count="3">
+            <sc-if value="{{ sec.hasFiles }}" hint-placeholder-val="{{ true }}">
+              <div style="display:flex;flex-direction:column;gap:8px">
+                <div style="display:flex;flex-direction:column;gap:4px">
+                  <div style="display:flex;align-items:center;gap:6px">
+                    <div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div>
+                    <span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">{{ sec.label }}</span>
+                  </div>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">{{ sec.count }} file{{ sec.plural }}</span>
+                </div>
+                <div style="border:1px solid {{ c.border }};border-radius:8px;overflow:hidden">
+                  <sc-for list="{{ sec.files }}" as="f" hint-placeholder-count="2">
+                    <div style="display:flex;align-items:center;justify-content:space-between;padding:6px 12px" style-hover="background:{{ c.bgHover }}">
+                      <span onclick="{{ f.onShowDiff }}" style="font-size:12px;color:{{ sec.color }};cursor:pointer;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" style-hover="text-decoration:underline">{{ f.path }}</span>
+                      <span onclick="{{ f.onAction }}" style="padding:2px 8px;border-radius:4px;font-size:10.5px;font-weight:500;background:{{ c.bgHover }};color:{{ c.fg }};cursor:pointer;flex:none" style-hover="background:{{ c.border }}">{{ sec.actionLabel }}</span>
+                    </div>
+                  </sc-for>
+                </div>
+              </div>
+            </sc-if>
+          </sc-for>
+
+          <div style="display:flex;align-items:center;gap:8px;padding:12px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <input value="{{ commitMessage }}" oninput="{{ setCommitMessage }}" placeholder="Commit message" style="flex:1;background:{{ c.bg }};border:1px solid {{ c.border }};border-radius:6px;padding:6px 10px;font-size:12px;color:{{ c.fg }};font-family:inherit;outline:none" style-focus="border-color:{{ c.accent }}" />
+            <div onclick="{{ commit }}" style="padding:6px 14px;border-radius:6px;background:{{ commitBg }};color:{{ commitColor }};font-size:12px;font-weight:700;cursor:pointer;opacity:{{ commitOpacity }};white-space:nowrap">Commit</div>
+          </div>
+
+          <sc-if value="{{ hasDiff }}" hint-placeholder-val="{{ false }}">
+            <div style="display:flex;flex-direction:column;gap:8px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+              <div style="display:flex;align-items:center;justify-content:space-between">
+                <div style="display:flex;flex-direction:column;gap:2px">
+                  <span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">{{ diffTitle }}</span>
+                  <span style="font-family:'JetBrains Mono',monospace;font-size:10px;color:{{ c.muted }}">unified</span>
+                </div>
+                <span onclick="{{ closeDiff }}" style="font-size:11px;color:{{ c.muted }};cursor:pointer" style-hover="color:{{ c.fg }}">Close</span>
+              </div>
+              <div class="cfm-scroll" style="max-height:280px;overflow-y:auto;padding:10px;border-radius:8px;background:{{ c.bg }};border:1px solid {{ c.border }}">
+                <sc-for list="{{ diffLines }}" as="line" hint-placeholder-count="6">
+                  <div style="font-family:'JetBrains Mono',monospace;font-size:11px;color:{{ line.color }};white-space:pre;line-height:1.6">{{ line.text }}</div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isS3 }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;padding:12px 16px;border-bottom:1px solid {{ c.border }}">
+          <span style="font-size:14px;font-weight:700;color:{{ c.fg }}">☁ S3</span>
+        </div>
+        <div style="flex:1;display:flex;align-items:center;justify-content:center">
+          <sc-if value="{{ !s3Connected }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;flex-direction:column;gap:16px;padding:24px;width:380px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+              <div>
+                <div style="font-size:14px;font-weight:700;color:{{ c.fg }}">Connect to rustfs</div>
+                <div style="font-size:11.5px;color:{{ c.fgSecondary }};margin-top:2px">Endpoint: https://s3.amazonaws.com</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:11.5px;color:{{ c.fg }}">Access Key ID</span>
+                <div style="background:{{ c.bg }};border:1px solid {{ c.border }};border-radius:6px;padding:6px 10px;font-size:12px;color:{{ c.disabled }}">AKIA••••••••••••</div>
+              </div>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <span style="font-size:11.5px;color:{{ c.fg }}">Secret Access Key</span>
+                <div style="background:{{ c.bg }};border:1px solid {{ c.border }};border-radius:6px;padding:6px 10px;font-size:12px;color:{{ c.disabled }}">••••••••••••••••</div>
+              </div>
+              <div onclick="{{ connectS3 }}" style="align-self:flex-start;padding:7px 16px;border-radius:6px;background:{{ c.accent }};color:{{ c.onAccent }};font-size:12.5px;font-weight:700;cursor:pointer">Connect</div>
+            </div>
+          </sc-if>
+          <sc-if value="{{ s3Connected }}" hint-placeholder-val="{{ false }}">
+            <div style="width:100%;height:100%;display:flex;flex-direction:column">
+              <div style="flex:none;padding:8px 20px;font-size:11.5px;color:{{ c.muted }}">s3://rustfs@</div>
+              <div style="flex:1;padding:4px 12px">
+                <sc-for list="{{ s3Buckets }}" as="bk" hint-placeholder-count="3">
+                  <div style="display:flex;align-items:center;gap:9px;padding:6px 8px;border-radius:6px" style-hover="background:{{ c.bgHover }}">
+                    <svg width="15" height="15" viewBox="0 0 256 256" fill="{{ c.fgSecondary }}"><path d="M216 72h-84.69l-19.2-25.6A8 8 0 00105.6 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V88a16 16 0 00-16-16z"/></svg>
+                    <span style="font-size:12.5px;color:{{ c.fg }}">{{ bk }}</span>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isExtensions }}" hint-placeholder-val="{{ false }}">
+        <div style="flex:none;padding:12px 16px;border-bottom:1px solid {{ c.border }}">
+          <span style="font-size:14px;font-weight:700;color:{{ c.fg }}">🧩 Extensions</span>
+        </div>
+        <div class="cfm-scroll" style="flex:1;min-height:0;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px">
+          <div style="display:flex;flex-direction:column;gap:8px;padding:20px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div><span style="font-size:13px;font-weight:600;color:{{ c.fg }}">Plugin Architecture</span></div>
+            <div style="font-size:12.5px;color:{{ c.fgSecondary }};line-height:1.7;margin-top:6px">
+              WASM Component Model + wasmtime-wasi — secure, sandboxed execution<br>
+              Core plugins — Rust native, bundled with chronos-fm<br>
+              Community plugins — WASM, user-granted permissions per plugin
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:20px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div><span style="font-size:13px;font-weight:600;color:{{ c.fg }}">Your Plugins</span></div>
+            <div style="display:flex;flex-direction:column;gap:6px;margin-top:6px">
+              <span style="font-size:12px;font-weight:700;color:{{ c.fg }}">core:</span>
+              <div style="display:flex;gap:8px">
+                <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:{{ c.accent }}">🔌 git <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:{{ c.bgHover }};color:{{ c.fgSecondary }}">P4</span></div>
+                <div style="display:flex;align-items:center;gap:6px;font-size:12.5px;color:{{ c.accent }}">🔌 calculator <span style="font-size:10px;padding:2px 6px;border-radius:4px;background:{{ c.bgHover }};color:{{ c.fgSecondary }}">P4</span></div>
+              </div>
+            </div>
+          </div>
+          <div style="display:flex;flex-direction:column;gap:8px;padding:20px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div><span style="font-size:13px;font-weight:600;color:{{ c.fg }}">Roadmap</span></div>
+            <div style="font-size:12.5px;color:{{ c.fgSecondary }};line-height:1.7;margin-top:6px">
+              P4: Plugin host (wasmtime-wasi) — install, permissions, activation<br>
+              P5: Plugin marketplace — browse, one-click install, Go templates
+            </div>
+          </div>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+        <div class="cfm-scroll" style="flex:1;min-height:0;overflow-y:auto;padding:24px;display:flex;flex-direction:column;gap:16px">
+
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div><span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">Theme</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">appearance</span>
+            </div>
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ themeModes }}" as="m" hint-placeholder-count="3">
+                <div onclick="{{ m.onClick }}" style="padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;background:{{ m.bg }};color:{{ m.color }}">{{ m.label }}</div>
+              </sc-for>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12.5px;color:{{ c.fg }}">Accent</span>
+              <div style="display:flex;gap:8px">
+                <sc-for list="{{ accentSwatches }}" as="a" hint-placeholder-count="4">
+                  <div style="width:20px;height:20px;border-radius:6px;background:{{ a.color }};border:1px solid {{ a.border }};cursor:pointer"></div>
+                </sc-for>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div><span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">UI</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">listing behavior</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12.5px;color:{{ c.fg }}">Show hidden files</span>
+              <div onclick="{{ toggleShowHidden }}" style="width:34px;height:19px;border-radius:10px;background:{{ showHidden ? c.accent : c.border }};position:relative;cursor:pointer">
+                <div style="width:15px;height:15px;border-radius:50%;background:#fff;position:absolute;top:2px;left:{{ showHidden ? '17px' : '2px' }};transition:left .12s"></div>
+              </div>
+            </div>
+            <div style="display:flex;gap:8px">
+              <sc-for list="{{ sortButtons }}" as="s" hint-placeholder-count="4">
+                <div onclick="{{ s.onClick }}" style="padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;background:{{ s.bg }};color:{{ s.color }}">{{ s.label }}</div>
+              </sc-for>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div><span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">Explorer</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">split view</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12.5px;color:{{ c.fg }}">New split orientation</span>
+              <div style="display:flex;gap:8px">
+                <sc-for list="{{ splitButtons }}" as="s" hint-placeholder-count="2">
+                  <div onclick="{{ s.onClick }}" style="padding:4px 10px;border-radius:6px;font-size:12px;cursor:pointer;background:{{ s.bg }};color:{{ s.color }}">{{ s.label }}</div>
+                </sc-for>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12.5px;color:{{ c.fg }}">Synced panes</span>
+              <div onclick="{{ toggleSynced }}" style="width:34px;height:19px;border-radius:10px;background:{{ synced ? c.accent : c.border }};position:relative;cursor:pointer">
+                <div style="width:15px;height:15px;border-radius:50%;background:#fff;position:absolute;top:2px;left:{{ synced ? '17px' : '2px' }};transition:left .12s"></div>
+              </div>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12.5px;color:{{ c.fg }}">Restore tabs on restart</span>
+              <div onclick="{{ toggleRestore }}" style="width:34px;height:19px;border-radius:10px;background:{{ restoreTabs ? c.accent : c.border }};position:relative;cursor:pointer">
+                <div style="width:15px;height:15px;border-radius:50%;background:#fff;position:absolute;top:2px;left:{{ restoreTabs ? '17px' : '2px' }};transition:left .12s"></div>
+              </div>
+            </div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:12px;padding:16px;background:{{ c.bgSecondary }};border:1px solid {{ c.border }};border-radius:12px;box-shadow:0 1px 3px rgba(0,0,0,0.14)">
+            <div style="display:flex;flex-direction:column;gap:4px">
+              <div style="display:flex;align-items:center;gap:6px"><div style="width:3px;height:12px;border-radius:1.5px;background:{{ c.accent }};opacity:0.85"></div><span style="font-size:12.5px;font-weight:600;color:{{ c.fg }}">S3</span></div>
+              <span style="font-family:'JetBrains Mono',monospace;font-size:10.5px;color:{{ c.muted }}">object storage</span>
+            </div>
+            <div style="display:flex;align-items:center;justify-content:space-between">
+              <span style="font-size:12.5px;color:{{ c.fg }}">Default profile</span>
+              <span style="font-size:12.5px;color:{{ c.fg }}">rustfs</span>
+            </div>
+          </div>
+
+          <div style="opacity:0.5;font-size:12px;color:{{ c.fgSecondary }}">Keybindings, Plugins, Indexing, Search, Launcher — coming in P3/P4</div>
+        </div>
+      </sc-if>
+
+    </div>
+  </div>
+
+  <div style="flex:none;height:28px;display:flex;align-items:center;justify-content:space-between;padding:0 8px;background:{{ c.gray200 }};border-top:1px solid {{ c.border }}">
+    <div style="display:flex;align-items:center;gap:2px">
+      <div style="display:flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:4px">
+        <span style="font-size:10.5px;color:{{ c.gray700 }}">{{ footerItems }} items</span>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:2px">
+      <div style="display:flex;align-items:center;gap:5px;height:24px;padding:0 8px;border-radius:4px">
+        <span style="font-size:10.5px;color:{{ c.gray700 }}">{{ footerPath }}</span>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:1280,&quot;height&quot;:800},&quot;theme&quot;:{&quot;editor&quot;:&quot;enum&quot;,&quot;default&quot;:&quot;dark&quot;,&quot;options&quot;:[&quot;dark&quot;,&quot;light&quot;],&quot;tsType&quot;:&quot;'dark'|'light'&quot;,&quot;section&quot;:&quot;Theme&quot;}}">
+const ICONS = {
+  folder: 'M216 72h-84.69l-19.2-25.6A8 8 0 00105.6 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V88a16 16 0 00-16-16z',
+  home: 'M240 120v96a16 16 0 01-16 16h-56v-64a8 8 0 00-8-8h-64a8 8 0 00-8 8v64H32a16 16 0 01-16-16v-96a8 8 0 012.63-5.93l96-88.007a8 8 0 0110.74 0l96 88.007A8 8 0 01240 120z',
+  desktop: 'M208 40H48a24 24 0 00-24 24v112a24 24 0 0024 24h64v16H88a8 8 0 000 16h80a8 8 0 000-16h-24v-16h64a24 24 0 0024-24V64a24 24 0 00-24-24z',
+  doc: 'M213.66 82.34l-56-56A8 8 0 00152 24H56a16 16 0 00-16 16v176a16 16 0 0016 16h144a16 16 0 0016-16V88a8 8 0 00-2.34-5.66zM152 88V44l44 44z',
+  download: 'M224 152v56a16 16 0 01-16 16H48a16 16 0 01-16-16v-56a8 8 0 0116 0v56h160v-56a8 8 0 0116 0zm-101.66 4.24a8 8 0 0011.32 0l40-40a8 8 0 00-11.32-11.32L136 132.69V32a8 8 0 00-16 0v100.69l-26.34-27.77a8 8 0 00-11.32 11.32z',
+  image: 'M216 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V56a16 16 0 00-16-16zm-72 96l24 32H88zm-32-16a20 20 0 1120-20 20 20 0 01-20 20z',
+  archive: 'M216 40H40a16 16 0 00-16 16v144a16 16 0 0016 16h176a16 16 0 0016-16V56a16 16 0 00-16-16zM112 56h16v16h-16zm16 32v16h-16V88zm-16 32h16v16h-16zM72 200V56h24v16h16v16h-16v16h16v16h-16v16h16v16h-16v16h16v16h-16v16z',
+  code: 'M69.12 94.15L28.5 128l40.62 33.85a8 8 0 11-10.24 12.29l-48-40a8 8 0 010-12.29l48-40a8 8 0 0110.24 12.3zm176 27.7l-48-40a8 8 0 10-10.24 12.3L227.5 128l-40.62 33.85a8 8 0 1010.24 12.29l48-40a8 8 0 000-12.29zM162.73 32.48a8 8 0 00-10.25 4.79l-64 176a8 8 0 004.79 10.26A8.14 8.14 0 00096 224a8 8 0 007.52-5.27l64-176a8 8 0 00-4.79-10.25z',
+  file: 'M200 32H88a8 8 0 00-8 8v40H40a8 8 0 00-8 8v128a8 8 0 008 8h112a8 8 0 008-8v-40h40a8 8 0 008-8V40a8 8 0 00-8-8zM144 208H48V96h96zm56-48h-32V88a8 8 0 00-8-8H96V48h104z',
+  git: 'M240 76a28 28 0 10-51.32 15.53l-33.84 33.84a27.9 27.9 0 00-17.68 0L103 91.53a27.94 27.94 0 10-13 13l34.16 34.15a27.9 27.9 0 000 17.68L90 190.53a28 28 0 1013 13l34.15-34.16a27.9 27.9 0 0017.68 0l33.84 33.85A28 28 0 10201 189.94l-33.84-33.84a27.9 27.9 0 000-17.68L201 104.58A28 28 0 00240 76z',
+  cloud: 'M160 40a80.11 80.11 0 00-76.62 56.61A64 64 0 1064 232h96a96 96 0 000-192z',
+  puzzle: 'M226.53 132.71a16 16 0 00-12.62-4.06l-16.9 2.32a4 4 0 01-4.51-4.51l2.32-16.9a16 16 0 00-15.85-18.13H160a4 4 0 01-4-4V64a24 24 0 00-48 0v23.43a4 4 0 01-4 4H85.63a16 16 0 00-15.85 18.13l2.32 16.9a4 4 0 01-4.51 4.51l-16.9-2.32a16 16 0 00-18.13 15.85V180a16 16 0 0016 16h23.43a4 4 0 014 4v18.37a24 24 0 0048 0V200a4 4 0 014-4H180a16 16 0 0016-16v-38.48a15.9 15.9 0 0010.53-8.81z',
+  gear: 'M128 80a48 48 0 1048 48 48.05 48.05 0 00-48-48zm0 80a32 32 0 1132-32 32 32 0 01-32 32zm101.63-16.4a90.62 90.62 0 00-.66-11.6l14.28-11.15a8 8 0 001.85-10.25l-15.4-26.62a8 8 0 00-9.72-3.51l-17.15 6a91.5 91.5 0 00-19.7-11.4l-2.6-18.14A8 8 0 00172.6 40h-33.2a8 8 0 00-7.93 6.93l-2.6 18.14a91.5 91.5 0 00-19.7 11.4l-17.15-6a8 8 0 00-9.72 3.51L67 100.6a8 8 0 001.85 10.25l14.28 11.15a90.62 90.62 0 000 23.2L68.85 156.35a8 8 0 00-1.85 10.25l15.4 26.62a8 8 0 009.72 3.51l17.15-6a91.5 91.5 0 0019.7 11.4l2.6 18.14A8 8 0 00139.4 224h33.2a8 8 0 007.93-6.93l2.6-18.14a91.5 91.5 0 0019.7-11.4l17.15 6a8 8 0 009.72-3.51l15.4-26.62a8 8 0 00-1.85-10.25l-14.28-11.15a90.62 90.62 0 00.66-11.6z',
+};
+
+function svgIcon(d, size, color) {
+  return React.createElement('svg', { width: size, height: size, viewBox: '0 0 256 256', fill: color, style: { flex: 'none' } },
+    React.createElement('path', { d }));
+}
+
+const ICONS_EXTRA = {
+  music: 'M212.92 25.69a8 8 0 00-6.86-1.45l-128 32A8 8 0 0072 64v110.08A36 36 0 1088 204V78.25l112-28v100.15a36 36 0 10-16 29.83V32a8 8 0 00-3.08-6.31z',
+  video: 'M235.33 68.44a6 6 0 00-6.22.43L192 95.36V72a16 16 0 00-16-16H32a16 16 0 00-16 16v112a16 16 0 0016 16h144a16 16 0 0016-16v-23.36l37.11 26.49A6 6 0 00240 182V74a6 6 0 00-4.67-5.56z',
+};
+const PLACES_DEF = [
+  { id: 'home', label: 'Home', d: ICONS.home },
+  { id: 'desktop', label: 'Desktop', d: ICONS.desktop },
+  { id: 'documents', label: 'Documents', d: ICONS.doc },
+  { id: 'downloads', label: 'Downloads', d: ICONS.download },
+  { id: 'pictures', label: 'Pictures', d: ICONS.image },
+  { id: 'music', label: 'Music', d: ICONS_EXTRA.music },
+  { id: 'videos', label: 'Videos', d: ICONS_EXTRA.video },
+];
+
+const FILES_BY_PLACE = {
+  home: [
+    { name: 'chronos', type: 'dir', size: 0, modified: '2026/08/09' },
+    { name: 'notes.md', type: 'file', size: 4096, modified: '2026/08/09' },
+    { name: 'Documents', type: 'dir', size: 0, modified: '2026/08/08' },
+    { name: 'Downloads', type: 'dir', size: 0, modified: '2026/08/06' },
+    { name: 'wallpaper.png', type: 'file', size: 2202009, modified: '2026/08/05' },
+    { name: 'dotfiles.tar.gz', type: 'file', size: 18874368, modified: '2026/07/29' },
+    { name: '.bashrc', type: 'file', size: 2048, modified: '2026/07/19' },
+    { name: 'setup.sh', type: 'file', size: 3072, modified: '2026/07/11' },
+  ],
+  documents: [
+    { name: 'Resume.pdf', type: 'file', size: 217088, modified: '2026/08/09' },
+    { name: 'Invoices', type: 'dir', size: 0, modified: '2026/08/08' },
+    { name: 'meeting-notes.md', type: 'file', size: 6144, modified: '2026/08/05' },
+    { name: 'contract.docx', type: 'file', size: 90112, modified: '2026/07/29' },
+  ],
+  downloads: [
+    { name: 'chronos-shell-v0.4.pkg.tar.zst', type: 'file', size: 9857024, modified: '2026/08/09' },
+    { name: 'rustup-init', type: 'file', size: 11534336, modified: '2026/08/09' },
+    { name: 'screenshot.png', type: 'file', size: 911360, modified: '2026/08/07' },
+  ],
+  pictures: [
+    { name: 'Screenshots', type: 'dir', size: 0, modified: '2026/08/09' },
+    { name: 'wallpaper-01.png', type: 'file', size: 3355443, modified: '2026/08/07' },
+    { name: 'avatar.jpg', type: 'file', size: 419840, modified: '2026/07/11' },
+  ],
+  desktop: [
+    { name: 'notes.txt', type: 'file', size: 1024, modified: '2026/08/09' },
+  ],
+  music: [
+    { name: 'Playlists', type: 'dir', size: 0, modified: '2026/07/01' },
+    { name: 'field-recording.wav', type: 'file', size: 46137344, modified: '2026/06/12' },
+  ],
+  videos: [
+    { name: 'demo-recording.mp4', type: 'file', size: 220200960, modified: '2026/08/01' },
+    { name: 'talk-2026.mkv', type: 'file', size: 1181116006, modified: '2026/07/05' },
+  ],
+};
+
+function humanBytes(size) {
+  const KB = 1024, MB = KB * 1024, GB = MB * 1024;
+  if (size >= GB) return (size / GB).toFixed(1) + ' GB';
+  if (size >= MB) return (size / MB).toFixed(1) + ' MB';
+  if (size >= KB) return (size / KB).toFixed(1) + ' KB';
+  return size + ' B';
+}
+function iconFor(name, kind) {
+  if (kind === 'dir') return ICONS.folder;
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  if (['png', 'jpg', 'jpeg', 'gif'].includes(ext)) return ICONS.image;
+  if (['gz', 'zst', 'zip', 'tar'].includes(ext)) return ICONS.archive;
+  if (['sh', 'toml', 'md'].includes(ext) || name.startsWith('.')) return ICONS.code;
+  return ICONS.file;
+}
+
+let paneIdSeq = 2;
+
+class Component extends DCLogic {
+  state = {
+    navPage: 'explorer',
+    panes: [{ id: 0, place: 'home', selected: null, view: 'list', tabs: [{ id: 0, label: 'Home' }], activeTab: 0 }],
+    split: false,
+    showHidden: false, synced: false, restoreTabs: true,
+    sort: 'Name', splitOrientation: 'Side by side',
+    s3Connected: false,
+    git: {
+      branch: 'main', workdir: '~/chronos',
+      branches: ['main', 'feat/left-panel', 'fix/theme'],
+      staged: ['crates/ui/src/theme.rs', 'docs/design.md'],
+      modified: ['crates/app/src/root.rs'],
+      untracked: ['scratchpad/notes.txt'],
+      stashes: [{ id: 1, label: 'wip: bar redesign' }],
+      newBranchName: '', stashMessage: '', commitMessage: '',
+      pinned: false, refreshing: false, statusMessage: null, statusIsError: false,
+      selectedDiff: null,
+    },
+  };
+
+  setNav = (p) => this.setState({ navPage: p });
+  patchPane = (idx, patch) => {
+    const panes = this.state.panes.slice();
+    panes[idx] = { ...panes[idx], ...patch };
+    this.setState({ panes });
+  };
+  goPlace = (idx, id) => this.patchPane(idx, { place: id, selected: null });
+  selectFile = (idx, id) => {
+    const p = this.state.panes[idx];
+    this.patchPane(idx, { selected: p.selected === id ? null : id });
+  };
+  setView = (idx, v) => this.patchPane(idx, { view: v });
+  addTab = (idx) => {
+    const panes = this.state.panes.slice();
+    const pane = { ...panes[idx] };
+    const id = paneIdSeq++;
+    pane.tabs = [...pane.tabs, { id, label: 'Home' }];
+    pane.activeTab = pane.tabs.length - 1;
+    panes[idx] = pane;
+    this.setState({ panes });
+  };
+  activateTab = (idx, tabIdx) => this.patchPane(idx, { activeTab: tabIdx });
+  closeTab = (idx, tabIdx) => {
+    const pane = this.state.panes[idx];
+    if (pane.tabs.length > 1) {
+      const tabs = pane.tabs.filter((_, i) => i !== tabIdx);
+      const activeTab = Math.min(pane.activeTab, tabs.length - 1);
+      this.patchPane(idx, { tabs, activeTab });
+    } else {
+      this.closePane(idx);
+    }
+  };
+  toggleSplit = () => {
+    if (this.state.split) {
+      this.setState({ panes: [this.state.panes[0]], split: false });
+    } else {
+      const id = paneIdSeq++;
+      const second = { id, place: 'documents', selected: null, view: 'list', tabs: [{ id: paneIdSeq++, label: 'Documents' }], activeTab: 0 };
+      this.setState({ panes: [...this.state.panes, second], split: true });
+    }
+  };
+  closePane = (idx) => {
+    if (this.state.panes.length > 1) {
+      const panes = this.state.panes.filter((_, i) => i !== idx);
+      this.setState({ panes, split: panes.length > 1 });
+    }
+  };
+  patchGit = (patch) => this.setState({ git: { ...this.state.git, ...patch } });
+
+  gitRefresh = () => {
+    this.patchGit({ refreshing: true, statusMessage: null });
+    setTimeout(() => this.patchGit({ refreshing: false }), 500);
+  };
+  gitTogglePin = () => this.patchGit({ pinned: !this.state.git.pinned });
+  gitPull = () => this.patchGit({ statusMessage: 'Pulled from origin/main (fast-forward)', statusIsError: false });
+  gitPush = () => this.patchGit({ statusMessage: 'Pushed to origin/main', statusIsError: false });
+  checkoutBranch = (name) => {
+    if (name === this.state.git.branch) return;
+    this.patchGit({ branch: name, selectedDiff: null });
+  };
+  setNewBranchName = (e) => this.patchGit({ newBranchName: e.target.value });
+  createBranch = () => {
+    const name = this.state.git.newBranchName.trim();
+    if (!name) return;
+    const branches = this.state.git.branches.includes(name) ? this.state.git.branches : [...this.state.git.branches, name];
+    this.patchGit({ branches, branch: name, newBranchName: '', selectedDiff: null });
+  };
+  setStashMessage = (e) => this.patchGit({ stashMessage: e.target.value });
+  stashPush = () => {
+    const g = this.state.git;
+    const label = g.stashMessage.trim() || `WIP on ${g.branch}`;
+    const id = Date.now();
+    this.patchGit({ stashes: [{ id, label }, ...g.stashes], stashMessage: '' });
+  };
+  stashPop = (id) => this.patchGit({ stashes: this.state.git.stashes.filter(s => s.id !== id) });
+  stashDrop = (id) => this.patchGit({ stashes: this.state.git.stashes.filter(s => s.id !== id) });
+  stage = (path) => {
+    const g = this.state.git;
+    this.patchGit({
+      staged: [...g.staged, path],
+      modified: g.modified.filter(p => p !== path),
+      untracked: g.untracked.filter(p => p !== path),
+    });
+  };
+  unstage = (path) => {
+    const g = this.state.git;
+    this.patchGit({ staged: g.staged.filter(p => p !== path), modified: [...g.modified, path] });
+  };
+  setCommitMessage = (e) => this.patchGit({ commitMessage: e.target.value });
+  commit = () => {
+    const g = this.state.git;
+    if (g.staged.length === 0) return;
+    this.patchGit({ staged: [], commitMessage: '', selectedDiff: null, statusMessage: `Committed ${g.staged.length} file${g.staged.length === 1 ? '' : 's'}`, statusIsError: false });
+  };
+  showDiff = (path, staged) => {
+    const lines = [
+      { t: 'ctx', text: `--- a/${path}` }, { t: 'ctx', text: `+++ b/${path}` },
+      { t: 'ctx', text: '@@ -12,6 +12,9 @@' },
+      { t: 'ctx', text: '  fn theme(cx: &App) -> Hsla {' },
+      { t: 'del', text: '-    cx.theme().primary' }, { t: 'add', text: '+    cx.theme().accent_primary' },
+      { t: 'add', text: '+    // resolved via role, not hex' },
+      { t: 'ctx', text: '  }' },
+    ];
+    this.patchGit({ selectedDiff: { path, staged, lines } });
+  };
+  closeDiff = () => this.patchGit({ selectedDiff: null });
+  connectS3 = () => this.setState({ s3Connected: true });
+  toggleShowHidden = () => this.setState({ showHidden: !this.state.showHidden });
+  toggleSynced = () => this.setState({ synced: !this.state.synced });
+  toggleRestore = () => this.setState({ restoreTabs: !this.state.restoreTabs });
+  setSort = (s) => this.setState({ sort: s });
+  setSplitOrientation = (s) => this.setState({ splitOrientation: s });
+
+  renderVals() {
+    const dark = (this.props.theme ?? 'dark') === 'dark';
+    const c = dark ? {
+      bg: '#1e1e2e', bgSecondary: '#25253b', bgTertiary: '#181825', bgHover: '#313244', border: '#313244',
+      fg: '#cdd6f4', fgSecondary: '#a6adc8', muted: '#6c7086', disabled: '#45475a',
+      accent: '#007acc', accentHover: '#cba6f7', onAccent: '#ffffff',
+      toolbarBg: '#181825', toolbarBorder: '#313244', toolbarHover: '#313244', toolbarHoverBg: 'rgba(0,122,204,0.18)',
+      toolbarActiveBg: 'rgba(0,122,204,0.18)', toolbarText: '#cdd6f4', toolbarActiveText: '#cdd6f4',
+      gray200: '#25253b', gray700: '#cdd6f4',
+      green: '#a6e3a1', danger: '#f38ba8',
+    } : {
+      bg: '#dde0f2', bgSecondary: '#e6e9fa', bgTertiary: '#eceefa', bgHover: '#e0e3f4', border: '#c4c8e6',
+      fg: '#2c2e4a', fgSecondary: '#5a5d80', muted: '#7d80a6', disabled: '#9a9dc0',
+      accent: '#007acc', accentHover: '#1f9bdc', onAccent: '#ffffff',
+      toolbarBg: '#eceefa', toolbarBorder: '#c4c8e6', toolbarHover: '#e0e3f4', toolbarHoverBg: 'rgba(0,122,204,0.12)',
+      toolbarActiveBg: 'rgba(0,122,204,0.12)', toolbarText: '#2c2e4a', toolbarActiveText: '#2c2e4a',
+      gray200: '#e6e9fa', gray700: '#2c2e4a',
+      green: '#40a02b', danger: '#d20f39',
+    };
+
+    const NAV_DEFS = [
+      { id: 'explorer', label: 'Explorer', d: ICONS.folder },
+      { id: 'git', label: 'Git', d: ICONS.git },
+      { id: 's3', label: 'S3', d: ICONS.cloud },
+      { id: 'extensions', label: 'Extensions', d: ICONS.puzzle },
+      { id: 'settings', label: 'Settings', d: ICONS.gear },
+    ];
+    const navItems = NAV_DEFS.map(n => {
+      const active = n.id === this.state.navPage;
+      return {
+        label: n.label, onClick: () => this.setNav(n.id),
+        bg: active ? c.toolbarActiveBg : 'transparent',
+        shadow: active ? '0 1px 2px rgba(0,0,0,0.25)' : 'none',
+        iconEl: svgIcon(n.d, 19, active ? c.toolbarActiveText : c.toolbarText),
+      };
+    });
+
+    const buildPane = (pane, idx) => {
+      const rawFiles = FILES_BY_PLACE[pane.place] || [];
+      const files = rawFiles.map((f, i) => {
+        const id = `${pane.place}-${i}`;
+        const selected = pane.selected === id;
+        const iconD = iconFor(f.name, f.type);
+        return {
+          id, name: f.name, size: f.type === 'dir' ? '-' : humanBytes(f.size), modified: f.modified,
+          iconEl: svgIcon(iconD, 16, selected ? c.accent : c.fgSecondary),
+          iconElLg: svgIcon(iconD, 32, selected ? c.accent : c.fgSecondary),
+          textColor: selected ? c.fg : c.fgSecondary,
+          bg: selected ? (dark ? 'rgba(0,122,204,0.18)' : 'rgba(0,122,204,0.12)') : 'transparent',
+          onClick: () => this.selectFile(idx, id),
+        };
+      });
+
+      const places = PLACES_DEF.map(p => {
+        const active = p.id === pane.place;
+        return {
+          ...p, iconEl: svgIcon(p.d, 14, active ? c.accent : c.muted),
+          bg: active ? c.bgHover : 'transparent',
+          textColor: active ? c.fg : c.fgSecondary, weight: active ? 500 : 400,
+          onClick: () => this.goPlace(idx, p.id),
+        };
+      });
+
+      const crumbParts = pane.place === 'home' ? ['Home'] : ['Home', PLACES_DEF.find(p => p.id === pane.place)?.label];
+      const crumbs = crumbParts.filter(Boolean).map((label, i, arr) => ({
+        label, hasSep: i < arr.length - 1,
+        color: i === arr.length - 1 ? c.fg : c.muted,
+        weight: i === arr.length - 1 ? 500 : 400,
+        onClick: () => {},
+      }));
+
+      const tabs = pane.tabs.map((t, i) => ({
+        label: t.label, showClose: pane.tabs.length > 1,
+        bg: i === pane.activeTab ? c.toolbarActiveBg : 'transparent',
+        hoverBg: c.toolbarHoverBg,
+        color: i === pane.activeTab ? c.toolbarActiveText : c.toolbarText,
+        onClick: () => this.activateTab(idx, i),
+        onClose: (e) => { e && e.stopPropagation && e.stopPropagation(); this.closeTab(idx, i); },
+      }));
+
+      const selectedFile = rawFiles[pane.selected ? Number(pane.selected.split('-')[1]) : -1];
+
+      return {
+        divider: this.state.split ? c.border : 'transparent',
+        tabs, addTab: () => this.addTab(idx),
+        showClosePane: this.state.split, closePane: () => this.closePane(idx),
+        crumbs,
+        showSidebarToggle: idx === 0,
+        showSidebar: !this.state.split,
+        showPreview: !this.state.split,
+        isList: pane.view === 'list', isGrid: pane.view === 'grid',
+        setListView: () => this.setView(idx, 'list'), setGridView: () => this.setView(idx, 'grid'),
+        listBg: pane.view === 'list' ? c.bgHover : 'transparent',
+        gridBg: pane.view === 'grid' ? c.bgHover : 'transparent',
+        listColor: pane.view === 'list' ? c.fg : c.muted,
+        gridColor: pane.view === 'grid' ? c.fg : c.muted,
+        places, files,
+        addressPath: pane.place === 'home' ? '/home/user' : `/home/user/${PLACES_DEF.find(p => p.id === pane.place)?.label}`,
+        devices: [{ label: 'Backup — 2TB', pct: 18 }],
+        hasSelection: !!selectedFile,
+        previewTitle: selectedFile ? selectedFile.name : 'Preview',
+        previewName: selectedFile ? selectedFile.name : '',
+        previewMeta: selectedFile ? (selectedFile.type === 'dir' ? 'Folder' : humanBytes(selectedFile.size)) : '',
+        previewIconEl: selectedFile ? svgIcon(iconFor(selectedFile.name, selectedFile.type), 44, c.fgSecondary) : null,
+      };
+    };
+
+    const panes = this.state.panes.map(buildPane);
+
+    const g = this.state.git;
+    const branches = g.branches.map(name => {
+      const active = name === g.branch;
+      return {
+        label: active ? `● ${name}` : name,
+        bg: active ? c.accent : c.bgHover, color: active ? c.onAccent : c.fg, weight: active ? 700 : 400,
+        hoverBg: active ? c.accent : c.border,
+        onClick: () => this.checkoutBranch(name),
+      };
+    });
+
+    const makeFileRow = (path, staged) => ({
+      path, onShowDiff: () => this.showDiff(path, staged),
+      onAction: () => staged ? this.unstage(path) : this.stage(path),
+    });
+    const gitSections = [
+      { label: 'Staged', count: g.staged.length, plural: g.staged.length === 1 ? '' : 's', color: c.accent, actionLabel: '− Unstage', hasFiles: g.staged.length > 0, files: g.staged.map(p => makeFileRow(p, true)) },
+      { label: 'Modified', count: g.modified.length, plural: g.modified.length === 1 ? '' : 's', color: c.fgSecondary, actionLabel: '+ Stage', hasFiles: g.modified.length > 0, files: g.modified.map(p => makeFileRow(p, false)) },
+      { label: 'Untracked', count: g.untracked.length, plural: g.untracked.length === 1 ? '' : 's', color: c.fgSecondary, actionLabel: '+ Stage', hasFiles: g.untracked.length > 0, files: g.untracked.map(p => makeFileRow(p, false)) },
+    ];
+
+    const stashes = g.stashes.map(s => ({
+      label: s.label, onPop: () => this.stashPop(s.id), onDrop: () => this.stashDrop(s.id),
+    }));
+
+    const diffColor = { ctx: c.fgSecondary, add: c.green, del: c.danger };
+    const diffPrefix = { ctx: '', add: '', del: '' };
+    const diffLines = g.selectedDiff ? g.selectedDiff.lines.map(l => ({ text: l.text, color: diffColor[l.t] })) : [];
+
+    const themeModes = ['System', 'Light', 'Dark'].map(label => {
+      const active = (label === 'Dark' && dark) || (label === 'Light' && !dark);
+      return { label, bg: active ? c.accent : 'transparent', color: active ? c.onAccent : c.fgSecondary, onClick: () => {} };
+    });
+    const accentSwatches = ['#007acc', '#a6e3a1', '#f38ba8', '#f9e2af'].map(color => ({
+      color, border: color === '#007acc' ? c.fg : 'transparent',
+    }));
+    const sortButtons = ['Name', 'Modified', 'Size', 'Kind'].map(label => ({
+      label, bg: this.state.sort === label ? c.accent : 'transparent', color: this.state.sort === label ? c.onAccent : c.fgSecondary,
+      onClick: () => this.setSort(label),
+    }));
+    const splitButtons = ['Side by side', 'Stacked'].map(label => ({
+      label, bg: this.state.splitOrientation === label ? c.accent : 'transparent', color: this.state.splitOrientation === label ? c.onAccent : c.fgSecondary,
+      onClick: () => this.setSplitOrientation(label),
+    }));
+
+    const activePane = panes[0];
+
+    return {
+      c, navItems,
+      isExplorer: this.state.navPage === 'explorer', isGit: this.state.navPage === 'git',
+      isS3: this.state.navPage === 's3', isExtensions: this.state.navPage === 'extensions',
+      isSettings: this.state.navPage === 'settings',
+      panes, toggleSplit: this.toggleSplit,
+      gitBranch: g.branch, gitWorkdir: g.workdir, branches, gitSections, stashes, hasStashes: stashes.length > 0,
+      newBranchName: g.newBranchName, setNewBranchName: this.setNewBranchName, createBranch: this.createBranch,
+      stashMessage: g.stashMessage, setStashMessage: this.setStashMessage, stashPush: this.stashPush,
+      commitMessage: g.commitMessage, setCommitMessage: this.setCommitMessage, commit: this.commit,
+      commitBg: g.staged.length ? c.accent : c.border, commitColor: g.staged.length ? c.onAccent : c.muted,
+      commitOpacity: g.staged.length ? 1 : 0.6,
+      gitRefresh: this.gitRefresh, gitRefreshing: g.refreshing,
+      gitTogglePin: this.gitTogglePin, gitPinnedBg: g.pinned ? c.toolbarActiveBg : c.bgHover, gitPinLabel: g.pinned ? 'Pinned' : 'Pin',
+      gitPull: this.gitPull, gitPush: this.gitPush,
+      gitStatusMessage: g.statusMessage, gitStatusColor: g.statusIsError ? c.danger : c.green,
+      hasDiff: !!g.selectedDiff, closeDiff: this.closeDiff, diffLines,
+      diffTitle: g.selectedDiff ? `Diff (${g.selectedDiff.staged ? 'staged' : 'worktree'}) — ${g.selectedDiff.path}` : '',
+      s3Connected: this.state.s3Connected, connectS3: this.connectS3,
+      s3Buckets: ['user-uploads', 'chronos-backups', 'static-assets'],
+      themeModes, accentSwatches, sortButtons, splitButtons,
+      showHidden: this.state.showHidden, toggleShowHidden: this.toggleShowHidden,
+      synced: this.state.synced, toggleSynced: this.toggleSynced,
+      restoreTabs: this.state.restoreTabs, toggleRestore: this.toggleRestore,
+      footerItems: activePane.files.length,
+      footerPath: this.state.panes[0].place === 'home' ? '/home/user' : `/home/user/${PLACES_DEF.find(p => p.id === this.state.panes[0].place)?.label}`,
+    };
+  }
+}
+
+</script>
+</body>
+</html>
