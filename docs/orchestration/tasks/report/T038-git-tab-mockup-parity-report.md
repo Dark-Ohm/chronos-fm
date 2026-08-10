@@ -1,16 +1,10 @@
 # T038 — Git tab mockup parity — Implementation report
 
-> ## ⚖️ ARCHITECT UPDATE (2026-08-10): **PARTIAL-ACCEPT** (vision progress)
+> ## ✅ ARCHITECT FINAL (2026-08-10): **ACCEPT / CLOSED** (Phase V)
 >
-> After T046/T047:
-> - Service+page code — still **ACCEPT**
-> - History populated grim — **ACCEPT** (`T047-shots/t047_git_history_fixed.png`, 50 commits)
-> - Empty/not-a-repo path — **ACCEPT** (`T046-shots/t046_git.png`)
-> - Still missing vision: **Changes / Branches / Stashes / Remotes** sub-view grims
->   (run via `--page=git:changes|branches|stashes|remotes`)
->
-> Do **not** full-close until remaining sub-views grimmed (or client waiver).
-> T046 closed; residual lives on this ticket only.
+> Vision pack complete on real repo (clean session): Changes / History /
+> Branches / Stashes / Remotes — `report-log/T038-shots/t038_git_*.png`.
+> Ticket → `done/T038-git-tab-mockup-parity.md`. Phase F mockup extras separate.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED — awaiting review. Do not treat this
 report as a self-grant of ACCEPT; per session policy the executor does not

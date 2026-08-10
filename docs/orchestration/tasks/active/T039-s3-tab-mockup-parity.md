@@ -2,63 +2,25 @@
 
 > ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
 >
-> Chunked engine + 4-view UI shipped (unit tests green). Empty-state grim
-> (`t046_s3.png`) only. **Residuals:**
-> 1. Sub-view grims: `--page=s3:explorer|buckets|transfers|properties`
-> 2. RustFS live transfer integration (Phase F-ish)
+> ### Code — ACCEPT
+> Chunked transfer engine + 4-view UI + ashpd pickers (unit tests green).
+>
+> ### Vision so far
+> - Empty NoProfiles: `T046-shots/t046_s3.png` + `T039-shots/t039_s3_*.png`
+> - **Gap:** with zero profiles the page short-circuits to empty gate — **sub-nav
+>   (Explorer/Buckets/Transfers/Properties) is not visible** in grims. So
+>   `--page=s3:transfers` does not prove Transfers chrome without a profile.
+>
+> ### Residuals (block full V ACCEPT)
+> 1. Prove 4-view shell with a real profile (or show sub-nav chrome even when
+>    disconnected — product decision).
+> 2. Optional: RustFS live transfer byte proof (Phase F-ish).
 >
 > Report: `report/T039-s3-tab-mockup-parity-report.md`
+> Shots: `report-log/T039-shots/`
 
+## Strategy
 
-## Strategy: smart pixel-copy (Phase V) first
+**Epic:** T042. Mockup: `docs/design/mockups/Chronos-S3-Tab.dc.html`.
 
-**Agreed (client + architect):** mockup = product vision. Live may lag.
-Delivery: **Phase V = visual/IA copy**, then **Phase F = function fill**.
-
-### Phase V (THIS ticket — Must)
-
-1. Layout/IA/density **match mockup** (shell chrome, nav, panels, empty states).
-2. Wire **already-real** data/actions only (no fake history/transfers/progress).
-3. Views without backend: **render chrome + honest empty/disabled** ("needs …"), do not delete from IA.
-4. Icons: `crates/chronos-fm-ui/assets/icons/` only — not mockup SVG paths.
-5. Theme: ChronOS dark tokens (`chronos.theme.json` / `chronos_fm_ui::theme`).
-6. Proof: release binary + grim + **vision** review vs mockup.
-7. Do **not** mix mega-backend (multipart, git log engine, plugin host) into V PR.
-
-### Phase F (residual / follow-up tickets)
-
-Backend + full interactivity for mockup-only views. Separate tickets after V ACCEPT.
-
-### Non-negotiables
-
-| Rule | Detail |
-|------|--------|
-| Source truth | `/home/neo/projects/chronos-ecosystem/Source` + `crates/*` — not Zed, not datasets |
-| Source edits | Only for the better; commit+report **what / why / зачем** |
-| Facts only | Claim → Evidence → Truth base; UNVERIFIED ≠ ACCEPT |
-| Executor | **Vision/omnimodal** for visual ACCEPT |
-| No secrets | in report/grim/config (S3 keys = keyring only) |
-
-
-## Phase V scope (this ticket)
-
-| View | V behavior |
-|------|------------|
-| Connect states | NoProfiles / NeedCredentials / Connecting / Error — mockup-density cards; secrets keyring only |
-| Shell | Toolbar (bucket chip, endpoint mono, sync) + left sub-nav |
-| **Explorer** | Browse via existing pane/provider — breadcrumb `s3://`, list, preview chrome |
-| **Buckets** | List if `list_buckets` works; else empty+reason |
-| **Transfers** | **Chrome only** + empty ("no active transfers") — **no fake progress** |
-| **Properties** | Object/bucket props if data available; else empty |
-
-## Phase F residual (not V)
-
-Chunked multipart jobs, cancel/retry queue, native file dialogs (ashpd probe), New bucket — **after** V ACCEPT.
-
-## Done when (V)
-
-Grim: connect + browsing chrome match mockup IA; Transfers not fake; T011/T021 browse intact; vision ACCEPT V.
-
-## Related
-
-T036 · T011/T021 · no secrets in artifacts
+Phase V = 4-view chrome + honest empty; Phase F = live transfers / RustFS.

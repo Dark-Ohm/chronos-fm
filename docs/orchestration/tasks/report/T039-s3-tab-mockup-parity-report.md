@@ -1,13 +1,10 @@
 # T039 — S3 tab mockup parity — Implementation report
 
-> ## ⚖️ ARCHITECT UPDATE (2026-08-10): **PARTIAL-ACCEPT** (unchanged gates)
+> ## ⚖️ ARCHITECT UPDATE (2026-08-10): **PARTIAL** — sub-view grims inconclusive
 >
-> T046 closed with empty-state grim only (`t046_s3.png` NoProfiles).
-> Still open:
-> 1. Sub-view grims: `s3:explorer|buckets|transfers|properties` (honest empty OK)
-> 2. RustFS integration (real transfer bytes) — Phase F / residual
->
-> Code ship stands; not full-close.
+> `T039-shots/t039_s3_{buckets,transfers,properties,explorer}.png` all show
+> the same NoProfiles empty gate (no sub-nav chrome). Residual: profile path
+> or product decision to always show 4-view chrome when disconnected.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED — not claimed done. Per session policy
 the executor does not accept its own work; every claim below is either a

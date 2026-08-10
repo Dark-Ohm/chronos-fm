@@ -1,14 +1,29 @@
 # T038 — Phase V: Git tab smart pixel-copy / function
 
-> ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
+> ## ✅ ARCHITECT VERDICT: **ACCEPT / CLOSED** (Phase V, 2026-08-10)
 >
-> Service + page **ACCEPT**. History vision **ACCEPT** (T047 grim, 50 commits).
-> Empty not-a-repo **ACCEPT** (T046). **Residual vision:** grim Changes /
-> Branches / Stashes / Remotes via `--page=git:<sub>`. Horizontal sub-nav
-> deviation OK. T046 closed.
+> ### Code — ACCEPT (prior)
+> Service history/remotes/amend + page sub-nav; horizontal nav deviation OK.
+>
+> ### Vision — ACCEPT (populated repo path)
+> Grims under `report-log/T038-shots/` (`class=chronos-fm`), session state
+> cleared so explorer cwd = repo (not restored Pictures):
+> - `t038_git_changes.png` — Modified/Untracked + Commit/Amend
+> - `t038_git_history.png` — 50 commits (T047 fix live)
+> - `t038_git_branches.png` — main + Create & switch
+> - `t038_git_stashes.png` — honest empty + stash push
+> - `t038_git_remotes.png` — origin fetch/push + add remote form
+>
+> Empty not-a-repo path earlier: `T046-shots/t046_git.png`.
+>
+> ### Phase F residual (not blocking V)
+> Merge-graph density, remote-tracking branches, cherry-pick — mockup extras.
+>
+> ### Smoke note
+> Populated Git proof needs clean session (`state.redb` aside) or path on a
+> repo; restore_tabs can land on non-repo (e.g. Pictures).
 >
 > Report: `report/T038-git-tab-mockup-parity-report.md`
-> Shots: `report-log/T047-shots/`, `report-log/T046-shots/t046_git*.png`
 
 
 ## Strategy: smart pixel-copy (Phase V) first

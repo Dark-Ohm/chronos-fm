@@ -1,9 +1,9 @@
 # HANDOFF — контекст для новой сессии Архитектора (Chronos-FM)
 
-**Обновлено: 2026-08-10 (чекпоинт #7), HEAD `65656ed`.**  
+**Обновлено: 2026-08-10 (чекпоинт #7), HEAD `48a77b1`.**  
 Читать **этот блок первым**. Ниже — чекпоинты #6…#1 и §0–§5 (история).
 
-## Чекпоинт #7, 2026-08-10 — Phase V tails closed (T040/T041/T046/T047)
+## Чекпоинт #7, 2026-08-10 — Phase V nearly closed; T038 ACCEPT; T039 residual
 
 ### Цель продукта (без изменений)
 Перекрасить Chronos-FM в Chronos + паттерны + довести до замены Thunar/Dolphin.
@@ -36,22 +36,22 @@ Visual ACCEPT: release + grim of `class=chronos-fm` + vision.
 **Tooling:** `./target/release/chronos-fm --page=<name|page:sub>` +
 `script/dev/t046_page_smoke.sh` (T046 ACCEPT).
 
-### Состояние тикетов (чекпоинт #7)
+### Состояние тикетов (чекпоинт #7, post T038 close)
 
 | ID | State | Note |
 |----|--------|------|
 | **T037** | **done ACCEPT** | Phase V shell |
-| **T038** | **PARTIAL-ACCEPT** | History ACCEPT (T047); residual: Changes/Branches/Stashes/Remotes grims |
-| **T039** | **PARTIAL-ACCEPT** | code OK; residual: sub-view grims + RustFS |
-| **T040** | **done ACCEPT** | Phase V settings shell (T046 grims) |
-| **T041** | **done ACCEPT** | Phase V extensions shell (T046 grim) |
-| **T042** | epic active | index only |
+| **T038** | **done ACCEPT** | All 5 Git sub-views grimed on real repo |
+| **T039** | **PARTIAL-ACCEPT** | NoProfiles gate hides 4-view chrome; need profile path |
+| **T040** | **done ACCEPT** | Phase V settings |
+| **T041** | **done ACCEPT** | Phase V extensions |
+| **T042** | epic active | index — last open page child T039 |
 | **T043–T045** | **done** | Places / listing / snapshot_memo |
-| **T046** | **done ACCEPT** | `--page=` + sub; hypr residual **waived** |
-| **T047** | **done ACCEPT** | History 256KB + no silent empty |
+| **T046** | **done ACCEPT** | `--page=` tooling |
+| **T047** | **done ACCEPT** | History 256KB |
 | T010–T036 | mostly done | `docs/orchestration/tasks/done/` |
 
-Active queue files: `T038`, `T039`, `T042` only.
+Active queue files: **`T039`**, **`T042`** only.
 
 ### Ключевые технические факты
 1. `app_id = Some("chronos-fm")` — Hyprland class matchable.
@@ -67,11 +67,11 @@ Active queue files: `T038`, `T039`, `T042` only.
 - **Executor:** code + release grim; vision for visual ACCEPT; no self-ACCEPT.
 
 ### Очередь (сейчас)
-1. **T038** — grim remaining Git sub-views → full V ACCEPT.
-2. **T039** — grim S3 sub-views; RustFS optional residual.
-3. Phase F backends after each full V ACCEPT.
-4. `git push` (ahead origin) — **only on user request**.
-5. Perf residuals — non-blocking.
+1. **T039** — prove 4-view S3 shell with profile (or always-show chrome decision).
+2. Phase F backends after full V (T039 close).
+3. `git push` (ahead origin) — **only on user request**.
+4. Perf residuals — non-blocking.
+5. Smoke tip: Git populated grims need clean `state.redb` or repo path.
 
 ### Где что лежит
 | Что | Путь |
