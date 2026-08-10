@@ -104,12 +104,47 @@ this session — the fix site is inside core layout-engine re-entrancy
 handling, judged too risky to blind-fix without further isolation given
 the fork's blast radius (shared by ChronOS too).
 
+## Update 2 (2026-08-10, continued): H5a falsified, live timed correlation deepens the mystery
+
+**H5a (offset-stack leak) falsified by static review.** Traced every
+push/pop in `AnyElement::prepaint_at` → `with_absolute_element_offset` and
+`v_virtual_list`'s `with_content_mask` wrapping its item loop: both
+correctly RAII-scoped, single call sites, no early-return path that skips
+the pop. Not the mechanism.
+
+**Live timed correlation (architect-approved path 1).** Added a per-thread
+frame counter at `Window::draw`'s entry and logged *every* `Svg::paint`
+invocation (both branches, unconditional on match/color) with the frame
+number. For `icons/house.svg` (sidebar Home, unambiguous single use site):
+**every logged call from frame 1 through frame 494 (~22s, long past when
+grims show it rendering correctly) is `bounds=(0,0)-(0,0)`. Zero non-zero
+occurrences across the whole process lifetime.** This rules out the
+"double paint, one correct one bogus" framing from the previous update —
+there is no second, correct `Svg::paint` invocation for this element
+anywhere in the trace. Whatever produces the correct on-screen icon does
+not go through this code path at all, or gpui's frame compositing doesn't
+fully repaint every draw call (a renderer-level question, not answerable
+from element-tree instrumentation).
+
+**Also ruled out: duplicate/hidden second pane.** Instrumented
+`ExplorerPage::restore_session` (Chronos-FM, cheap build) — confirmed
+`panes=1`, no split, no second `ExplorerPane`/sidebar instance rendering
+at zero width to explain a correct+bogus pair that way.
+
+All instrumentation reverted (`Source/gpui/window.rs`, `elements/svg.rs`,
+`gpui.rs`, deleted `t045_debug.rs`; Chronos-FM `explorer/page.rs`) — both
+repos clean. `cargo test --workspace`: 0 failed.
+
 ## Verdict
 
-**Filed and substantially narrowed, not resolved.** Two of four original
-hypotheses falsified with hard evidence (H1, H4); exact log site and
-affected-icon set identified; a concrete, evidence-backed new hypothesis
-(nested `compute_layout` re-entrancy in `v_virtual_list`) handed to the
-next pass instead of the original vaguer H1–H3. All debug instrumentation
-reverted; tree is clean (`git status` on Source shows no diff from this
-investigation).
+**Filed and substantially narrowed, not resolved — genuinely hard now.**
+H1, H4, and H5a all falsified with hard evidence; exact log site,
+affected-icon set, and (via the frame-counter trace) the fact that *no*
+successful paint of the affected element occurs through the instrumented
+code path at all, ever, in the process lifetime — a stronger and stranger
+finding than the original "double paint" theory. Recommending the next
+pass build the architect-approved isolated repro in
+`Source/gpui/examples/` (path 2) rather than more live `chronos-fm`
+release cycles (~2 min/iteration is slow for this kind of investigation),
+and/or bring in renderer-level tooling (frame capture) since this may be
+below what CPU-side element-tree logging can resolve.

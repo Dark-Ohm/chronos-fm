@@ -169,6 +169,65 @@ SVG icon + a nested `layout_as_root` caller, no Chronos-FM code at all) —
 both are real next steps, not done this pass. Handing off with the search
 space narrowed rather than forcing another live cycle for its own sake.
 
+## Live timed correlation (2026-08-10, continued): the mystery deepened, not solved
+
+Per architect-approved path 1. Added a per-thread frame counter
+(`Window::draw`'s entry point) and logged **every** `Svg::paint` invocation
+(not just zero-bounds ones — both `self.path` and `self.external_path`
+branches, plus a top-of-closure log that fires regardless of which branch
+matches or whether `style.text.color` is `None`) with the frame number.
+
+**Result, `icons/house.svg` specifically (sidebar "Home", unambiguous —
+only used by `sidebar.rs::folder_icon_path`):** every logged invocation,
+from **frame 1** (the very first `Window::draw()` call) through **frame
+494** (~22s in, long after grim captures already show the icon correctly
+on screen) is `bounds=(0,0)-(0,0)`. **Zero non-zero occurrences across the
+entire process lifetime.** `self.path=Some("icons/house.svg")`,
+`self.external_path=None`, `color_some=true` on every single one — so it's
+not a silently-skipped paint (`style.text.color == None`) either; the
+`if let` branch I originally instrumented is provably the *only* branch
+that ever fires for this element, and it *always* fails.
+
+**This rules out "double paint, one correct one bogus" as I described it
+in the previous update** — there is no second, correct invocation of
+`Svg::paint` for this element to be found anywhere in this trace. Whatever
+puts the correct icon on screen (confirmed via T044's grim evidence, and
+via this session's own `t037_smoke.sh` screenshots) is not something this
+instrumentation can see, meaning either:
+- it doesn't go through `Element::paint` on this `Svg` value's own
+  `self.path` branch at all (a genuinely different rendering mechanism
+  for the same visual result), or
+- gpui's frame compositing does not fully repaint the whole surface on
+  every `draw()` call (a partial/dirty-rect update, or the wgpu backend
+  retaining a previous frame's sprite/output for a region that a later,
+  failed paint attempt doesn't overwrite) — a renderer-level question this
+  session's log-based instrumentation cannot answer.
+
+**Also ruled out this pass:** a duplicate/hidden second `ExplorerPane`
+(split view) rendering its own sidebar at zero width. Instrumented
+`ExplorerPage::restore_session`'s entry (Chronos-FM's own code, cheap
+build) to log the restored session snapshot's pane count:
+`panes=1 pane0_tabs=1 pane1_tabs=None` — there is exactly one pane, no
+split, no second sidebar instance to explain a "correct + bogus" pair that
+way either.
+
+**All debug instrumentation reverted** (`Source/gpui/src/window.rs`,
+`elements/svg.rs`, `gpui.rs`, deleted `t045_debug.rs`;
+Chronos-FM's `explorer/page.rs`) — `git status` clean on both repos.
+
+**Honest assessment:** this has moved from "narrowed hypothesis" to "a
+surprising, well-evidenced fact that doesn't fit the mental model of how
+`Svg::paint`/`layout_bounds`/frame compositing are supposed to interact."
+Resolving it needs either GPU/renderer-level tooling (frame capture,
+RenderDoc-style inspection of what the wgpu backend actually submits per
+draw call) or a much deeper read of `gpui_wgpu`'s scene-to-GPU pipeline —
+beyond what CPU-side `eprintln!` instrumentation of the element tree can
+distinguish. Recommending the next pass start with **path 2** (the
+isolated `Source/gpui/examples/` repro the architect also approved) since
+a minimal reproduction would let a renderer-level investigation iterate
+much faster than this session's full `chronos-fm` release-binary cycle
+(~2 min/iteration).
+
 ## Done when
 
 1. Root cause Claim → Evidence (one H* confirmed, others falsified).
