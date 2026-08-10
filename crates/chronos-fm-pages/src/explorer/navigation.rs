@@ -39,6 +39,10 @@ impl ExplorerPane {
     /// When a provider is set, this is a no-op — the async path
     /// ([`reload_provider`]) handles loading to avoid blocking the UI.
     pub(crate) fn reload(&mut self) {
+        #[cfg(test)]
+        {
+            self.reload_count += 1;
+        }
         if self.provider.is_some() {
             // S3/remote: don't block the UI thread. `reload_provider`
             // will be called from navigation methods (change_dir, go_back,

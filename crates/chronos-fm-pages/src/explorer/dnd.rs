@@ -165,6 +165,10 @@ pub(crate) fn validate_drop(
     }
 
     for path in paths {
+        let source_parent = path
+            .parent()
+            .and_then(|parent| parent.canonicalize().ok())
+            .ok_or_else(|| DropValidationError::SourceUnavailable(path.clone()))?;
         let source = path
             .canonicalize()
             .map_err(|_| DropValidationError::SourceUnavailable(path.clone()))?;
@@ -176,7 +180,7 @@ pub(crate) fn validate_drop(
                 path.clone(),
             ));
         }
-        if mode == DropMode::Move && source.parent() == Some(destination.as_path()) {
+        if mode == DropMode::Move && source_parent == destination {
             return Err(DropValidationError::SameParentMove(path.clone()));
         }
     }
@@ -416,8 +420,7 @@ impl Render for FileDragPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use chronos_fm_services::fs::ops::{MoveKind, TransferReport, TransferSuccess};
-    use gpui::{AppContext, Modifiers, TestAppContext, WeakEntity, WindowHandle};
+    use gpui::{AppContext, Modifiers, TestAppContext, WindowHandle};
     use gpui_component::Root;
     use std::cell::RefCell;
     use std::path::Path;
@@ -568,6 +571,32 @@ mod tests {
         );
     }
 
+    #[cfg(unix)]
+    #[test]
+    fn validation_rejects_same_parent_move_for_symlink_entry() {
+        use std::os::unix::fs::symlink;
+
+        let fixture = tempfile::tempdir().unwrap();
+        let source_parent = fixture.path().join("source-parent");
+        let resolved_parent = fixture.path().join("resolved-parent");
+        std::fs::create_dir(&source_parent).unwrap();
+        std::fs::create_dir(&resolved_parent).unwrap();
+        let resolved_source = resolved_parent.join("real.txt");
+        let symlink_source = source_parent.join("link.txt");
+        std::fs::write(&resolved_source, "x").unwrap();
+        symlink(&resolved_source, &symlink_source).unwrap();
+
+        assert!(
+            validate_drop(
+                std::slice::from_ref(&symlink_source),
+                &target(&source_parent),
+                DropMode::Move,
+            )
+            .is_err(),
+            "the symlink entry is already in the destination even though its target is elsewhere"
+        );
+    }
+
     fn rooted_pane(
         cx: &mut TestAppContext,
         cwd: &Path,
@@ -629,10 +658,10 @@ mod tests {
         )
     }
 
-    fn released_pane(
+    fn unrooted_pane(
         cx: &mut TestAppContext,
         cwd: &Path,
-    ) -> (WindowHandle<Root>, WeakEntity<ExplorerPane>, EntityId) {
+    ) -> (WindowHandle<Root>, Entity<ExplorerPane>) {
         cx.update(gpui_component::init);
         cx.update(crate::explorer::clipboard::init);
         let cwd = cwd.to_string_lossy().to_string();
@@ -642,21 +671,19 @@ mod tests {
             let orphan = cx.new(|cx| {
                 let mut pane = ExplorerPane::build(None, window, cx);
                 pane.cwd = cwd.clone();
+                pane.sidebar_visible = false;
+                pane.reload();
                 pane
             });
             *released_for_window.borrow_mut() = Some(orphan);
             let keeper = cx.new(|cx| ExplorerPane::build(None, window, cx));
             Root::new(keeper, window, cx)
         });
-        let released = released
+        let pane = released
             .borrow_mut()
             .take()
             .expect("orphan pane was captured");
-        let id = released.entity_id();
-        let weak = released.downgrade();
-        drop(released);
-        assert!(weak.upgrade().is_none());
-        (root, weak, id)
+        (root, pane)
     }
 
     fn begin_drop(
@@ -806,7 +833,7 @@ mod tests {
         std::fs::write(&source_path, "move").unwrap();
         let (_root, pane) = rooted_pane(cx, fixture.path());
         select_path(&pane, &source_path, cx);
-        let revision_before = pane.read_with(cx, |pane, _cx| pane.entries_revision);
+        let reloads_before = pane.read_with(cx, |pane, _cx| pane.reload_count);
 
         assert!(begin_drop(
             &pane,
@@ -821,8 +848,8 @@ mod tests {
         assert!(destination.join("move.txt").exists());
         assert!(pane.read_with(cx, |pane, _cx| pane.selection.is_empty()));
         assert_eq!(
-            pane.read_with(cx, |pane, _cx| pane.entries_revision),
-            revision_before + 1
+            pane.read_with(cx, |pane, _cx| pane.reload_count),
+            reloads_before + 1
         );
     }
 
@@ -927,52 +954,76 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn completion_tolerates_released_source_or_target(cx: &mut TestAppContext) {
+    async fn released_source_while_pending_still_completes_target(cx: &mut TestAppContext) {
         let fixture = tempfile::tempdir().unwrap();
         let source_dir = fixture.path().join("source");
         let destination = fixture.path().join("destination");
         std::fs::create_dir(&source_dir).unwrap();
         std::fs::create_dir(&destination).unwrap();
-        let (_source_root, source) = rooted_pane(cx, &source_dir);
+        let source_path = source_dir.join("moved.txt");
+        let destination_path = destination.join("moved.txt");
+        std::fs::write(&source_path, "moved").unwrap();
+        let (_source_host, source) = unrooted_pane(cx, &source_dir);
         let (_target_root, target_pane) = rooted_pane(cx, &destination);
-        let (_released_source_root, released_source, released_source_id) =
-            released_pane(cx, &source_dir);
-        let (_released_target_root, released_target, released_target_id) =
-            released_pane(cx, &destination);
-        let moved = destination.join("moved.txt");
-        std::fs::write(&moved, "moved").unwrap();
-        let report = TransferReport {
-            successes: vec![TransferSuccess {
-                source: source_dir.join("moved.txt"),
-                destination: moved,
-                renamed: false,
-                move_kind: Some(MoveKind::Rename),
-            }],
-            failures: Vec::new(),
-        };
+        let released_source = source.downgrade();
 
-        cx.update(|cx| {
-            complete_file_drop(
-                target_pane.downgrade(),
-                released_source,
-                target_pane.entity_id(),
-                released_source_id,
-                DropMode::Move,
-                report,
-                cx,
-            );
-            complete_file_drop(
-                released_target,
-                source.downgrade(),
-                released_target_id,
-                source.entity_id(),
-                DropMode::Copy,
-                TransferReport {
-                    successes: Vec::new(),
-                    failures: Vec::new(),
-                },
-                cx,
-            );
-        });
+        assert!(begin_drop(
+            &target_pane,
+            file_drag(&source, vec![source_path.clone()]),
+            &destination,
+            DropTargetKind::ListingCwd,
+            Modifiers::default(),
+            cx,
+        ));
+        assert!(target_pane.read_with(cx, |pane, _cx| pane.drop_pending));
+        drop(source);
+        assert!(released_source.upgrade().is_none());
+        settle_drop(cx).await;
+
+        assert!(!source_path.exists());
+        assert!(destination_path.exists());
+        assert!(!target_pane.read_with(cx, |pane, _cx| pane.drop_pending));
+        assert_eq!(
+            target_pane.read_with(cx, |pane, _cx| pane.selected_paths()),
+            vec![destination_path.to_string_lossy().to_string()]
+        );
+    }
+
+    #[gpui::test]
+    async fn released_target_while_pending_still_completes_source(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let source_dir = fixture.path().join("source");
+        let destination = fixture.path().join("destination");
+        std::fs::create_dir(&source_dir).unwrap();
+        std::fs::create_dir(&destination).unwrap();
+        let source_path = source_dir.join("moved.txt");
+        let destination_path = destination.join("moved.txt");
+        std::fs::write(&source_path, "moved").unwrap();
+        let (_source_root, source) = rooted_pane(cx, &source_dir);
+        let (_target_host, target_pane) = unrooted_pane(cx, &destination);
+        select_path(&source, &source_path, cx);
+        let released_target = target_pane.downgrade();
+
+        assert!(begin_drop(
+            &target_pane,
+            file_drag(&source, vec![source_path.clone()]),
+            &destination,
+            DropTargetKind::ListingCwd,
+            Modifiers::default(),
+            cx,
+        ));
+        assert!(target_pane.read_with(cx, |pane, _cx| pane.drop_pending));
+        drop(target_pane);
+        assert!(released_target.upgrade().is_none());
+        settle_drop(cx).await;
+
+        assert!(!source_path.exists());
+        assert!(destination_path.exists());
+        assert!(source.read_with(cx, |pane, _cx| pane.selection.is_empty()));
+        assert!(source.read_with(cx, |pane, _cx| {
+            pane.filtered_entries
+                .iter()
+                .all(|entry| entry.path != source_path.to_string_lossy())
+        }));
     }
 }

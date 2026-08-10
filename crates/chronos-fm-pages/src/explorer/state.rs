@@ -41,6 +41,8 @@ pub struct ExplorerPane {
     // not reloaded on every render.
     /// Whether `cwd` has been loaded into `entries` at least once.
     pub loaded: bool,
+    #[cfg(test)]
+    pub(crate) reload_count: usize,
     /// Column the listing is sorted by.
     pub sort_key: SortKey,
     /// Whether the sort is ascending.
@@ -240,6 +242,8 @@ impl ExplorerPane {
             entries: Vec::new(),
             filtered_entries: Vec::new(),
             loaded: false,
+            #[cfg(test)]
+            reload_count: 0,
             sort_key: SortKey::Name,
             sort_asc: true,
             show_hidden: false,
