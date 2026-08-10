@@ -31,7 +31,7 @@
 [38;5;8m  31[0m [37m| **T043** | Places empty / text missing | **done** |[0m
 [38;5;8m  32[0m [37m| **T044** | Listing not in tree / empty pane | **done** |[0m
 [38;5;8m  33[0m [37m| **T045** | `snapshot_memo` sibling poison | **done ACCEPT** (Source fix) |[0m
-[38;5;8m  34[0m [37m| **T046** | Shared visual proof (hypr focus / `--page=`) | **active** — unblocks vision for T038–T041 |[0m
+[38;5;8m  34[0m [37m| **T046** | Shared visual proof | **PARTIAL-ACCEPT** (`--page=` + default grims); residual sub-view/data |[0m
 [38;5;8m  35[0m 
 [38;5;8m  36[0m [37m## Order[0m
 [38;5;8m  37[0m 

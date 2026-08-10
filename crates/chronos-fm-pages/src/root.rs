@@ -83,6 +83,11 @@ impl RootView {
         config_path: PathBuf,
         config_overrides: Vec<ConfigOverride>,
         config_error: Option<String>,
+        // T046 residual: `--page=<name>` debug flag, so a vision/visual-proof
+        // pass doesn't need working interactive input just to reach a
+        // non-default page. `None` (the flag omitted) keeps the product
+        // default (Explorer) — this never changes normal-user behavior.
+        initial_page: Option<PageKind>,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -105,7 +110,7 @@ impl RootView {
         let settings = cx.new(|cx| SettingsPage::new(config.clone(), window, cx));
 
         let mut view = RootView {
-            current_page: PageKind::Explorer,
+            current_page: initial_page.unwrap_or(PageKind::Explorer),
             focus_handle,
             explorer,
             git,

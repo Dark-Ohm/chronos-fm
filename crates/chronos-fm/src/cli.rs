@@ -18,6 +18,14 @@ pub struct Cli {
     #[arg(long, global = true, value_name = "COLOR")]
     pub accent: Option<String>,
 
+    /// Open directly on a given page instead of Explorer: explorer, git,
+    /// s3, extensions, or settings (case-insensitive). Debug/QA flag (T046)
+    /// so a visual-proof pass can reach a non-default page without
+    /// interactive input; an unrecognized name is warned about and ignored,
+    /// same as an invalid `--theme`.
+    #[arg(long, global = true, value_name = "NAME")]
+    pub page: Option<String>,
+
     #[command(subcommand)]
     pub command: Option<Command>,
 }
@@ -63,6 +71,20 @@ impl Cli {
             over.theme_accent = Some(accent.clone());
         }
         over
+    }
+
+    /// Resolve the `--page` flag to a `PageKind`, warning and returning
+    /// `None` (same as omitting the flag) on an unrecognized name — never
+    /// aborts the launch over a typo'd debug flag.
+    pub fn initial_page(&self) -> Option<chronos_fm_pages::PageKind> {
+        let name = self.page.as_ref()?;
+        match chronos_fm_pages::PageKind::from_cli_name(name) {
+            Some(page) => Some(page),
+            None => {
+                tracing::warn!("ignoring unrecognized --page {name:?}");
+                None
+            }
+        }
     }
 }
 
@@ -162,5 +184,45 @@ fn edit_config(path: &std::path::Path) -> i32 {
             eprintln!("failed to launch editor {editor:?}: {error}");
             1
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::Cli;
+    use clap::Parser;
+
+    fn parse(args: &[&str]) -> Cli {
+        let mut full = vec!["chronos-fm"];
+        full.extend_from_slice(args);
+        Cli::parse_from(full)
+    }
+
+    #[test]
+    fn initial_page_none_when_flag_omitted() {
+        assert_eq!(parse(&[]).initial_page(), None);
+    }
+
+    #[test]
+    fn initial_page_resolves_a_valid_name() {
+        assert_eq!(
+            parse(&["--page", "settings"]).initial_page(),
+            Some(chronos_fm_pages::PageKind::Settings)
+        );
+    }
+
+    #[test]
+    fn initial_page_is_case_insensitive() {
+        assert_eq!(
+            parse(&["--page", "S3"]).initial_page(),
+            Some(chronos_fm_pages::PageKind::S3)
+        );
+    }
+
+    #[test]
+    fn initial_page_none_and_warns_on_unrecognized_name() {
+        // Same "warn and ignore" contract as an invalid --theme — never
+        // aborts the launch over a typo'd debug flag.
+        assert_eq!(parse(&["--page", "bogus"]).initial_page(), None);
     }
 }

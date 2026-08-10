@@ -43,6 +43,7 @@ impl ChronosFmApp {
             config.apply_override(over);
         }
         let config_error = config::report_diagnostics(&diagnostics);
+        let initial_page = cli.initial_page();
 
         // GPUI drives the app (replacing `#[tokio::main]`; ADR 0004, async-runtime.md
         // §7). The search service is now tokio-free — its file watcher and progress
@@ -86,6 +87,7 @@ impl ChronosFmApp {
                 let config_overrides = config_overrides.clone();
                 let config_error = config_error.clone();
                 let store = store.clone();
+                let initial_page = initial_page;
                 move |window, cx| {
                     // Initialize SearchService. Failure is non-fatal: the app starts
                     // with full-text search disabled rather than crashing.
@@ -122,6 +124,7 @@ impl ChronosFmApp {
                             config_path,
                             config_overrides,
                             config_error,
+                            initial_page,
                             window,
                             cx,
                         )

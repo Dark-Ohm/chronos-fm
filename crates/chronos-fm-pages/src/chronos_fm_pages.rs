@@ -39,6 +39,22 @@ pub enum PageKind {
 }
 
 impl PageKind {
+    /// Parses a page name from the `--page` debug CLI flag (T046 residual):
+    /// case-insensitive, matches the same names `label()` returns plus a
+    /// couple of obvious short aliases (`fs`, `files`). Returns `None` for
+    /// anything else so the caller can warn-and-ignore rather than silently
+    /// falling back to a page the user didn't ask for.
+    pub fn from_cli_name(name: &str) -> Option<PageKind> {
+        match name.trim().to_lowercase().as_str() {
+            "explorer" | "fs" | "files" => Some(PageKind::Explorer),
+            "git" => Some(PageKind::Git),
+            "s3" => Some(PageKind::S3),
+            "extensions" | "plugins" => Some(PageKind::Extensions),
+            "settings" => Some(PageKind::Settings),
+            _ => None,
+        }
+    }
+
     /// Returns the human-readable label for this page.
     pub fn label(&self) -> &'static str {
         match self {
@@ -80,4 +96,36 @@ pub trait Page {
     fn render(&mut self, window: &mut gpui::Window, cx: &mut gpui::Context<Self>) -> AnyElement
     where
         Self: Sized;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PageKind;
+
+    #[test]
+    fn from_cli_name_matches_every_label_case_insensitively() {
+        for kind in PageKind::all() {
+            let lower = kind.label().to_lowercase();
+            assert_eq!(PageKind::from_cli_name(&lower), Some(kind));
+            assert_eq!(PageKind::from_cli_name(&kind.label().to_uppercase()), Some(kind));
+        }
+    }
+
+    #[test]
+    fn from_cli_name_accepts_short_aliases() {
+        assert_eq!(PageKind::from_cli_name("fs"), Some(PageKind::Explorer));
+        assert_eq!(PageKind::from_cli_name("files"), Some(PageKind::Explorer));
+        assert_eq!(PageKind::from_cli_name("plugins"), Some(PageKind::Extensions));
+    }
+
+    #[test]
+    fn from_cli_name_trims_whitespace() {
+        assert_eq!(PageKind::from_cli_name("  git  "), Some(PageKind::Git));
+    }
+
+    #[test]
+    fn from_cli_name_rejects_unknown() {
+        assert_eq!(PageKind::from_cli_name("nonexistent"), None);
+        assert_eq!(PageKind::from_cli_name(""), None);
+    }
 }
