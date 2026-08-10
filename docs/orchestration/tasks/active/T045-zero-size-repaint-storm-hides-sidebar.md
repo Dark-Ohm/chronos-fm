@@ -1,21 +1,26 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering (was T037#5)
 
-> ## ⚖️ ARCHITECT (2026-08-10, pass 2): **PROGRESS — not ACCEPT**
+> ## ⚖️ ARCHITECT (2026-08-10, pass 3): **PROGRESS — honest stop, not ACCEPT**
 >
-> Executor GO pass accepted on evidence:
-> - **H4 FALSIFIED** — sidebar-only 20s, 0× zero-size (storm only with full tree)
-> - **H1 FALSIFIED** — ResizablePanelGroup size_changed: 3 settles, not a loop
-> - **Log site:** `Source/gpui/src/svg_renderer.rs:202` via `Svg::paint` `.log_err()`
-> - **Pattern:** ~14 SVG paths paint at (0,0)/(0,0) continuously (12k+/15s) *and*
->   also paint correctly on screen → double paint / wrong paint pass, not missing assets
-> - **Next lead (H5):** nested `layout_as_root` → `window.compute_layout` from
->   `v_virtual_list` re-entering frame-global Taffy (T014-A engine) may reset
->   sibling absolute bounds before second paint. **Do not blind-patch Source**
->   without isolation repro (shared fork blast radius).
+> Pass 2 findings still hold (H1/H4 falsified; SVG zero-bounds site;
+> double-paint pattern). Pass 3 / H5 narrowing **accepted**:
 >
-> Source tree clean after instrumentation revert — good.  
-> T037 still blocked. No self-ACCEPT.
-> Commit: `b1800f1` (docs progress). Report: `report/T045-…-report.md`.
+> - **H5a FALSIFIED (static review):** unbalanced `element_offset_stack`
+>   push/pop along `prepaint_at` / `with_absolute_element_offset` /
+>   `with_content_mask` — RAII-scoped, single sites, no early-return leak.
+> - **Sharpened observation:** all 12 588 hits are exact `Bounds::default()`
+>   (origin **and** size 0,0), not jittered/corrupted computed bounds →
+>   favors a **second paint invocation that never resolved via
+>   `layout_bounds()` this frame**, not a stale-cache half-value.
+> - **H5b still open:** nested `v_virtual_list` / Taffy re-entrancy may still
+>   interact, but mechanism is **not** offset-stack leak.
+>
+> **Approved next (either, not both blindly):**
+> 1. Live timed correlation: zero-bounds SVG paint vs nested layout window; or
+> 2. Minimal isolated repro under `Source/gpui/examples/` (no Chronos-FM).
+>
+> No blind Source layout patch. Source clean. T037 still blocked.
+> Commit: `c76c059`. Report: `report/T045-…-report.md`.
 
 **Priority:** P1 — blocks T037 §7 full visual ACCEPT (Places sidebar must be
 visible alongside a real listing, not just in isolation).
@@ -120,6 +125,10 @@ again for a *different* subtree before the outer one has finished pinning
 every node's `absolute_layout_bounds`.
 
 ## H5 narrowing (2026-08-10, continued): offset-stack leak ruled out by static review
+
+> **Architect:** H5a (stack leak) closed by static review — good stop.
+> Next must produce either timing correlation or isolated gpui repro (H5b/H6).
+
 
 Read `Window::layout_bounds` (`window.rs:4375`): its returned `bounds.origin`
 is `stored_absolute_origin + self.pixel_snap_point(self.element_offset())`

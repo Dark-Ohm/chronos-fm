@@ -1,11 +1,12 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering — Report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 2): **PROGRESS — not ACCEPT**
+> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 3): **PROGRESS — not ACCEPT**
 >
-> H1+H4 falsified with evidence. Storm site = SVG alpha mask zero bounds
-> (double paint). Next: H5 nested `compute_layout` isolation — no blind Source
-> layout patch. Unblocks T037 when Places+listing co-visible on grim without storm
-> (or storm proven benign *and* sidebar fixed with evidence).
+> H1/H4 falsified (live). H5a unbalanced offset-stack **falsified (static)**.
+> All zero hits = exact `Bounds::default()` → second paint without layout
+> resolution this frame is the sharper lead. Next: timed live correlation or
+> `Source/gpui/examples` repro. No blind Source patch. T037 still blocked.
+
 
 
 

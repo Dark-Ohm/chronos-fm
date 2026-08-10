@@ -50,7 +50,7 @@ UNVERIFIED ≠ ACCEPT. Secrets (AWS keys) не в toml/report/grim.
 | **T042** | epic active | Pixel-copy program index |
 | **T043** | **done** | Places text: Source T014-A measure memo fix + resizable path |
 | **T044** | **done** | Listing was not in render tree (T043 bypass); restored under h_resizable |
-| **T045** | **active P1** | Storm = SVG zero-bounds double-paint; H1/H4 falsified; next H5 nested compute_layout (no blind Source patch) |
+| **T045** | **active P1** | SVG double-paint `Bounds::default()`; H1/H4/H5a (stack leak) falsified; next timed correlation or gpui example repro |
 | T010–T036 etc. | mostly done | See `docs/orchestration/tasks/done/` |
 
 Reports: `report/T037-…`, `T038-…`, `T039-…`, `T044-…`, `T045-…`.
