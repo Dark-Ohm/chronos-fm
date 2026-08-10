@@ -291,15 +291,13 @@ mod tests {
                 if hits.len() < 3 {
                     continue;
                 }
-                let distance = (start.x - end.x).abs().as_f32()
-                    + (start.y - end.y).abs().as_f32();
-                if best
-                    .as_ref()
-                    .is_none_or(|(best_hits, best_distance, _, _): &(BTreeSet<usize>, f32, _, _)| {
+                let distance = (start.x - end.x).abs().as_f32() + (start.y - end.y).abs().as_f32();
+                if best.as_ref().is_none_or(
+                    |(best_hits, best_distance, _, _): &(BTreeSet<usize>, f32, _, _)| {
                         hits.len() > best_hits.len()
                             || (hits.len() == best_hits.len() && distance > *best_distance)
-                    })
-                {
+                    },
+                ) {
                     best = Some((hits, distance, start, end));
                 }
             }
@@ -427,7 +425,8 @@ mod tests {
             assert_eq!(pane.selection, expected);
             assert!(pane.selection.len() >= 3);
             assert_rect_inside(
-                pane.marquee_rect().expect("drag paints a marquee rectangle"),
+                pane.marquee_rect()
+                    .expect("drag paints a marquee rectangle"),
                 pane.listing_viewport.expect("viewport remains measured"),
             );
         });
@@ -684,9 +683,7 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn pane_token_mismatch_cancels_and_keeps_last_live_selection(
-        cx: &mut TestAppContext,
-    ) {
+    async fn pane_token_mismatch_cancels_and_keeps_last_live_selection(cx: &mut TestAppContext) {
         let window = new_pane(cx);
         window
             .update(cx, |pane, _window, _cx| {
@@ -804,12 +801,7 @@ mod tests {
 
                 measure_pane(pane);
                 assert!(pane.begin_marquee(point(px(0.), px(0.)), additive));
-                pane.open_context_menu(
-                    "/tmp/selected".to_string(),
-                    0,
-                    point(px(0.), px(0.)),
-                    cx,
-                );
+                pane.open_context_menu("/tmp/selected".to_string(), 0, point(px(0.), px(0.)), cx);
                 assert!(pane.marquee.is_none());
             })
             .unwrap();

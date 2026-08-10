@@ -94,16 +94,18 @@ pub fn render(
                 }
             }),
         )
-        .on_scroll_wheel(cx.listener(move |pane, _event: &ScrollWheelEvent, _window, cx| {
-            let had_marquee = pane.marquee.is_some();
-            pane.cancel_marquee();
-            if let Some(viewport) = pane.listing_viewport {
-                pane.record_listing_viewport(viewport, event_scroll_handle.offset());
-            }
-            if had_marquee {
-                cx.notify();
-            }
-        }))
+        .on_scroll_wheel(
+            cx.listener(move |pane, _event: &ScrollWheelEvent, _window, cx| {
+                let had_marquee = pane.marquee.is_some();
+                pane.cancel_marquee();
+                if let Some(viewport) = pane.listing_viewport {
+                    pane.record_listing_viewport(viewport, event_scroll_handle.offset());
+                }
+                if had_marquee {
+                    cx.notify();
+                }
+            }),
+        )
         .child(file_list);
 
     if let (Some(rect), Some(viewport)) = (page.marquee_rect(), page.listing_viewport) {

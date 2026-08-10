@@ -1,11 +1,11 @@
 use super::row;
 use crate::explorer::ExplorerPane;
 use crate::explorer::types::SortKey;
+use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::list::ListItem;
 use gpui_component::{ElementExt, v_virtual_list};
-use chronos_fm_ui::theme::theme;
 use std::rc::Rc;
 
 /// Renders the file listing as a virtualized multi-column table.
@@ -68,39 +68,39 @@ fn render_table_with_header(
             }),
         )
         .child(
-        v_virtual_list(
-            entity,
-            "file-table",
-            all_sizes,
-            move |view, visible_range, _window, cx| {
-                visible_range
-                    .filter_map(|ix| {
-                        if ix == 0 {
-                            Some(
-                                render_header_row(
-                                    view,
-                                    table_width,
-                                    col_name,
-                                    col_type,
-                                    col_size,
-                                    col_modified,
-                                    col_action,
-                                    cx,
+            v_virtual_list(
+                entity,
+                "file-table",
+                all_sizes,
+                move |view, visible_range, _window, cx| {
+                    visible_range
+                        .filter_map(|ix| {
+                            if ix == 0 {
+                                Some(
+                                    render_header_row(
+                                        view,
+                                        table_width,
+                                        col_name,
+                                        col_type,
+                                        col_size,
+                                        col_modified,
+                                        col_action,
+                                        cx,
+                                    )
+                                    .into_any_element(),
                                 )
-                                .into_any_element(),
-                            )
-                        } else {
-                            let data_ix = ix - 1;
-                            view.filtered_entries.get(data_ix).cloned().map(|item| {
-                                row::render(view, &item, data_ix, cx).into_any_element()
-                            })
-                        }
-                    })
-                    .collect()
-            },
+                            } else {
+                                let data_ix = ix - 1;
+                                view.filtered_entries.get(data_ix).cloned().map(|item| {
+                                    row::render(view, &item, data_ix, cx).into_any_element()
+                                })
+                            }
+                        })
+                        .collect()
+                },
+            )
+            .track_scroll(&scroll_handle),
         )
-        .track_scroll(&scroll_handle),
-    )
 }
 
 #[allow(clippy::too_many_arguments)]

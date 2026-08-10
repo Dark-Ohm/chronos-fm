@@ -5,7 +5,10 @@ use chronos_fm_services::search::{SearchScope, SearchService};
 use chronos_fm_services::syntax::SyntaxService;
 use chronos_fm_ui::components::file_list::FileListDelegate;
 
-use gpui::{AppContext, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable, Modifiers, Pixels, Point, Window, point, px, size};
+use gpui::{
+    AppContext, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable, Modifiers, Pixels,
+    Point, Window, point, px, size,
+};
 use gpui_component::VirtualListScrollHandle;
 use gpui_component::input::InputState;
 use gpui_component::list::ListState;
@@ -13,7 +16,10 @@ use gpui_component::resizable::ResizableState;
 use std::{collections::BTreeMap, rc::Rc, sync::Arc, time::Instant};
 
 use super::entries;
-use super::marquee::{GeometryToken, MarqueeDrag, MeasuredItem, completion_indices, intersects_closed, normalized_rect, past_threshold, selection_for_hits};
+use super::marquee::{
+    GeometryToken, MarqueeDrag, MeasuredItem, completion_indices, intersects_closed,
+    normalized_rect, past_threshold, selection_for_hits,
+};
 use super::types::*;
 use super::view::preview::editor::PreviewEditor;
 
@@ -470,11 +476,7 @@ impl ExplorerPane {
     }
 
     /// Starts an empty-space marquee and returns whether the press was accepted.
-    pub(crate) fn begin_marquee(
-        &mut self,
-        position: Point<Pixels>,
-        modifiers: Modifiers,
-    ) -> bool {
+    pub(crate) fn begin_marquee(&mut self, position: Point<Pixels>, modifiers: Modifiers) -> bool {
         let Some(viewport) = self.listing_viewport else {
             return false;
         };

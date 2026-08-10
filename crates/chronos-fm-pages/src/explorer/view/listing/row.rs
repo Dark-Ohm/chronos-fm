@@ -2,13 +2,13 @@ use super::truncate_middle;
 
 use crate::explorer::ExplorerPane;
 use crate::explorer::clipboard::{self, ClipboardMode};
+use chronos_fm_services::fs::listing::FileEntryDto;
+use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::Input;
 use gpui_component::list::ListItem;
 use gpui_component::{ActiveTheme, ElementExt, Icon, IconName};
-use chronos_fm_services::fs::listing::FileEntryDto;
-use chronos_fm_ui::theme::theme;
 
 /// Maps a file/dir name (by extension) and entry kind to an icon asset path
 /// under `assets/icons/`. Single source of truth for file-type icon mapping
@@ -26,8 +26,8 @@ pub fn icon_path_for(name: &str, kind: &str) -> &'static str {
         .map(|(_, ext)| ext.to_lowercase())
         .unwrap_or_default();
     match ext.as_str() {
-        "rs" | "py" | "js" | "ts" | "go" | "c" | "cpp" | "h" | "json" | "toml" | "yaml"
-        | "yml" | "sh" => "icons/file-code.svg",
+        "rs" | "py" | "js" | "ts" | "go" | "c" | "cpp" | "h" | "json" | "toml" | "yaml" | "yml"
+        | "sh" => "icons/file-code.svg",
         "png" | "jpg" | "jpeg" | "gif" | "webp" | "svg" | "bmp" => "icons/file-image.svg",
         "zip" | "tar" | "gz" | "xz" | "zst" | "7z" | "rar" => "icons/file-archive.svg",
         "md" | "txt" | "rst" | "log" => "icons/file-text.svg",
@@ -393,17 +393,35 @@ mod icon_path_tests {
 
     #[test]
     fn known_extensions_map_to_their_category_icon() {
-        for ext in ["rs", "py", "js", "ts", "go", "c", "cpp", "h", "json", "toml", "yaml", "yml", "sh"] {
-            assert_eq!(icon_path_for(&format!("main.{ext}"), "file"), "icons/file-code.svg", "ext={ext}");
+        for ext in [
+            "rs", "py", "js", "ts", "go", "c", "cpp", "h", "json", "toml", "yaml", "yml", "sh",
+        ] {
+            assert_eq!(
+                icon_path_for(&format!("main.{ext}"), "file"),
+                "icons/file-code.svg",
+                "ext={ext}"
+            );
         }
         for ext in ["png", "jpg", "jpeg", "gif", "webp", "svg", "bmp"] {
-            assert_eq!(icon_path_for(&format!("pic.{ext}"), "file"), "icons/file-image.svg", "ext={ext}");
+            assert_eq!(
+                icon_path_for(&format!("pic.{ext}"), "file"),
+                "icons/file-image.svg",
+                "ext={ext}"
+            );
         }
         for ext in ["zip", "tar", "gz", "xz", "zst", "7z", "rar"] {
-            assert_eq!(icon_path_for(&format!("bundle.{ext}"), "file"), "icons/file-archive.svg", "ext={ext}");
+            assert_eq!(
+                icon_path_for(&format!("bundle.{ext}"), "file"),
+                "icons/file-archive.svg",
+                "ext={ext}"
+            );
         }
         for ext in ["md", "txt", "rst", "log"] {
-            assert_eq!(icon_path_for(&format!("notes.{ext}"), "file"), "icons/file-text.svg", "ext={ext}");
+            assert_eq!(
+                icon_path_for(&format!("notes.{ext}"), "file"),
+                "icons/file-text.svg",
+                "ext={ext}"
+            );
         }
     }
 

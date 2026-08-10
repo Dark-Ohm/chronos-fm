@@ -2,12 +2,12 @@ use super::truncate_middle;
 use crate::explorer::ExplorerPane;
 use crate::explorer::clipboard::{self, ClipboardMode};
 use crate::explorer::marquee::intersects_closed;
+use chronos_fm_services::fs::listing::FileEntryDto;
+use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
 use gpui_component::input::Input;
 use gpui_component::{ElementExt, Icon};
-use chronos_fm_services::fs::listing::FileEntryDto;
-use chronos_fm_ui::theme::theme;
 
 /// Renders the file listing as a grid of icon tiles.
 pub fn render(
@@ -119,12 +119,7 @@ fn render_grid_item(
                 if !this.is_selected(ix) {
                     this.select_single(ix);
                 }
-                this.open_context_menu(
-                    context_menu_path.clone(),
-                    ix,
-                    event.position,
-                    cx,
-                );
+                this.open_context_menu(context_menu_path.clone(), ix, event.position, cx);
                 cx.stop_propagation();
             }),
         )
