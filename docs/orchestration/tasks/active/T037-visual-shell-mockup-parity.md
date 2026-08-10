@@ -30,3 +30,22 @@
 > T037 stays **not closed** until T044 lands; recommend architect review of
 > the Places-text fix specifically (it is independently verified and solid).
 
+> ## 🔧 EXECUTOR UPDATE (2026-08-10, third pass): T044 resolved, T045 filed
+>
+> T044's real cause: T043's sidebar-bypass rewrite of `view.rs` dropped the
+> listing/preview panels from the render tree entirely (not a layout bug —
+> `listing::render` was dead code, zero call sites). Restored under
+> `h_resizable`'s original two panels. Verified on 3 independent release
+> grims: all 40 real entries render with populated Name/Type/Size/Modified.
+> Report: `report/T044-grid-view-empty-despite-item-count-report.md`.
+>
+> **New blocker for full ACCEPT:** the same 3 grims show the Places sidebar
+> **gone** once listing/preview are back in the tree — correlated with a
+> continuous "can't render at a zero size" error storm (pre-existing,
+> previously log-noise-only "T037#5") that now visibly disrupts the
+> sidebar. Filed as **T045** with a hypothesis matrix, not yet root-caused.
+>
+> T037 stays **not closed**. Chrome + Places-text + listing-content are all
+> now independently verified; T045 (sidebar-under-storm) is the one
+> remaining gate for §7.
+

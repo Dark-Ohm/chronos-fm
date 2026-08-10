@@ -1,5 +1,4 @@
 use crate::explorer::ExplorerPane;
-use gpui::prelude::FluentBuilder;
 use gpui::*;
 use chronos_fm_ui::theme::theme;
 
@@ -104,23 +103,65 @@ pub fn render(
         )
         .child(header::render(page, window, cx))
         .child(
-            div().flex().flex_row().flex_grow_1().min_h(px(0.0)).child(
-                // Sidebar: bypass resizable panel (h_resizable doesn't allocate
-                // space for the sidebar panel — see T043 investigation).
-                // Use a simple flex child with fixed width instead.
-                if page.sidebar_visible {
-                    div()
-                        .w(px(212.0))
-                        .h_full()
-                        .overflow_hidden()
-                        .border_r_1()
-                        .border_color(theme::border(cx))
-                        .child(sidebar::render(page, window, cx))
-                        .into_any_element()
-                } else {
-                    div().into_any_element()
-                }
-            ),
+            div()
+                .flex()
+                .flex_row()
+                .flex_grow_1()
+                .min_h(px(0.0))
+                .child(
+                    // Sidebar: bypass resizable panel (h_resizable doesn't
+                    // allocate space for the sidebar panel — see T043
+                    // investigation). Use a simple flex child with fixed
+                    // width instead.
+                    if page.sidebar_visible {
+                        div()
+                            .w(px(212.0))
+                            .h_full()
+                            .overflow_hidden()
+                            .border_r_1()
+                            .border_color(theme::border(cx))
+                            .child(sidebar::render(page, window, cx))
+                            .into_any_element()
+                    } else {
+                        div().into_any_element()
+                    },
+                )
+                // T044: the sidebar bypass above (T043) replaced this whole
+                // row's children instead of just the sidebar slot, silently
+                // dropping the listing and preview panes from the render
+                // tree entirely — the empty content pane was never a
+                // layout/virtualization bug, the panes just weren't there.
+                // Restored via `h_resizable` with its original two panels
+                // (listing + preview); only the sidebar panel had the
+                // allocation bug, so drag-resize between listing/preview is
+                // kept.
+                .child(
+                    gpui_component::resizable::h_resizable("file-explorer")
+                        .with_state(&page.resizable)
+                        .child(gpui_component::resizable::resizable_panel().child(
+                            div()
+                                .size_full()
+                                .flex()
+                                .flex_col()
+                                .min_h(px(0.0))
+                                .overflow_hidden()
+                                .child(listing::render(page, window, cx)),
+                        ))
+                        .child(
+                            gpui_component::resizable::resizable_panel()
+                                .size(px(240.0))
+                                .size_range(px(240.0)..px(2000.0))
+                                .child(
+                                    div()
+                                        .size_full()
+                                        .overflow_hidden()
+                                        .border_l_1()
+                                        .border_color(theme::border(cx))
+                                        .child(preview::render(page, window, cx)),
+                                ),
+                        )
+                        .into_any_element(),
+                ),
         )
         .child(render_properties_dialog(page, cx))
         .child(render_batch_rename_dialog(page, cx))

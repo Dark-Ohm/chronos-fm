@@ -22,7 +22,19 @@ for _ in $(seq 1 20); do
       FOUND=1
       echo "GEOM=$G"
       sleep "$SETTLE"
-      grim -g "$G" "$OUT" && echo "GRIM_OK"
+      # T044: geometry sampled before the settle sleep can belong to a
+      # window that's since moved/closed/been covered — grim captures raw
+      # screen pixels at those coordinates regardless of which window is
+      # there NOW, so a stale geometry silently grims the wrong app (bit
+      # T037/T044 twice this way — "settled.png is not FM"). Re-check
+      # class=chronos-fm right before grim; bail loudly instead of trusting
+      # the earlier query.
+      G2="$(hyprctl clients -j 2>/dev/null | jq -r 'map(select(type=="object")) | .[] | select((.class // "")=="chronos-fm") | "\(.at[0]),\(.at[1]) \(.size[0])x\(.size[1])"' | head -1)"
+      if [ -z "$G2" ]; then
+        echo "CLASS_GONE_BEFORE_GRIM — refusing to grim stale geometry"
+        break
+      fi
+      grim -g "$G2" "$OUT" && echo "GRIM_OK"
       break
     fi
   fi

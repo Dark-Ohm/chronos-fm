@@ -1,4 +1,4 @@
-# T044 — File listing content pane empty despite non-zero item count
+# T044 — File listing content pane empty despite non-zero item count [RESOLVED]
 
 > ## ⚠️ CORRECTION (2026-08-10, same session): this is the **List** view, not Grid
 >
@@ -51,7 +51,61 @@ fresh release grim, 2026-08-10.
 | H3 | `view_mode` read by `listing.rs` is stale/desynced from the toolbar's active `Grid` visual state (toolbar shows Grid selected but `page.view_mode` is something else entirely, e.g. still default) | Open — but since H1 confirms `filtered_entries` has 40 items and *some* branch of `listing.rs` must be running (the page isn't crashing), this would mean `list::render` (not `grid::render`) is actually executing despite the Grid toggle showing selected — worth checking, but H2 is more likely given the toolbar visually shows Grid active |
 | H4 | Async listing race: `ensure_loaded` marks `loaded = true` before `list_dir_sync` actually completes on this cwd size, so the first render(s) still see empty `filtered_entries` even though later breadcrumb/status-bar reads pick up a since-populated count from a different state field | **FALSIFIED** — same evidence as H1: header and grid share one field, one render pass; `reload()` for local (non-provider) panes is fully synchronous (`list_dir_sync`, not spawned), so there is no async race for this path. |
 
-## Lead for next executor
+## ✅ RESOLVED (2026-08-10, same session): real root cause was a dropped subtree, not a layout bug
+
+All H1–H4 above were falsifying the wrong theory. Instrumented `listing.rs`,
+`grid.rs`, and (temporarily, reverted after) `Source/gpui-component/.../
+virtual_list.rs` with unconditional `eprintln!` debug lines — **none of them
+ever fired**, meaning `listing::render` itself was never called. Traced
+`view.rs`'s render tree and found: `grep -rn "listing::render\b"
+crates/chronos-fm-pages/src/` returned **zero matches** — dead code. T043's
+sidebar-bypass edit (`view.rs`, replacing the `h_resizable` 3-panel block)
+rewrote the *entire* flex row's children down to just the sidebar div,
+silently dropping the listing and preview panels from the render tree
+altogether. The empty content pane was never a virtualization/measurement
+bug — the pane simply wasn't there. T043's own report claim ("The listing
+and preview panels continue to use `resizable_panel()` as before (they work
+correctly)") did not match the actual tree, same pattern as its sidebar-text
+claim.
+
+**Fix** (`view.rs`): restored `listing::render`/`preview::render` under
+`gpui_component::resizable::h_resizable("file-explorer")` with its original
+two panels (listing flex + preview 240px), as siblings of the sidebar bypass
+div (kept — only the sidebar panel had `h_resizable`'s allocation bug).
+Removed now-unused `gpui::prelude::FluentBuilder` import.
+
+**Verified** (3 independent release-binary + `hyprctl`-reverified-class
+grims, `t037_verify2.png`/`t044_final.png`/etc, 15-25s settle each): all 40
+real directory entries render with populated Name/Type/Size/Modified
+columns (folder icons, real byte sizes like "2.1 KB", real dates), row hover
+highlight works, "Preview → No file selected" honest empty state — matches
+`docs/design/mockups/chronos-file-manager.dc.html` exactly for the listing
+region. `cargo build --release -p chronos-fm`: clean.
+
+**New residual (not this fix, tracked separately): sidebar drops out under
+the pre-existing zero-size repaint storm.** All 3 verification grims show
+the Places sidebar **missing** (nav rail present, no Places column) —
+consistent and reproducible, not a one-off. Correlated with `/tmp/*.log`:
+"can't render at a zero size" errors start ~8s after launch and never stop
+(30000+ occurrences by a 20-25s settle) — this is the storm T037's report
+already flagged as residual T037#5 ("Zero-size repaint storm (34k
+errors/25s) | Known | T037#5"), pre-dating this session. It evidently was
+already present when the sidebar-only tree was tested in isolation earlier
+this session (that grim showed sidebar fine) but now visibly disrupts
+sidebar rendering once the heavier `h_resizable` + `v_virtual_list` subtree
+is back in the same frame. **Not re-investigated here** — T037#5 needs its
+own root-cause pass (likely in `h_resizable`/`v_virtual_list`'s interaction
+with continuous re-layout), separate ticket recommended rather than folding
+into T044's now-closed scope.
+
+**t037_smoke.sh hardened**: re-verifies `class=chronos-fm` immediately
+before `grim` instead of trusting geometry sampled before the settle sleep
+— grim captures raw screen pixels at coordinates regardless of which window
+occupies them *now*, so a stale query silently grimmed the wrong app twice
+this session (a Grok terminal, a Hebrew attendance-clock app) before this
+fix, mirroring T037's own documented "settled.png is not FM" trap.
+
+## Lead for next executor (superseded by RESOLVED above — kept for history)
 
 `v_virtual_list` (`Source/gpui-component/crates/ui/src/virtual_list.rs`,
 `VirtualList::request_layout`/`prepaint`) lays out visible items
