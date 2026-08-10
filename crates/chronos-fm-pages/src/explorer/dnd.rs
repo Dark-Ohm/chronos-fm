@@ -525,13 +525,16 @@ impl Render for FileDragPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::explorer::ExplorerPage;
     use crate::explorer::types::ViewMode;
+    use chronos_fm_core::config::SplitDirection;
     use chronos_fm_services::fs::provider::LocalFileSystemProvider;
     use gpui::{
         AppContext, Bounds, CursorStyle, InputEvent, Modifiers, MouseButton, MouseUpEvent, Pixels,
-        Point, TestAppContext, VisualTestContext, WindowHandle, point, px, size,
+        Point, TestAppContext, VisualTestContext, WeakEntity, WindowHandle, point, px, size,
     };
     use gpui_component::Root;
+    use gpui_component::resizable::ResizableState;
     use std::cell::RefCell;
     use std::path::Path;
     use std::rc::Rc;
@@ -1543,5 +1546,569 @@ mod tests {
                 .iter()
                 .all(|entry| entry.path != source_path.to_string_lossy())
         }));
+    }
+
+    // -- Task 4: production split-pane end-to-end and adversarial coverage --
+
+    /// Roots a production `ExplorerPage` split into two panes, pane 0 at
+    /// `left_cwd` and pane 1 at `right_cwd`, both reloaded and unselected.
+    fn split_page(
+        cx: &mut TestAppContext,
+        left_cwd: &Path,
+        right_cwd: &Path,
+    ) -> (WindowHandle<Root>, Entity<ExplorerPage>) {
+        cx.update(gpui_component::init);
+        cx.update(crate::explorer::clipboard::init);
+        let left_cwd = left_cwd.to_string_lossy().to_string();
+        let right_cwd = right_cwd.to_string_lossy().to_string();
+        let root = cx.add_window(move |window, cx| {
+            let resizable = cx.new(|_| ResizableState::default());
+            let page = cx.new(|cx| {
+                let mut page = ExplorerPage::new(resizable, None, None, false, window, cx);
+                page.split(SplitDirection::Vertical, window, cx);
+                let pane0 = page.pane(0);
+                let pane1 = page.pane(1);
+                pane0.update(cx, |pane, _cx| {
+                    pane.cwd = left_cwd.clone();
+                    pane.sidebar_visible = false;
+                    pane.reload();
+                });
+                pane1.update(cx, |pane, _cx| {
+                    pane.cwd = right_cwd.clone();
+                    pane.sidebar_visible = false;
+                    pane.reload();
+                });
+                page.set_active(0, window, cx);
+                page
+            });
+            Root::new(page, window, cx)
+        });
+        let page = root
+            .read_with(cx, |root, _cx| {
+                root.view()
+                    .clone()
+                    .downcast::<ExplorerPage>()
+                    .expect("the Root's view is the explorer page")
+            })
+            .expect("window is alive");
+        (root, page)
+    }
+
+    #[gpui::test]
+    async fn e2e_cross_pane_move_reloads_both_panes_and_selects_destination(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let a = left.join("a.txt");
+        let b = left.join("b.txt");
+        let c = left.join("c.txt");
+        std::fs::write(&a, "a").unwrap();
+        std::fs::write(&b, "b").unwrap();
+        std::fs::write(&c, "c").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        let right_pane = page.read_with(cx, |page, _cx| page.pane(1));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        select_paths(&left_pane, &[&a, &b, &c], cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_name_point(&left_pane, &a, &cx);
+        let target = blank_listing_point(&right_pane, &cx);
+        start_drag(&mut cx, source, target, Modifiers::default());
+        assert!(active_drag(&mut cx));
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::ClosedHand),
+            "the other pane's empty cwd is a valid move target",
+        );
+        assert!(cx.debug_bounds("file-drag-preview-count").is_some());
+
+        dispatch_mouse_up(&mut cx, target, Modifiers::default());
+        assert!(!active_drag(&mut cx));
+        assert!(right_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        cx.background_executor
+            .timer(Duration::from_millis(50))
+            .await;
+        cx.run_until_parked();
+
+        for path in [&a, &b, &c] {
+            assert!(!path.exists(), "{path:?} must have moved out of left");
+            assert!(
+                right.join(path.file_name().unwrap()).exists(),
+                "{path:?} must exist in right"
+            );
+        }
+        assert!(right_pane.read_with(&cx, |pane, _cx| !pane.drop_pending));
+        assert!(left_pane.read_with(&cx, |pane, _cx| pane.selection.is_empty()));
+        let mut expected: Vec<String> = [&a, &b, &c]
+            .iter()
+            .map(|p| {
+                right
+                    .join(p.file_name().unwrap())
+                    .to_string_lossy()
+                    .to_string()
+            })
+            .collect();
+        expected.sort();
+        let mut selected = right_pane.read_with(&cx, |pane, _cx| pane.selected_paths());
+        selected.sort();
+        assert_eq!(selected, expected);
+    }
+
+    #[gpui::test]
+    async fn e2e_ctrl_evaluated_at_drop_time_copies_across_panes(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        let dest_folder = right.join("dest_folder");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        std::fs::create_dir(&dest_folder).unwrap();
+        let source_path = left.join("keep.txt");
+        std::fs::write(&source_path, "keep").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        let right_pane = page.read_with(cx, |page, _cx| page.pane(1));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        select_path(&left_pane, &source_path, cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_name_point(&left_pane, &source_path, &cx);
+        let target = item_name_point(&right_pane, &dest_folder, &cx);
+        // Starts plain (no modifiers), only presses Ctrl once hovering the
+        // other-pane folder target — Copy must still be chosen at drop time.
+        start_drag(&mut cx, source, target, Modifiers::default());
+        assert!(active_drag(&mut cx));
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::ClosedHand),
+            "no modifier is held yet, so the target reads as a Move",
+        );
+        let copy = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        cx.simulate_mouse_move(target, Some(MouseButton::Left), copy);
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::DragCopy),
+            "pressing Ctrl mid-drag over the target switches to the Copy cursor",
+        );
+
+        dispatch_mouse_up(&mut cx, target, copy);
+        assert!(!active_drag(&mut cx));
+        assert!(right_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        cx.background_executor
+            .timer(Duration::from_millis(50))
+            .await;
+        cx.run_until_parked();
+
+        let copied = dest_folder.join("keep.txt");
+        assert!(source_path.exists(), "Ctrl-copy must retain the source");
+        assert!(copied.exists(), "Ctrl-copy must produce the destination");
+        assert_eq!(
+            left_pane.read_with(&cx, |pane, _cx| pane.selected_paths()),
+            vec![source_path.to_string_lossy().to_string()],
+            "cross-pane Copy retains source selection",
+        );
+    }
+
+    #[gpui::test]
+    fn e2e_folder_dragged_onto_own_descendant_does_not_fall_through_to_cwd(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let container = left.join("container");
+        let inner = container.join("inner");
+        std::fs::create_dir_all(&inner).unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_name_point(&left_pane, &container, &cx);
+        // `container` is the only top-level entry, so `inner` is not directly
+        // visible/measured; drop the container back onto itself instead, which
+        // is the same self/descendant rejection this pane's own item-covered
+        // cwd surface must not fall through on.
+        start_drag(&mut cx, source, source, Modifiers::default());
+        assert!(active_drag(&mut cx));
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::OperationNotAllowed),
+            "a directory dropped on itself is invalid and must not fall through",
+        );
+        cx.simulate_mouse_up(source, MouseButton::Left, Modifiers::default());
+        assert!(!active_drag(&mut cx));
+        assert!(!left_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        assert!(
+            !left.join("container (2)").exists(),
+            "the rejected item drop must not have fallen through to the outer cwd target",
+        );
+    }
+
+    #[gpui::test]
+    fn e2e_same_parent_move_via_breadcrumb_performs_no_filesystem_operation(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let source_path = left.join("stay.txt");
+        std::fs::write(&source_path, "stay").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        select_path(&left_pane, &source_path, cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_name_point(&left_pane, &source_path, &cx);
+        // The pane's own cwd (its blank listing space) is the source's current
+        // parent directory: a same-parent Move must be rejected as a no-op,
+        // not silently retargeted.
+        let own_cwd = blank_listing_point(&left_pane, &cx);
+        start_drag(&mut cx, source, own_cwd, Modifiers::default());
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::OperationNotAllowed),
+            "a same-parent Move onto its own cwd is a no-op, not a target",
+        );
+        cx.simulate_mouse_up(own_cwd, MouseButton::Left, Modifiers::default());
+        assert!(!left_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        assert!(source_path.exists());
+        assert!(!left.join("stay (2).txt").exists());
+    }
+
+    #[gpui::test]
+    async fn e2e_same_parent_ctrl_copy_via_breadcrumb_creates_unique_duplicate(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let source_path = left.join("dup.txt");
+        std::fs::write(&source_path, "dup").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        select_path(&left_pane, &source_path, cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_name_point(&left_pane, &source_path, &cx);
+        let own_cwd = blank_listing_point(&left_pane, &cx);
+        let copy = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        start_drag(&mut cx, source, own_cwd, copy);
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::DragCopy),
+            "same-parent Copy is valid and produces a unique-name duplicate",
+        );
+        dispatch_mouse_up(&mut cx, own_cwd, copy);
+        assert!(left_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        cx.background_executor
+            .timer(Duration::from_millis(50))
+            .await;
+        cx.run_until_parked();
+
+        let duplicate = left.join("dup (2).txt");
+        assert!(source_path.exists());
+        assert!(duplicate.exists());
+        assert_eq!(
+            left_pane.read_with(&cx, |pane, _cx| pane.selected_paths()),
+            vec![duplicate.to_string_lossy().to_string()],
+        );
+    }
+
+    #[gpui::test]
+    async fn e2e_cross_pane_partial_failure_reports_visible_error(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let kept = left.join("kept.txt");
+        let vanishes = left.join("vanishes.txt");
+        std::fs::write(&kept, "ok").unwrap();
+        std::fs::write(&vanishes, "gone").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        let right_pane = page.read_with(cx, |page, _cx| page.pane(1));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        select_paths(&left_pane, &[&kept, &vanishes], cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_name_point(&left_pane, &kept, &cx);
+        let target = blank_listing_point(&right_pane, &cx);
+        start_drag(&mut cx, source, target, Modifiers::default());
+        dispatch_mouse_up(&mut cx, target, Modifiers::default());
+        assert!(right_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        // Race the failing member out from under the in-flight transfer, the
+        // same adversarial timing the direct-call `partial_failure_*` test
+        // exercises, but driven through the real production hitboxes here.
+        std::fs::remove_file(&vanishes).unwrap();
+        cx.background_executor
+            .timer(Duration::from_millis(50))
+            .await;
+        cx.run_until_parked();
+
+        assert!(!kept.exists());
+        assert!(right.join("kept.txt").exists());
+        let (status, is_error) = right_pane
+            .read_with(&cx, |pane, _cx| pane.status_for_footer())
+            .expect("partial failure status");
+        assert!(is_error);
+        assert!(status.contains("1 succeeded, 1 failed"));
+        assert!(status.contains("vanishes.txt"));
+    }
+
+    #[gpui::test]
+    async fn e2e_closing_source_pane_before_completion_still_reloads_destination(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let source_path = left.join("moved.txt");
+        std::fs::write(&source_path, "moved").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        let right_pane = page.read_with(cx, |page, _cx| page.pane(1));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        select_path(&left_pane, &source_path, cx);
+        let source_weak: WeakEntity<ExplorerPane> = left_pane.downgrade();
+        drop(left_pane);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let left_pane = page.read_with(&cx, |page, _cx| page.pane(0));
+        let source = item_name_point(&left_pane, &source_path, &cx);
+        let target = blank_listing_point(&right_pane, &cx);
+        start_drag(&mut cx, source, target, Modifiers::default());
+        dispatch_mouse_up(&mut cx, target, Modifiers::default());
+        assert!(right_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+
+        // Drop this test's own strong handle, then close the pane through the
+        // production action so the source pane's only remaining owner
+        // (`PaneGroup`) releases it before the background transfer completes.
+        drop(left_pane);
+        cx.update(|window, cx| {
+            page.update(cx, |page, cx| {
+                page.close_pane(0, window, cx);
+            });
+        });
+        assert!(
+            source_weak.upgrade().is_none(),
+            "the source pane entity must have been released by closing it",
+        );
+
+        cx.background_executor
+            .timer(Duration::from_millis(50))
+            .await;
+        cx.run_until_parked();
+
+        assert!(!source_path.exists());
+        assert!(right.join("moved.txt").exists());
+        assert!(!right_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        assert_eq!(
+            right_pane.read_with(&cx, |pane, _cx| pane.selected_paths()),
+            vec![right.join("moved.txt").to_string_lossy().to_string()],
+        );
+    }
+
+    #[gpui::test]
+    async fn e2e_pending_target_refuses_a_second_production_drop(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let first = left.join("first.txt");
+        let second = left.join("second.txt");
+        std::fs::write(&first, "1").unwrap();
+        std::fs::write(&second, "2").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        let right_pane = page.read_with(cx, |page, _cx| page.pane(1));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        select_path(&left_pane, &first, &mut cx);
+        let source_one = item_name_point(&left_pane, &first, &cx);
+        let target = blank_listing_point(&right_pane, &cx);
+        start_drag(&mut cx, source_one, target, Modifiers::default());
+        dispatch_mouse_up(&mut cx, target, Modifiers::default());
+        assert!(!active_drag(&mut cx));
+        assert!(right_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+
+        // A second drop attempts to land on the still-pending destination
+        // before the first transfer settles. Exercised through the exact
+        // `can_accept_listing_cwd_drop`/`begin_file_drop` methods the
+        // production `can_drop`/`on_drop` closures call (`view/listing.rs`),
+        // so this is the same shared validation path a second real mouse
+        // gesture would hit, without depending on the test harness's support
+        // for chaining two full drag gestures through one `dispatch_event`
+        // mouse-up.
+        let second_target = DropTarget {
+            directory: right.clone(),
+            kind: DropTargetKind::ListingCwd,
+        };
+        let second_drag = file_drag(&left_pane, vec![second.clone()]);
+        let target_id = right_pane.entity_id();
+        let accepted = cx.update(|window, cx| {
+            right_pane.read(cx).can_accept_listing_cwd_drop(
+                target_id,
+                &second_drag,
+                &second_target,
+                window,
+                cx,
+            )
+        });
+        assert!(!accepted, "a pending target must reject a second drop");
+        let began = right_pane.update(&mut cx, |pane, cx| {
+            pane.begin_file_drop(second_drag, second_target, Modifiers::default(), cx)
+        });
+        assert!(!began, "begin_file_drop must also refuse while pending");
+
+        cx.background_executor
+            .timer(Duration::from_millis(50))
+            .await;
+        cx.run_until_parked();
+
+        assert!(right.join("first.txt").exists());
+        assert!(
+            !right.join("second.txt").exists(),
+            "the rejected second drop must not have transferred its payload",
+        );
+        assert!(second.exists(), "the rejected drop's source is untouched");
+        assert!(!right_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+    }
+
+    #[gpui::test]
+    fn e2e_mouse_up_on_invalid_target_ends_drag_with_no_stuck_preview_or_cursor(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let left = fixture.path().join("left");
+        let right = fixture.path().join("right");
+        std::fs::create_dir(&left).unwrap();
+        std::fs::create_dir(&right).unwrap();
+        let first = left.join("first.txt");
+        let second = left.join("second.txt");
+        std::fs::write(&first, "1").unwrap();
+        std::fs::write(&second, "2").unwrap();
+
+        let (root, page) = split_page(cx, &left, &right);
+        let left_pane = page.read_with(cx, |page, _cx| page.pane(0));
+        left_pane.update(cx, |pane, cx| {
+            pane.view_mode = ViewMode::List;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(1200.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_name_point(&left_pane, &first, &cx);
+        let invalid_target = item_name_point(&left_pane, &second, &cx);
+        start_drag(&mut cx, source, invalid_target, Modifiers::default());
+        assert!(active_drag(&mut cx));
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::OperationNotAllowed),
+        );
+        cx.simulate_mouse_up(invalid_target, MouseButton::Left, Modifiers::default());
+
+        assert!(
+            !active_drag(&mut cx),
+            "mouse-up always ends the GPUI drag, accepted or not",
+        );
+        draw_window(&mut cx);
+        assert!(
+            cx.debug_bounds("file-drag-preview").is_none(),
+            "no drag preview may remain painted after mouse-up",
+        );
+        assert!(!left_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        assert!(first.exists());
+        assert!(second.exists());
+        assert!(!left.join("first (2).txt").exists());
     }
 }
