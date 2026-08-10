@@ -1,18 +1,15 @@
-# T045 — Zero-size repaint storm disrupts sidebar rendering — Report
+# T045 — Zero-size repaint storm — Report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 4): **PROGRESS — not ACCEPT; path 2 GO**
+> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 5): **ROOT CAUSE ACCEPTED — not fixed**
 >
-> Path 1 (live frame-trace) done: every `Svg::paint` for `house.svg` is
-> zero-bounds from frame 1; no correct paint on that path; panes=1.
-> “Double paint” framing retracted. **Next: isolated `Source/gpui/examples`
-> repro** (path 2). Optional later: renderer/compositor (H6). No blind
-> Source layout patch. T037 still blocked.
->
-> Executor commit: `5305aba`.
+> Mechanism confirmed: `VirtualList::measure_item` nested `compute_layout`
+> → `snapshot_memo` walks full `frame_node_order` → `layout_bounds` caches
+> Taffy default (0,0) for not-yet-computed siblings (sidebar). Isolated
+> repro `gpui-component/examples/t045_repro`. Fix direction: scope
+> `snapshot_memo` to computed subtree (or skip nested snapshot / refuse
+> caching uncomputed nodes). Tests + `t045_repro` + FM grim required for
+> ACCEPT. No blind Chronos-FM workaround.
 
-**Status:** OPEN — path 1 complete; path 2 (gpui example repro) is next; not fixed
-**Date:** 2026-08-10
-**Executor:** Claude (Sonnet 5), discovered while verifying T044's fix
 
 ## Summary
 

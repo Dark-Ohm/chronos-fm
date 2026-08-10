@@ -30,7 +30,7 @@
 [38;5;8m  30[0m [37m|--------|-------|--------|[0m
 [38;5;8m  31[0m [37m| **T043** | Places empty / text missing | **done** |[0m
 [38;5;8m  32[0m [37m| **T044** | Listing not in tree / empty pane | **done** |[0m
-[38;5;8m  33[0m [37m| **T045** | Zero-size repaint storm hides sidebar with full tree | **active P1** — T037 gate |[0m
+[38;5;8m  33[0m [37m| **T045** | `snapshot_memo` poisons uncomputed siblings (virtual_list measure) | **active P1** — RC accepted, fix pending |[0m
 [38;5;8m  34[0m 
 [38;5;8m  35[0m [37m## Order[0m
 [38;5;8m  36[0m 

@@ -20,7 +20,7 @@
 [38;5;8m  20[0m [37m| §7 full ACCEPT | **HOLD** |[0m
 [38;5;8m  21[0m 
 [38;5;8m  22[0m [37m**Verdict: PARTIAL — not closed.**  [0m
-[38;5;8m  23[0m [37mOnly remaining gate for Phase V ACCEPT: **T045**.[0m
+[38;5;8m  23[0m [37mOnly remaining gate for Phase V ACCEPT: **T045** (RC: `snapshot_memo` sibling poison — fix pending).[0m
 [38;5;8m  24[0m 
 [38;5;8m  25[0m [37m## Phase V Must (still)[0m
 [38;5;8m  26[0m 

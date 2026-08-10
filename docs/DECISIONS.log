@@ -270,3 +270,16 @@ included) whose render tree repeats between frames — not specific to
 Chronos-FM's sidebar. Fixing it in Chronos-FM would mean avoiding
 memo-triggering render patterns app-wide, which is not tractable.
 
+
+### Decision — T045 root cause: snapshot_memo poisons uncomputed siblings
+
+**Date:** 2026-08-10  
+**Finding:** Nested `v_virtual_list::measure_item` → `compute_layout` miss path
+calls `snapshot_memo`, which walks **global** `frame_node_order` and caches
+`layout_bounds` for nodes not yet computed this frame as `(0,0)/(0,0)`.
+Poisons sidebar/toolbar SVG/text absolute bounds for the rest of the frame.
+**Repro:** `Source/gpui-component/examples/t045_repro` (isolated).  
+**Fix direction:** scope `snapshot_memo` to the subtree of the compute root
+(or skip nested snapshots / do not cache uncomputed layouts).  
+**Status:** RC accepted; fix not shipped. Blocks T037.
+

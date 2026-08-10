@@ -50,7 +50,7 @@ UNVERIFIED ≠ ACCEPT. Secrets (AWS keys) не в toml/report/grim.
 | **T042** | epic active | Pixel-copy program index |
 | **T043** | **done** | Places text: Source T014-A measure memo fix + resizable path |
 | **T044** | **done** | Listing was not in render tree (T043 bypass); restored under h_resizable |
-| **T045** | **active P1** | SVG paint always Bounds::default() on instrumented path; path 2 = gpui/examples repro (not more FM eprintln) |
+| **T045** | **active P1** | **RC confirmed** (`snapshot_memo` poisons siblings); fix Source + tests + grim pending |
 | T010–T036 etc. | mostly done | See `docs/orchestration/tasks/done/` |
 
 Reports: `report/T037-…`, `T038-…`, `T039-…`, `T044-…`, `T045-…`.
@@ -76,7 +76,7 @@ Reports: `report/T037-…`, `T038-…`, `T039-…`, `T044-…`, `T045-…`.
   self-ACCEPT.
 
 ### Очередь (сейчас)
-1. **T045** — path 2: isolated `Source/gpui/examples` repro (SVG + virtual_list); then fix + grim → vision.
+1. **T045** — implement Source fix (scope `snapshot_memo`); unit test + `t045_repro`; FM grim Places+list → vision.
 2. **T037** §7 full ACCEPT → `done/` + report-log.
 3. **T038–T041** Phase V pixel-copy (shell tokens stable after T037).
 4. Phase F backends (git history/remotes, S3 transfers, …) after V.
