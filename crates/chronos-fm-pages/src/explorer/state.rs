@@ -530,19 +530,9 @@ impl ExplorerPane {
         };
         drag.current = position;
         drag.dragging |= past_threshold(drag.start, drag.current);
-        let Some(drag) = self.marquee.as_ref() else {
-            return;
-        };
-        let (token, start, current, hitboxes, base_selection, additive, dragging) = (
-            drag.token.clone(),
-            drag.start,
-            drag.current,
-            drag.hitboxes.clone(),
-            drag.base_selection.clone(),
-            drag.additive,
-            drag.dragging,
-        );
-        if self.geometry_token.as_ref() != Some(&token) {
+        let token_is_current = self.geometry_token.as_ref() == Some(&drag.token);
+        let dragging = drag.dragging;
+        if !token_is_current {
             self.cancel_marquee();
             return;
         }
@@ -553,18 +543,31 @@ impl ExplorerPane {
         let Some(viewport) = self.listing_viewport else {
             return;
         };
-        let hits = match clip_to_bounds(normalized_rect(start, current), viewport) {
-            Some(rect) => hitboxes
-                .iter()
-                .filter(|item| intersects_closed(rect, item.bounds))
-                .map(|item| item.index)
-                .collect::<std::collections::BTreeSet<_>>(),
-            None => Default::default(),
+        let (hits, selection) = {
+            let drag = self
+                .marquee
+                .as_ref()
+                .expect("the active marquee was validated above");
+            let hits = match clip_to_bounds(normalized_rect(drag.start, drag.current), viewport) {
+                Some(rect) => drag
+                    .hitboxes
+                    .iter()
+                    .filter(|item| intersects_closed(rect, item.bounds))
+                    .map(|item| item.index)
+                    .collect::<std::collections::BTreeSet<_>>(),
+                None => Default::default(),
+            };
+            let selection = selection_for_hits(
+                &drag.base_selection,
+                hits.iter().copied(),
+                drag.additive,
+            );
+            (hits, selection)
         };
         if let Some(drag) = self.marquee.as_mut() {
-            drag.hit_indices = hits.clone();
+            drag.hit_indices = hits;
         }
-        self.selection = selection_for_hits(&base_selection, hits, additive);
+        self.selection = selection;
     }
 
     /// Returns the visible, clipped marquee rectangle after drag threshold.
