@@ -1,3 +1,11 @@
+# T041 — Phase V: Extensions tab smart pixel-copy
+
+> ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
+>
+> 4-view shell + real config.plugins + honest empty/disabled. Vision residual
+> T046. Report: `report/T041-extensions-tab-mockup-parity-report.md`.
+
+
 [38;5;8m   1[0m [37m# T041 — Phase V: Extensions tab smart pixel-copy[0m
 [38;5;8m   2[0m 
 [38;5;8m   3[0m [37m**Epic:** T042. **Priority:** P1.[0m
