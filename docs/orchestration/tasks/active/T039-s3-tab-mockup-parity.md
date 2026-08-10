@@ -1,5 +1,14 @@
 # T039 — Phase V/F: S3 tab mockup parity
 
+> ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
+>
+> Chunked engine + 4-view UI shipped (unit tests green). Residuals: RustFS
+> integration + vision grims (T046 class). Report:
+> `report/T039-s3-tab-mockup-parity-report.md`.
+
+
+# T039 — Phase V/F: S3 tab mockup parity
+
 > ## ⚖️ ARCHITECT (2026-08-10): **GATES 1+2 ACCEPT — IMPLEMENT GO**
 >
 > ashpd dialogs + design spec approved. Full transfer/UI impl still open.

@@ -6,6 +6,9 @@
 //! single-threaded Tokio runtime on which all network calls are dispatched.
 
 pub mod provider;
+/// Chunked upload/download engine + job state machine (T039, additive to
+/// the whole-object methods below).
+pub mod transfer;
 
 use aws_credential_types::Credentials;
 use aws_sdk_s3::config::{BehaviorVersion, Region};
@@ -239,6 +242,96 @@ impl S3Client {
                 .map_err(|e| Error::Other(format!("delete_object {bucket}/{key}: {e}")))?;
             Ok(())
         })
+    }
+
+    // ---- Chunked transfer engine (T039, additive) ----
+
+    /// Spawn a chunked multipart upload on a dedicated background thread
+    /// (same channel-then-foreground-poll shape as `git::watcher`, design
+    /// spec §1). Returns immediately; the whole-object `put_object` above
+    /// is untouched and still used for the provider/browsing path.
+    pub fn spawn_upload(
+        &self,
+        job_id: u64,
+        local_path: std::path::PathBuf,
+        bucket: String,
+        key: String,
+    ) -> (
+        transfer::CancelHandle,
+        async_channel::Receiver<transfer::TransferEvent>,
+    ) {
+        let client = self.inner.clone();
+        let cancel = transfer::CancelHandle::new();
+        let cancel_for_thread = cancel.clone();
+        let (tx, rx) = async_channel::bounded(64);
+        std::thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    let _ = tx.send_blocking(transfer::TransferEvent::Failed {
+                        job_id,
+                        reason: format!("transfer runtime: {e}"),
+                    });
+                    return;
+                }
+            };
+            rt.block_on(transfer::run_upload(
+                &client,
+                job_id,
+                &local_path,
+                &bucket,
+                &key,
+                &cancel_for_thread,
+                &tx,
+            ));
+        });
+        (cancel, rx)
+    }
+
+    /// Spawn a chunked ranged-GET download on a dedicated background
+    /// thread. Mirrors [`S3Client::spawn_upload`].
+    pub fn spawn_download(
+        &self,
+        job_id: u64,
+        bucket: String,
+        key: String,
+        local_path: std::path::PathBuf,
+    ) -> (
+        transfer::CancelHandle,
+        async_channel::Receiver<transfer::TransferEvent>,
+    ) {
+        let client = self.inner.clone();
+        let cancel = transfer::CancelHandle::new();
+        let cancel_for_thread = cancel.clone();
+        let (tx, rx) = async_channel::bounded(64);
+        std::thread::spawn(move || {
+            let rt = match tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+            {
+                Ok(rt) => rt,
+                Err(e) => {
+                    let _ = tx.send_blocking(transfer::TransferEvent::Failed {
+                        job_id,
+                        reason: format!("transfer runtime: {e}"),
+                    });
+                    return;
+                }
+            };
+            rt.block_on(transfer::run_download(
+                &client,
+                job_id,
+                &bucket,
+                &key,
+                &local_path,
+                &cancel_for_thread,
+                &tx,
+            ));
+        });
+        (cancel, rx)
     }
 
     /// Get object metadata.
