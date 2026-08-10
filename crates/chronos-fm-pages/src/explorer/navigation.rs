@@ -65,6 +65,7 @@ impl ExplorerPane {
                 self.preview_path = None;
                 self.preview_editor = None;
                 self.preview_image_path = None;
+                self.preview_image_data = None;
                 self.preview_message = None;
                 self.clear_status();
             }
@@ -118,6 +119,7 @@ impl ExplorerPane {
                             this.preview_path = None;
                             this.preview_editor = None;
                             this.preview_image_path = None;
+                            this.preview_image_data = None;
                             this.preview_message = None;
                             this.clear_status();
                         }

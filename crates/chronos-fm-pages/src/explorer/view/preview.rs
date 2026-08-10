@@ -1,9 +1,8 @@
 use crate::explorer::ExplorerPane;
+use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
-use chronos_fm_ui::theme::theme;
 
-// Calculate the maximum line width in characters for horizontal scroll sizing
 /// Renders the preview pane for the selected file, showing a text editor,
 /// image, status message, or an empty placeholder.
 pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl IntoElement + use<> {
@@ -14,27 +13,36 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl I
         .unwrap_or_else(|| "Preview".to_string());
 
     let content = if let Some(editor) = &page.preview_editor {
-        div().flex_1().child(editor.clone()).into_any_element()
-    } else if let Some(image_path) = &page.preview_image_path {
         div()
             .flex_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .bg(rgb(0x181818)) // Dark background for images
-            .child(
-                img(image_path.clone())
-                    .h_full()
-                    .w_full()
-                    .object_fit(gpui::ObjectFit::Contain),
-            )
+            .min_h(px(0.))
+            .child(editor.clone())
             .into_any_element()
+    } else if let Some(image) = page.preview_image_data.clone() {
+        image_frame(
+            cx,
+            img(image)
+                .max_w_full()
+                .max_h_full()
+                .object_fit(ObjectFit::Contain),
+        )
+    } else if let Some(image_path) = &page.preview_image_path {
+        // Pass PathBuf, not String: String maps to Embedded assets, not disk files.
+        let path = std::path::PathBuf::from(image_path);
+        image_frame(
+            cx,
+            img(path)
+                .max_w_full()
+                .max_h_full()
+                .object_fit(ObjectFit::Contain),
+        )
     } else if let Some(msg) = &page.preview_message {
         div()
             .flex_1()
             .flex()
             .items_center()
             .justify_center()
+            .px(px(16.))
             .text_color(theme::muted(cx))
             .child(msg.clone())
             .into_any_element()
@@ -55,7 +63,6 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl I
         .flex_col()
         .bg(theme::bg(cx))
         .child(
-            // Header
             div()
                 .px(px(16.0))
                 .py(px(12.0))
@@ -70,6 +77,19 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl I
                 ),
         )
         .child(content)
+}
+
+fn image_frame(cx: &App, image: impl IntoElement) -> AnyElement {
+    div()
+        .flex_1()
+        .min_h(px(0.))
+        .flex()
+        .items_center()
+        .justify_center()
+        .p(px(8.))
+        .bg(theme::bg_secondary(cx))
+        .child(image)
+        .into_any_element()
 }
 
 fn path_name(p: &str) -> String {

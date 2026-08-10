@@ -128,8 +128,10 @@ pub struct ExplorerPane {
     /// Service providing syntax highlighting for previews.
     pub syntax_service: Arc<SyntaxService>,
     // Preview State
-    /// Path of the image currently shown in the preview pane.
+    /// Path of the image currently shown in the preview pane (filesystem).
     pub preview_image_path: Option<String>,
+    /// Decoded image bytes for archive members (or when path load is unavailable).
+    pub preview_image_data: Option<std::sync::Arc<gpui::Image>>,
     /// Message shown in the preview pane when a file cannot be previewed.
     pub preview_message: Option<String>,
     /// The editor entity backing a text preview.
@@ -248,6 +250,7 @@ impl ExplorerPane {
             syntax_service: Arc::new(SyntaxService::new()),
             preview_editor: None,
             preview_image_path: None,
+            preview_image_data: None,
             preview_message: None,
             status_message: None,
             renaming: None,
