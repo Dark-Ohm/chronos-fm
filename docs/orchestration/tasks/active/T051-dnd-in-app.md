@@ -1,5 +1,11 @@
 # T051 — Drag-and-drop in-app (listing → folder, cross-pane)
 
+> ## ⚖️ ARCHITECT (2026-08-10): **DESIGN APPROVED — IMPLEMENT GO**
+>
+> Spec: `docs/superpowers/specs/2026-08-10-dnd-in-app-design.md` (`6d1cc69`).
+> Collision: auto `unique_name` until T053. Next: implementation plan → code →
+> report. No self-ACCEPT.
+
 **Epic:** T048. **Priority:** P0.  
 **Depends (soft):** T050 multi-select so multi-file drag is real.  
 **Code:** explorer listing + pane drop targets; `docs/explorer-essentials.md` §2
