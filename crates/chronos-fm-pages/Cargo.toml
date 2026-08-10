@@ -21,6 +21,10 @@ chronos-fm-store    = { path = "../chronos-fm-store" }
 chronos-fm-ui       = { path = "../chronos-fm-ui" }
 gpui.workspace = true
 gpui-component.workspace = true
+gpui-wry.workspace = true
+wry.workspace = true
+raw-window-handle.workspace = true
+url.workspace = true
 image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 anyhow.workspace     = true
 serde.workspace      = true

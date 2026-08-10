@@ -132,6 +132,11 @@ pub struct ExplorerPane {
     pub preview_image_path: Option<String>,
     /// Decoded image bytes for archive members (or when path load is unavailable).
     pub preview_image_data: Option<std::sync::Arc<gpui::Image>>,
+    /// Embedded WebKit (wry) used for HTML preview. Lazy-created; kept across
+    /// selections and hidden when not showing HTML.
+    pub preview_webview: Option<gpui::Entity<gpui_wry::WebView>>,
+    /// True while the preview pane should show the HTML webview.
+    pub preview_html_active: bool,
     /// Message shown in the preview pane when a file cannot be previewed.
     pub preview_message: Option<String>,
     /// The editor entity backing a text preview.
@@ -251,6 +256,8 @@ impl ExplorerPane {
             preview_editor: None,
             preview_image_path: None,
             preview_image_data: None,
+            preview_webview: None,
+            preview_html_active: false,
             preview_message: None,
             status_message: None,
             renaming: None,

@@ -1,33 +1,28 @@
-# T057 — Preview pane: image + HTML support
+# T057 — Preview pane: image + HTML (WebKit) support
 
-**Priority:** P1 explorer polish. **Related:** preview tab / inspector.
+**Priority:** P1 explorer polish.
 
-## Problem
+## Delivered
 
-Image preview was wired but **broken**: `img(String)` maps to embedded assets,
-not filesystem paths — images never painted. HTML was only syntax-highlighted
-source (or plain text) with no readable extract.
+### Images
+- Disk: `img(PathBuf)` so gpui loads from filesystem (String was embedded-asset bug).
+- Archive: `gpui::Image` bytes path.
 
-## Done in this ticket (land with code)
+### HTML as web component
+- `.html` / `.htm` / `.xhtml` load into **embedded WebKit** via `gpui-wry` + `wry` (`build_as_child` on the GPUI window).
+- `file://` URL for disk files; `load_html` for archive members.
+- Webview hidden when leaving HTML selection.
+- Fallback to source + status if webview init fails (e.g. platform limits).
 
-1. **Images (disk):** load via `PathBuf` → `Resource::Path` (png/jpg/gif/bmp/svg/webp/ico/tiff).
-2. **Images (archive):** decode bytes → `gpui::Image` + `preview_image_data`.
-3. **HTML:** `.html`/`.htm`/`.xhtml` → readable text extract (strip tags/scripts)
-   with banner; if extract empty, fall back to syntax-highlighted source.
-4. Unit tests for classification + HTML strip + image path outcome.
+## Dependencies
+- `gpui-wry` → `../Source/gpui-component/crates/webview`
+- `wry` (`lb-wry` 0.53.3) — needs **webkit2gtk** system libs (dev/runtime)
+- `url` for `file://`
 
-## Residual (not this ticket)
-
-- Full **browser-rendered** HTML (WebKit/webview) — separate if product wants it.
-- Toggle Source ↔ Text extract in preview header UI.
-- Image zoom/pan/EXIF.
+## Residual / known risk
+- Linux Wayland + child webview can be flaky (wry docs: X11-oriented child). If blank, check logs / fall back path.
+- No Source/Web toggle UI yet.
+- Image zoom/pan residual.
 
 ## Done when
-
-Code merged; unit tests green; optional grim of PNG + HTML file in preview;
-architect ACCEPT (no self-ACCEPT).
-
-## Evidence
-
-- Claim: disk images use PathBuf — `view/preview.rs`
-- Claim: HTML extract — `preview.rs` `html_to_readable_text` + tests
+Unit tests green; live grim of rendered HTML (not raw tags); architect ACCEPT.

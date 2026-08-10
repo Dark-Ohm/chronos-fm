@@ -4,7 +4,7 @@ use gpui::prelude::*;
 use gpui::*;
 
 /// Renders the preview pane for the selected file, showing a text editor,
-/// image, status message, or an empty placeholder.
+/// image, HTML webview, status message, or an empty placeholder.
 pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl IntoElement + use<> {
     let title = page
         .preview_path
@@ -12,7 +12,18 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl I
         .map(|p| path_name(p))
         .unwrap_or_else(|| "Preview".to_string());
 
-    let content = if let Some(editor) = &page.preview_editor {
+    let content = if page.preview_html_active {
+        if let Some(webview) = &page.preview_webview {
+            div()
+                .flex_1()
+                .min_h(px(0.))
+                .size_full()
+                .child(webview.clone())
+                .into_any_element()
+        } else {
+            placeholder(cx, "HTML webview unavailable")
+        }
+    } else if let Some(editor) = &page.preview_editor {
         div()
             .flex_1()
             .min_h(px(0.))
@@ -37,24 +48,9 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl I
                 .object_fit(ObjectFit::Contain),
         )
     } else if let Some(msg) = &page.preview_message {
-        div()
-            .flex_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .px(px(16.))
-            .text_color(theme::muted(cx))
-            .child(msg.clone())
-            .into_any_element()
+        placeholder(cx, msg.clone())
     } else {
-        div()
-            .flex_1()
-            .flex()
-            .items_center()
-            .justify_center()
-            .text_color(theme::muted(cx))
-            .child("No file selected")
-            .into_any_element()
+        placeholder(cx, "No file selected")
     };
 
     div()
@@ -77,6 +73,18 @@ pub fn render(page: &mut ExplorerPane, _window: &mut Window, cx: &App) -> impl I
                 ),
         )
         .child(content)
+}
+
+fn placeholder(cx: &App, msg: impl Into<SharedString>) -> AnyElement {
+    div()
+        .flex_1()
+        .flex()
+        .items_center()
+        .justify_center()
+        .px(px(16.))
+        .text_color(theme::muted(cx))
+        .child(msg.into())
+        .into_any_element()
 }
 
 fn image_frame(cx: &App, image: impl IntoElement) -> AnyElement {

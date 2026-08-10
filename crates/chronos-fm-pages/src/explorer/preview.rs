@@ -1,7 +1,12 @@
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use chronos_fm_core::config;
-use gpui::{AppContext, AsyncWindowContext, Context, Image, ImageFormat, Window};
+use gpui::{
+    AppContext, AsyncWindowContext, Context, Entity, Image, ImageFormat, Window,
+};
+use gpui_wry::WebView;
+use wry::WebViewBuilder;
 
 use super::view::preview::editor::PreviewEditor;
 use super::ExplorerPane;
@@ -9,17 +14,21 @@ use super::ExplorerPane;
 /// Result of reading a file for preview off the UI thread.
 enum PreviewOutcome {
     TooLarge,
-    /// UTF-8 text (source code, HTML source, plain notes, …).
+    /// UTF-8 text (source code, plain notes, …).
     Text { body: String, language: String },
     /// Filesystem path for `gpui::img(PathBuf)` (raster + SVG).
     ImagePath(String),
     /// In-memory image (archive member or when path cannot be used).
     ImageBytes { format: ImageFormat, bytes: Vec<u8> },
+    /// HTML document to show in the embedded WebKit webview.
+    HtmlFile { path: PathBuf },
+    /// HTML body without a stable disk path (e.g. archive member).
+    HtmlBody { html: String },
     Unsupported,
 }
 
 fn extension_of(path: &str) -> String {
-    std::path::Path::new(path)
+    Path::new(path)
         .extension()
         .and_then(|s| s.to_str())
         .unwrap_or("")
@@ -82,97 +91,6 @@ fn read_from_archive(path: &str) -> Option<Vec<u8>> {
     chronos_fm_services::archive::read_file(&archive_path, &inner_path).ok()
 }
 
-/// Strip tags/scripts for a plain-text reading of HTML (no browser engine).
-/// Source view still uses language="html" for syntax highlighting.
-fn html_to_readable_text(html: &str) -> String {
-    let mut s = html.to_string();
-    // Drop script/style blocks (case-insensitive, non-greedy-ish via line scans).
-    for tag in ["script", "style", "noscript"] {
-        let open = format!("<{tag}");
-        let close = format!("</{tag}>");
-        let lower = s.to_lowercase();
-        let mut out = String::with_capacity(s.len());
-        let mut rest = s.as_str();
-        let mut rest_lower = lower.as_str();
-        loop {
-            if let Some(i) = rest_lower.find(&open) {
-                out.push_str(&rest[..i]);
-                let after_open = &rest[i..];
-                let after_open_l = &rest_lower[i..];
-                if let Some(j) = after_open_l.find(&close) {
-                    let skip = j + close.len();
-                    rest = &after_open[skip..];
-                    rest_lower = &after_open_l[skip..];
-                } else {
-                    // Unclosed — drop the rest of the open tag content.
-                    break;
-                }
-            } else {
-                out.push_str(rest);
-                break;
-            }
-        }
-        s = out;
-    }
-
-    // Replace block-ish tags with newlines, then strip remaining tags.
-    let mut out = String::with_capacity(s.len());
-    let bytes = s.as_bytes();
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'<' {
-            if let Some(end) = s[i..].find('>') {
-                let tag = s[i + 1..i + end].trim().to_lowercase();
-                let name = tag.trim_start_matches('/').split_whitespace().next().unwrap_or("");
-                if matches!(
-                    name,
-                    "p" | "div" | "br" | "tr" | "li" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6"
-                        | "hr" | "section" | "article" | "header" | "footer" | "table"
-                ) {
-                    out.push('\n');
-                }
-                i += end + 1;
-                continue;
-            }
-        }
-        out.push(s[i..].chars().next().unwrap());
-        i += s[i..].chars().next().unwrap().len_utf8();
-    }
-
-    // Basic entities.
-    let out = out
-        .replace("&nbsp;", " ")
-        .replace("&amp;", "&")
-        .replace("&lt;", "<")
-        .replace("&gt;", ">")
-        .replace("&quot;", "\"")
-        .replace("&#39;", "'");
-
-    // Collapse whitespace runs but keep paragraph breaks.
-    let mut collapsed = String::new();
-    let mut newline_run = 0;
-    let mut space = false;
-    for ch in out.chars() {
-        if ch == '\n' {
-            space = false;
-            newline_run += 1;
-            if newline_run <= 2 {
-                collapsed.push('\n');
-            }
-        } else if ch.is_whitespace() {
-            if !space && !collapsed.ends_with('\n') && !collapsed.is_empty() {
-                collapsed.push(' ');
-                space = true;
-            }
-        } else {
-            newline_run = 0;
-            space = false;
-            collapsed.push(ch);
-        }
-    }
-    collapsed.trim().to_string()
-}
-
 /// Reads `path` and classifies it for preview. Runs on a background thread, so
 /// it must not touch any GPUI state.
 #[allow(clippy::disallowed_methods)]
@@ -188,7 +106,7 @@ fn read_preview(path: &str) -> PreviewOutcome {
             }
         }
         return match String::from_utf8(bytes) {
-            Ok(body) if is_html_path(path) => html_outcome(path, body),
+            Ok(html) if is_html_path(path) => PreviewOutcome::HtmlBody { html },
             Ok(body) => PreviewOutcome::Text {
                 language: detect_language(path),
                 body,
@@ -213,9 +131,15 @@ fn read_preview(path: &str) -> PreviewOutcome {
         return PreviewOutcome::ImagePath(path.to_string());
     }
 
+    // HTML: real WebKit preview via wry (file://), not raw source.
+    if is_html_path(path) {
+        return PreviewOutcome::HtmlFile {
+            path: PathBuf::from(path),
+        };
+    }
+
     match std::fs::read(path) {
         Ok(bytes) => match String::from_utf8(bytes) {
-            Ok(body) if is_html_path(path) => html_outcome(path, body),
             Ok(body) => PreviewOutcome::Text {
                 language: detect_language(path),
                 body,
@@ -223,28 +147,6 @@ fn read_preview(path: &str) -> PreviewOutcome {
             Err(_) => PreviewOutcome::Unsupported,
         },
         Err(_) => PreviewOutcome::Unsupported,
-    }
-}
-
-/// HTML: readable text extract first; if extract is empty, fall back to source
-/// with `language=html` for syntax highlighting.
-fn html_outcome(path: &str, body: String) -> PreviewOutcome {
-    let readable = html_to_readable_text(&body);
-    if readable.chars().count() >= 8 {
-        // Prefix a short banner so the user knows this is not a browser render.
-        let mut text = String::from(
-            "── HTML preview (text extract; open externally for full render) ──\n\n",
-        );
-        text.push_str(&readable);
-        PreviewOutcome::Text {
-            language: "plain".into(),
-            body: text,
-        }
-    } else {
-        PreviewOutcome::Text {
-            language: detect_language(path),
-            body,
-        }
     }
 }
 
@@ -271,6 +173,147 @@ fn line_start_offset(text: &str, target_line: usize) -> Option<usize> {
 }
 
 impl ExplorerPane {
+    /// Create the HTML webview on first use. Uses wry as a child of the GPUI
+    /// window (`build_as_child`). On failure, returns an error string for status.
+    fn ensure_html_webview(
+        &mut self,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> Result<Entity<WebView>, String> {
+        if let Some(view) = &self.preview_webview {
+            return Ok(view.clone());
+        }
+
+        let webview = {
+            let builder = WebViewBuilder::new();
+            // Child of the Chronos-FM window — positions via gpui-wry bounds.
+            builder
+                .build_as_child(window)
+                .map_err(|e| format!("HTML webview failed to start: {e}"))?
+        };
+
+        let entity = cx.new(|cx| WebView::new(webview, window, cx));
+        self.preview_webview = Some(entity.clone());
+        Ok(entity)
+    }
+
+    fn hide_html_webview(&mut self, cx: &mut Context<Self>) {
+        self.preview_html_active = false;
+        if let Some(view) = &self.preview_webview {
+            view.update(cx, |wv, _| wv.hide());
+        }
+    }
+
+    fn show_html_file(
+        &mut self,
+        path: PathBuf,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.ensure_html_webview(window, cx) {
+            Ok(view) => {
+                let url = match path_to_file_url(&path) {
+                    Ok(u) => u,
+                    Err(msg) => {
+                        self.preview_message = Some(msg);
+                        self.hide_html_webview(cx);
+                        return;
+                    }
+                };
+                view.update(cx, |wv, _| {
+                    wv.show();
+                    wv.load_url(&url);
+                });
+                self.preview_html_active = true;
+                self.preview_editor = None;
+                self.preview_image_path = None;
+                self.preview_image_data = None;
+                self.preview_message = None;
+            }
+            Err(msg) => {
+                // Fallback: show HTML source so the user still sees something.
+                self.hide_html_webview(cx);
+                self.preview_message = Some(format!(
+                    "{msg}. Showing source. (WebKit/wry child webview is required for rendered HTML.)"
+                ));
+                if let Ok(body) = std::fs::read_to_string(&path) {
+                    self.apply_text_preview(path.display().to_string(), body, "html".into(), window, cx);
+                }
+            }
+        }
+    }
+
+    fn show_html_body(
+        &mut self,
+        html: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        match self.ensure_html_webview(window, cx) {
+            Ok(view) => {
+                view.update(cx, |wv, _| {
+                    wv.show();
+                    let _ = wv.raw().load_html(&html);
+                });
+                self.preview_html_active = true;
+                self.preview_editor = None;
+                self.preview_image_path = None;
+                self.preview_image_data = None;
+                self.preview_message = None;
+            }
+            Err(msg) => {
+                self.hide_html_webview(cx);
+                self.preview_message = Some(msg);
+                self.apply_text_preview(
+                    self.preview_path.clone().unwrap_or_else(|| "page.html".into()),
+                    html,
+                    "html".into(),
+                    window,
+                    cx,
+                );
+            }
+        }
+    }
+
+    fn apply_text_preview(
+        &mut self,
+        path: String,
+        body: String,
+        language: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        self.hide_html_webview(cx);
+        self.preview_path = Some(path.clone());
+        self.preview_text = Some(body.clone());
+
+        let editor_view = cx.new(|cx| PreviewEditor::new(window, cx));
+        editor_view.update(cx, |editor, cx| {
+            editor.set_text(body.clone(), window, cx);
+            if language != "plain" {
+                editor.set_language(language, window, cx);
+            }
+        });
+        self.preview_editor = Some(editor_view);
+        self.update_editor_search(window, cx);
+
+        if let Some(results) = &self.search_results {
+            if let Some(file_result) = results.iter().find(|r| r.path == path) {
+                if let Some(first_match) = file_result.matches.first() {
+                    if let Some(offset) =
+                        line_start_offset(&body, first_match.line_number.saturating_sub(1))
+                    {
+                        if let Some(editor) = self.preview_editor.clone() {
+                            editor.update(cx, |editor, cx| {
+                                editor.scroll_to(offset, window, cx);
+                            });
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     pub(crate) fn open_preview(
         &mut self,
         path: String,
@@ -282,6 +325,8 @@ impl ExplorerPane {
         self.preview_image_data = None;
         self.preview_message = None;
         self.preview_text = None;
+        // Hide previous HTML surface until the new outcome decides.
+        self.hide_html_webview(cx);
         // Record the path being loaded so that out-of-order async completions
         // (the user clicking another file before this read finishes) can be
         // detected and discarded below.
@@ -323,56 +368,37 @@ impl ExplorerPane {
     ) {
         match outcome {
             PreviewOutcome::TooLarge => {
+                self.hide_html_webview(cx);
                 self.preview_path = Some(path);
                 self.preview_message = Some("(File too large to preview)".to_string());
             }
             PreviewOutcome::ImagePath(image_path) => {
+                self.hide_html_webview(cx);
                 self.preview_path = Some(path);
                 self.preview_image_path = Some(image_path);
                 self.preview_image_data = None;
             }
             PreviewOutcome::ImageBytes { format, bytes } => {
+                self.hide_html_webview(cx);
                 self.preview_path = Some(path);
                 self.preview_image_path = None;
                 self.preview_image_data = Some(Arc::new(Image::from_bytes(format, bytes)));
             }
+            PreviewOutcome::HtmlFile { path: file_path } => {
+                self.preview_path = Some(path);
+                self.show_html_file(file_path, window, cx);
+            }
+            PreviewOutcome::HtmlBody { html } => {
+                self.preview_path = Some(path);
+                self.show_html_body(html, window, cx);
+            }
             PreviewOutcome::Unsupported => {
+                self.hide_html_webview(cx);
                 self.preview_path = Some(path);
                 self.preview_message = Some("(Preview not available for this file)".to_string());
             }
             PreviewOutcome::Text { body, language } => {
-                self.preview_path = Some(path.clone());
-                self.preview_text = Some(body.clone());
-
-                let editor_view = cx.new(|cx| PreviewEditor::new(window, cx));
-                editor_view.update(cx, |editor, cx| {
-                    editor.set_text(body.clone(), window, cx);
-                    if language != "plain" {
-                        editor.set_language(language, window, cx);
-                    }
-                });
-                self.preview_editor = Some(editor_view);
-
-                // Highlights (search only; syntax handled by editor)
-                self.update_editor_search(window, cx);
-
-                // Scroll to the first match for the active query, if any.
-                if let Some(results) = &self.search_results {
-                    if let Some(file_result) = results.iter().find(|r| r.path == path) {
-                        if let Some(first_match) = file_result.matches.first() {
-                            // `line_number` is 1-based; `line_start_offset` takes a 0-based index.
-                            if let Some(offset) =
-                                line_start_offset(&body, first_match.line_number.saturating_sub(1))
-                            {
-                                if let Some(editor) = self.preview_editor.clone() {
-                                    editor.update(cx, |editor, cx| {
-                                        editor.scroll_to(offset, window, cx);
-                                    });
-                                }
-                            }
-                        }
-                    }
-                }
+                self.apply_text_preview(path, body, language, window, cx);
             }
         }
         cx.notify();
@@ -406,6 +432,19 @@ impl ExplorerPane {
             }
         }
     }
+}
+
+fn path_to_file_url(path: &Path) -> Result<String, String> {
+    let abs = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .map_err(|e| e.to_string())?
+            .join(path)
+    };
+    let url = url::Url::from_file_path(&abs)
+        .map_err(|_| format!("cannot form file URL for {}", abs.display()))?;
+    Ok(url.to_string())
 }
 
 #[cfg(test)]
@@ -463,19 +502,6 @@ mod tests {
     }
 
     #[test]
-    fn html_to_readable_strips_tags_and_scripts() {
-        let html = r#"
-        <html><head><style>body{color:red}</style><script>alert(1)</script></head>
-        <body><h1>Hello</h1><p>World &amp; friends</p></body></html>
-        "#;
-        let text = html_to_readable_text(html);
-        assert!(text.contains("Hello"), "{text}");
-        assert!(text.contains("World & friends"), "{text}");
-        assert!(!text.contains("alert"), "{text}");
-        assert!(!text.contains("color:red"), "{text}");
-    }
-
-    #[test]
     fn read_preview_classifies_files() {
         let dir = tempfile::tempdir().unwrap();
 
@@ -494,7 +520,7 @@ mod tests {
             _ => panic!("expected ImagePath"),
         }
 
-        // HTML → readable extract.
+        // HTML → HtmlFile for webview load.
         let html_path = dir.path().join("page.html");
         std::fs::write(
             &html_path,
@@ -502,13 +528,10 @@ mod tests {
         )
         .unwrap();
         match read_preview(&html_path.to_string_lossy()) {
-            PreviewOutcome::Text { body, language } => {
-                assert_eq!(language, "plain");
-                assert!(body.contains("Title"), "{body}");
-                assert!(body.contains("Paragraph text here"), "{body}");
-                assert!(body.contains("HTML preview"), "{body}");
+            PreviewOutcome::HtmlFile { path } => {
+                assert_eq!(path, html_path);
             }
-            _ => panic!("expected Text for html"),
+            _ => panic!("expected HtmlFile for html"),
         }
 
         // Non-UTF-8, non-image -> Unsupported.
@@ -528,6 +551,14 @@ mod tests {
             read_preview("/nonexistent/path/here"),
             PreviewOutcome::Unsupported
         ));
+    }
+
+    #[test]
+    fn path_to_file_url_uses_file_scheme() {
+        let p = PathBuf::from("/tmp/example.html");
+        let url = path_to_file_url(&p).unwrap();
+        assert!(url.starts_with("file://"), "{url}");
+        assert!(url.contains("example.html"), "{url}");
     }
 
     #[test]

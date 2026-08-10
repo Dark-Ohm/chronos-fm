@@ -56,6 +56,10 @@ time               = { version = "0.3", features = ["formatting", "macros"] }
 gpui = { path = "../Source/gpui" }
 gpui_platform = { path = "../Source/gpui_platform" }
 gpui-component = { path = "../Source/gpui-component/crates/ui" }
+gpui-wry = { path = "../Source/gpui-component/crates/webview" }
+wry = { version = "0.53.3", package = "lb-wry" }
+url = "2"
+raw-window-handle = "0.6"
 
 # gpui-component's workspace still declares gpui (and siblings) as
 # git = zed-industries/zed. Without this patch Cargo would resolve two
