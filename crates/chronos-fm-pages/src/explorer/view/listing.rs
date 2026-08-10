@@ -1,5 +1,8 @@
 use super::super::types::{StatusLevel, ViewMode};
 use crate::explorer::ExplorerPane;
+use crate::explorer::dnd::{
+    DropMode, DropTarget, DropTargetKind, FileDrag, drop_mode, set_file_drag_cursor,
+};
 use chronos_fm_ui::theme::theme;
 use gpui::*;
 use gpui_component::ElementExt;
@@ -43,6 +46,19 @@ pub fn render(
         }
     }
     let entity = cx.entity().clone();
+    let geometry_entity = entity.clone();
+    let target_id = entity.entity_id();
+    let cwd_target = DropTarget {
+        directory: page.cwd.clone().into(),
+        kind: DropTargetKind::ListingCwd,
+    };
+    let pane_for_move = entity.clone();
+    let move_target = cwd_target.clone();
+    let pane_for_can_drop = entity.clone();
+    let can_drop_target = cwd_target.clone();
+    let pane_for_style = entity.clone();
+    let style_target = cwd_target.clone();
+    let drop_target = cwd_target.clone();
     let scroll_handle = page.virtual_scroll_handle.clone();
     let event_scroll_handle = scroll_handle.clone();
     let mut listing_viewport = div()
@@ -56,7 +72,7 @@ pub fn render(
         // exists before row/tile prepaint callbacks report their bounds.
         .on_prepaint(move |bounds, _window, cx| {
             let scroll_offset = scroll_handle.offset();
-            entity.update(cx, |pane, _cx| {
+            geometry_entity.update(cx, |pane, _cx| {
                 pane.record_listing_viewport(bounds, scroll_offset);
             });
         })
@@ -106,6 +122,60 @@ pub fn render(
                 }
             }),
         )
+        .on_drag_move::<FileDrag>(move |event, window, cx| {
+            if !event.bounds.contains(&event.event.position) {
+                return;
+            }
+            let cursor = if pane_for_move.read(cx).can_accept_listing_cwd_drop(
+                target_id,
+                event.drag(cx),
+                &move_target,
+                window,
+                cx,
+            ) {
+                if drop_mode(event.event.modifiers) == DropMode::Copy {
+                    CursorStyle::DragCopy
+                } else {
+                    CursorStyle::ClosedHand
+                }
+            } else {
+                CursorStyle::OperationNotAllowed
+            };
+            set_file_drag_cursor(cursor, window, cx);
+        })
+        .can_drop(move |value, window, cx| {
+            value.downcast_ref::<FileDrag>().is_some_and(|drag| {
+                pane_for_can_drop.read(cx).can_accept_listing_cwd_drop(
+                    target_id,
+                    drag,
+                    &can_drop_target,
+                    window,
+                    cx,
+                )
+            })
+        })
+        .drag_over::<FileDrag>(move |style, drag, window, cx| {
+            if pane_for_style.read(cx).can_accept_listing_cwd_drop(
+                target_id,
+                drag,
+                &style_target,
+                window,
+                cx,
+            ) {
+                style
+                    .border_1()
+                    .border_color(theme::accent(cx))
+                    .bg(theme::accent_light(cx).opacity(0.08))
+            } else {
+                style
+            }
+        })
+        .on_drop(cx.listener(move |pane, drag: &FileDrag, window, cx| {
+            let target_id = cx.entity().entity_id();
+            if pane.can_accept_listing_cwd_drop(target_id, drag, &drop_target, window, cx) {
+                pane.begin_file_drop(drag.clone(), drop_target.clone(), window.modifiers(), cx);
+            }
+        }))
         .child(file_list);
 
     if let (Some(rect), Some(viewport)) = (page.marquee_rect(), page.listing_viewport) {

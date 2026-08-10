@@ -2,6 +2,9 @@ use super::truncate_middle;
 
 use crate::explorer::ExplorerPane;
 use crate::explorer::clipboard::{self, ClipboardMode};
+use crate::explorer::dnd::{
+    DropTarget, DropTargetKind, FileDrag, file_drag_for_item, set_file_drag_cursor,
+};
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
@@ -73,6 +76,18 @@ pub fn render(
     let item_for_activate = item.clone();
     let context_menu_path = item_for_preview.path.clone();
     let entity = cx.entity().clone();
+    let geometry_entity = entity.clone();
+    let file_drag = file_drag_for_item(page, item, ix, entity.clone());
+    let folder_target = (item.kind == "dir"
+        && page.provider.is_none()
+        && !page
+            .renaming
+            .as_ref()
+            .is_some_and(|(renaming_ix, _)| *renaming_ix == ix))
+    .then(|| DropTarget {
+        directory: item.path.clone().into(),
+        kind: DropTargetKind::FolderItem,
+    });
 
     // Check if query matches filename (for highlighting)
     let query_lower = page.search_query.to_lowercase();
@@ -142,13 +157,13 @@ pub fn render(
     // and risks a visual diff. Documented in the T022 report — see the
     // calibration section: this codebase is already flatter than the
     // ~15–25 % savings the report estimated.
-    div()
+    let row = div()
         .id(("file-row-menu", ix))
         .flex_col()
         .w(px(total_width))
         .when(is_cut, |el| el.opacity(0.5))
         .on_prepaint(move |bounds, _window, cx| {
-            entity.update(cx, |pane, _cx| {
+            geometry_entity.update(cx, |pane, _cx| {
                 if let Some(token) = pane.geometry_token.clone() {
                     pane.record_item_bounds(ix, bounds, token);
                 }
@@ -179,6 +194,9 @@ pub fn render(
                 .bg(bg_color)
                 .on_click(
                     cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
+                        if cx.has_active_drag() {
+                            return;
+                        }
                         if let gpui::ClickEvent::Mouse(mouse) = event {
                             if mouse.up.button == gpui::MouseButton::Left {
                                 this.record_click(ix, mouse.up.click_count);
@@ -378,7 +396,78 @@ pub fn render(
                         )
                 })
                 .collect::<Vec<_>>(),
-        )
+        );
+
+    row.when_some(file_drag, |row, drag| {
+        row.on_drag(drag, |drag, _offset, _window, cx| {
+            drag.activate(cx);
+            cx.new(|_cx| drag.preview())
+        })
+    })
+    .when_some(folder_target, |row, target| {
+        let target_id = entity.entity_id();
+        let pane_for_move = entity.clone();
+        let move_target = target.clone();
+        let pane_for_can_drop = entity.clone();
+        let can_drop_target = target.clone();
+        let pane_for_style = entity.clone();
+        let style_target = target.clone();
+        let drop_target = target.clone();
+
+        row.on_drag_move::<FileDrag>(move |event, window, cx| {
+            if event.bounds.contains(&event.event.position)
+                && pane_for_move.read(cx).can_accept_file_drop(
+                    target_id,
+                    event.drag(cx),
+                    &move_target,
+                    event.event.modifiers,
+                    cx,
+                )
+            {
+                let cursor = if crate::explorer::dnd::drop_mode(event.event.modifiers)
+                    == crate::explorer::dnd::DropMode::Copy
+                {
+                    gpui::CursorStyle::DragCopy
+                } else {
+                    gpui::CursorStyle::ClosedHand
+                };
+                set_file_drag_cursor(cursor, window, cx);
+            }
+        })
+        .can_drop(move |value, window, cx| {
+            value.downcast_ref::<FileDrag>().is_some_and(|drag| {
+                pane_for_can_drop.read(cx).can_accept_file_drop(
+                    target_id,
+                    drag,
+                    &can_drop_target,
+                    window.modifiers(),
+                    cx,
+                )
+            })
+        })
+        .drag_over::<FileDrag>(move |style, drag, window, cx| {
+            if pane_for_style.read(cx).can_accept_file_drop(
+                target_id,
+                drag,
+                &style_target,
+                window.modifiers(),
+                cx,
+            ) {
+                style
+                    .border_1()
+                    .border_color(theme::accent(cx))
+                    .bg(theme::accent_light(cx))
+            } else {
+                style
+            }
+        })
+        .on_drop(cx.listener(move |pane, drag: &FileDrag, window, cx| {
+            let target_id = cx.entity().entity_id();
+            if pane.can_accept_file_drop(target_id, drag, &drop_target, window.modifiers(), cx) {
+                pane.begin_file_drop(drag.clone(), drop_target.clone(), window.modifiers(), cx);
+            }
+        }))
+    })
 }
 
 #[cfg(test)]

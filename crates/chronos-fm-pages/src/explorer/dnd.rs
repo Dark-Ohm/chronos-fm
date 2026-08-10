@@ -1,12 +1,13 @@
 use super::ExplorerPane;
 use super::types::StatusLevel;
 use super::view::listing::{row::icon_path_for, truncate_middle};
+use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_services::fs::ops::{TransferReport, transfer_paths};
 use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::{
-    AppContext, Context, Entity, EntityId, IntoElement, Modifiers, Render, SharedString,
-    WeakEntity, Window, div, px,
+    App, AppContext, Context, CursorStyle, Entity, EntityId, IntoElement, Modifiers, Render,
+    SharedString, WeakEntity, Window, div, px,
 };
 use gpui_component::Icon;
 use std::fmt;
@@ -66,6 +67,64 @@ impl FileDrag {
             item_count: self.paths.len(),
         }
     }
+
+    /// Applies the selection and marquee changes that belong to actual drag
+    /// initiation rather than the preceding press.
+    pub(crate) fn activate(&self, cx: &mut App) {
+        let initiating_path = self.initiating_path.to_string_lossy();
+        let _ = self.source.update(cx, |pane, cx| {
+            let mut changed = false;
+            if let Some(index) = pane
+                .filtered_entries
+                .iter()
+                .position(|entry| entry.path == initiating_path)
+                && !pane.is_selected(index)
+            {
+                pane.select_single(index);
+                changed = true;
+            }
+            if pane.marquee.is_some() {
+                pane.cancel_marquee();
+                changed = true;
+            }
+            if changed {
+                cx.notify();
+            }
+        });
+    }
+}
+
+/// Builds the immutable local payload exposed by a production row or tile.
+pub(crate) fn file_drag_for_item(
+    pane: &ExplorerPane,
+    item: &FileEntryDto,
+    index: usize,
+    source: Entity<ExplorerPane>,
+) -> Option<FileDrag> {
+    if pane.provider.is_some()
+        || pane
+            .renaming
+            .as_ref()
+            .is_some_and(|(renaming_index, _)| *renaming_index == index)
+    {
+        return None;
+    }
+
+    let paths = if pane.is_selected(index) {
+        pane.selected_paths()
+            .into_iter()
+            .map(PathBuf::from)
+            .collect()
+    } else {
+        vec![PathBuf::from(&item.path)]
+    };
+    Some(FileDrag::new(
+        paths,
+        item.name.clone(),
+        PathBuf::from(&item.path),
+        item.kind.clone(),
+        source,
+    ))
 }
 
 /// Concrete local directory and surface kind receiving a file drop.
@@ -146,6 +205,13 @@ pub(crate) fn drop_mode(modifiers: Modifiers) -> DropMode {
     }
 }
 
+/// Changes the active file-drag cursor only when the requested state differs.
+pub(crate) fn set_file_drag_cursor(cursor: CursorStyle, window: &mut Window, cx: &mut App) {
+    if cx.active_drag_cursor_style() != Some(cursor) {
+        cx.set_active_drag_cursor_style(cursor, window);
+    }
+}
+
 /// Validates a complete local payload against one concrete destination.
 pub(crate) fn validate_drop(
     paths: &[PathBuf],
@@ -189,6 +255,45 @@ pub(crate) fn validate_drop(
 }
 
 impl ExplorerPane {
+    /// Returns whether this pane and the source pane currently accept a
+    /// complete payload for the concrete target.
+    pub(crate) fn can_accept_file_drop(
+        &self,
+        target_id: EntityId,
+        drag: &FileDrag,
+        target: &DropTarget,
+        modifiers: Modifiers,
+        cx: &App,
+    ) -> bool {
+        if self.provider.is_some() || self.drop_pending {
+            return false;
+        }
+        if drag.source_id() != target_id && drag.source().read(cx).provider.is_some() {
+            return false;
+        }
+        validate_drop(drag.paths(), target, drop_mode(modifiers)).is_ok()
+    }
+
+    /// Applies the cwd target's measured-item exclusion before normal drop
+    /// validation, preventing invalid item targets from falling through.
+    pub(crate) fn can_accept_listing_cwd_drop(
+        &self,
+        target_id: EntityId,
+        drag: &FileDrag,
+        target: &DropTarget,
+        window: &Window,
+        cx: &App,
+    ) -> bool {
+        let position = window.mouse_position();
+        self.listing_viewport
+            .is_some_and(|viewport| viewport.contains(&position))
+            && self
+                .measured_items
+                .values()
+                .all(|bounds| !bounds.contains(&position))
+            && self.can_accept_file_drop(target_id, drag, target, window.modifiers(), cx)
+    }
+
     /// Starts one validated local transfer and returns whether it was accepted.
     pub(crate) fn begin_file_drop(
         &mut self,
@@ -420,11 +525,17 @@ impl Render for FileDragPreview {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::{AppContext, Modifiers, TestAppContext, WindowHandle};
+    use crate::explorer::types::ViewMode;
+    use chronos_fm_services::fs::provider::LocalFileSystemProvider;
+    use gpui::{
+        AppContext, Bounds, CursorStyle, InputEvent, Modifiers, MouseButton, MouseUpEvent, Pixels,
+        Point, TestAppContext, VisualTestContext, WindowHandle, point, px, size,
+    };
     use gpui_component::Root;
     use std::cell::RefCell;
     use std::path::Path;
     use std::rc::Rc;
+    use std::sync::Arc;
     use std::time::Duration;
 
     fn target(path: &Path) -> DropTarget {
@@ -625,6 +736,158 @@ mod tests {
         (root, pane)
     }
 
+    fn routed_pane(
+        cx: &mut TestAppContext,
+        cwd: &Path,
+        view_mode: ViewMode,
+    ) -> (WindowHandle<Root>, Entity<ExplorerPane>) {
+        let (root, pane) = rooted_pane(cx, cwd);
+        pane.update(cx, |pane, cx| {
+            pane.view_mode = view_mode;
+            pane.update_item_sizes();
+            cx.notify();
+        });
+        (root, pane)
+    }
+
+    fn draw_window(cx: &mut VisualTestContext) {
+        cx.run_until_parked();
+        cx.update(|window, cx| {
+            let _ = window.draw(cx);
+        });
+    }
+
+    fn center(bounds: Bounds<Pixels>) -> Point<Pixels> {
+        point(
+            bounds.left() + bounds.size.width / 2.,
+            bounds.top() + bounds.size.height / 2.,
+        )
+    }
+
+    fn item_index(pane: &ExplorerPane, path: &Path) -> usize {
+        let path = path.to_string_lossy();
+        pane.filtered_entries
+            .iter()
+            .position(|entry| entry.path == path)
+            .expect("fixture path is visible")
+    }
+
+    fn item_point(
+        pane: &Entity<ExplorerPane>,
+        path: &Path,
+        cx: &VisualTestContext,
+    ) -> Point<Pixels> {
+        pane.read_with(cx, |pane, _cx| {
+            let index = item_index(pane, path);
+            center(
+                *pane
+                    .measured_items
+                    .get(&index)
+                    .expect("fixture item was measured"),
+            )
+        })
+    }
+
+    fn item_name_point(
+        pane: &Entity<ExplorerPane>,
+        path: &Path,
+        cx: &VisualTestContext,
+    ) -> Point<Pixels> {
+        pane.read_with(cx, |pane, _cx| {
+            let index = item_index(pane, path);
+            let bounds = *pane
+                .measured_items
+                .get(&index)
+                .expect("fixture item was measured");
+            point(bounds.left() + px(96.0), center(bounds).y)
+        })
+    }
+
+    fn blank_listing_point(pane: &Entity<ExplorerPane>, cx: &VisualTestContext) -> Point<Pixels> {
+        pane.read_with(cx, |pane, _cx| {
+            let viewport = pane
+                .listing_viewport
+                .expect("listing viewport was measured");
+            let left = viewport.left().as_f32() + 8.0;
+            let right = viewport.right().as_f32() - 8.0;
+            let top = viewport.top().as_f32() + 8.0;
+            let bottom = viewport.bottom().as_f32() - 8.0;
+
+            for y_step in (0..=10).rev() {
+                for x_step in (0..=10).rev() {
+                    let candidate = point(
+                        px(left + (right - left) * x_step as f32 / 10.0),
+                        px(top + (bottom - top) * y_step as f32 / 10.0),
+                    );
+                    if pane
+                        .measured_items
+                        .values()
+                        .chain(pane.marquee_exclusions.values())
+                        .all(|bounds| !bounds.contains(&candidate))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+            panic!("listing viewport must expose empty space")
+        })
+    }
+
+    fn select_paths(pane: &Entity<ExplorerPane>, paths: &[&Path], cx: &mut TestAppContext) {
+        pane.update(cx, |pane, cx| {
+            pane.clear_selection();
+            for path in paths {
+                let index = item_index(pane, path);
+                pane.selection.insert(index);
+                pane.selection_anchor.get_or_insert(index);
+                pane.active_index = Some(index);
+            }
+            cx.notify();
+        });
+    }
+
+    fn start_drag(
+        cx: &mut VisualTestContext,
+        source: Point<Pixels>,
+        target: Point<Pixels>,
+        target_modifiers: Modifiers,
+    ) {
+        cx.simulate_mouse_down(source, MouseButton::Left, Modifiers::default());
+        cx.simulate_mouse_move(
+            point(source.x + px(8.0), source.y),
+            Some(MouseButton::Left),
+            Modifiers::default(),
+        );
+        cx.simulate_mouse_move(target, Some(MouseButton::Left), target_modifiers);
+    }
+
+    fn active_drag(cx: &mut VisualTestContext) -> bool {
+        cx.update(|_window, cx| cx.has_active_drag())
+    }
+
+    fn active_drag_cursor(cx: &mut VisualTestContext) -> Option<CursorStyle> {
+        cx.update(|_window, cx| cx.active_drag_cursor_style())
+    }
+
+    fn dispatch_mouse_up(
+        cx: &mut VisualTestContext,
+        position: Point<Pixels>,
+        modifiers: Modifiers,
+    ) {
+        cx.update(|window, cx| {
+            window.dispatch_event(
+                MouseUpEvent {
+                    position,
+                    modifiers,
+                    button: MouseButton::Left,
+                    click_count: 1,
+                }
+                .to_platform_input(),
+                cx,
+            );
+        });
+    }
+
     fn select_path(pane: &Entity<ExplorerPane>, path: &Path, cx: &mut TestAppContext) {
         let path = path.to_string_lossy();
         pane.update(cx, |pane, _cx| {
@@ -708,6 +971,261 @@ mod tests {
             .timer(Duration::from_millis(50))
             .await;
         cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    async fn dnd_routing_selected_list_row_carries_selection_to_folder(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("a.txt");
+        let second = fixture.path().join("b.txt");
+        let folder = fixture.path().join("folder");
+        std::fs::write(&first, "a").unwrap();
+        std::fs::write(&second, "b").unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        let (root, pane) = routed_pane(cx, fixture.path(), ViewMode::List);
+        select_paths(&pane, &[&first, &second], cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_point(&pane, &first, &cx);
+        let target = item_point(&pane, &folder, &cx);
+        start_drag(&mut cx, source, target, Modifiers::default());
+        assert!(active_drag(&mut cx));
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::ClosedHand),
+            "a valid folder hover uses the move cursor",
+        );
+        assert!(
+            cx.debug_bounds("file-drag-preview-count").is_some(),
+            "the selected two-item payload renders its count badge",
+        );
+
+        cx.simulate_mouse_move(source, Some(MouseButton::Left), Modifiers::default());
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::OperationNotAllowed),
+            "leaving a valid folder for a measured file resets the cursor",
+        );
+        cx.simulate_mouse_move(target, Some(MouseButton::Left), Modifiers::default());
+        assert_eq!(active_drag_cursor(&mut cx), Some(CursorStyle::ClosedHand));
+
+        dispatch_mouse_up(&mut cx, target, Modifiers::default());
+        assert!(!active_drag(&mut cx));
+        assert!(pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        settle_drop(&mut cx).await;
+        assert!(folder.join("a.txt").exists());
+        assert!(folder.join("b.txt").exists());
+    }
+
+    #[gpui::test]
+    fn dnd_routing_unselected_list_row_normalizes_and_cancels_marquee(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("a.txt");
+        let second = fixture.path().join("b.txt");
+        std::fs::write(&first, "a").unwrap();
+        std::fs::write(&second, "b").unwrap();
+        let (root, pane) = routed_pane(cx, fixture.path(), ViewMode::List);
+        select_paths(&pane, &[&second], cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let blank = blank_listing_point(&pane, &cx);
+        pane.update(&mut cx, |pane, _cx| {
+            assert!(pane.begin_marquee(blank, Modifiers::default()));
+        });
+        let source = item_point(&pane, &first, &cx);
+        start_drag(&mut cx, source, source, Modifiers::default());
+
+        assert!(active_drag(&mut cx));
+        pane.read_with(&cx, |pane, _cx| {
+            assert_eq!(pane.selected_paths(), vec![first.to_string_lossy()]);
+            assert!(pane.marquee.is_none());
+        });
+        draw_window(&mut cx);
+        assert!(cx.debug_bounds("file-drag-preview").is_some());
+        assert!(cx.debug_bounds("file-drag-preview-count").is_none());
+        cx.simulate_mouse_up(source, MouseButton::Left, Modifiers::default());
+    }
+
+    #[gpui::test]
+    async fn dnd_routing_grid_tile_uses_selection_preview_and_folder_target(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("a.txt");
+        let second = fixture.path().join("b.txt");
+        let folder = fixture.path().join("folder");
+        std::fs::write(&first, "a").unwrap();
+        std::fs::write(&second, "b").unwrap();
+        std::fs::create_dir(&folder).unwrap();
+        let (root, pane) = routed_pane(cx, fixture.path(), ViewMode::Grid);
+        select_paths(&pane, &[&first, &second], cx);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_point(&pane, &first, &cx);
+        let target = item_point(&pane, &folder, &cx);
+        start_drag(&mut cx, source, target, Modifiers::default());
+        assert!(active_drag(&mut cx));
+        draw_window(&mut cx);
+        assert_eq!(active_drag_cursor(&mut cx), Some(CursorStyle::ClosedHand));
+        assert!(cx.debug_bounds("file-drag-preview-count").is_some());
+
+        dispatch_mouse_up(&mut cx, target, Modifiers::default());
+        assert!(pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        settle_drop(&mut cx).await;
+        assert!(folder.join("a.txt").exists());
+        assert!(folder.join("b.txt").exists());
+    }
+
+    #[gpui::test]
+    async fn dnd_routing_empty_listing_space_accepts_copy_to_cwd(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let source_path = fixture.path().join("copy.txt");
+        let copied_path = fixture.path().join("copy (2).txt");
+        std::fs::write(&source_path, "copy").unwrap();
+        let (root, pane) = routed_pane(cx, fixture.path(), ViewMode::List);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_point(&pane, &source_path, &cx);
+        let target = blank_listing_point(&pane, &cx);
+        let copy = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        start_drag(&mut cx, source, target, copy);
+        draw_window(&mut cx);
+        assert_eq!(active_drag_cursor(&mut cx), Some(CursorStyle::DragCopy));
+        dispatch_mouse_up(&mut cx, target, copy);
+        assert!(pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        settle_drop(&mut cx).await;
+        assert!(source_path.exists());
+        assert!(copied_path.exists());
+    }
+
+    #[gpui::test]
+    async fn dnd_routing_current_breadcrumb_accepts_copy_to_cwd(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let source_path = fixture.path().join("copy.txt");
+        let copied_path = fixture.path().join("copy (2).txt");
+        std::fs::write(&source_path, "copy").unwrap();
+        let (root, pane) = routed_pane(cx, fixture.path(), ViewMode::Grid);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_point(&pane, &source_path, &cx);
+        let target = center(
+            cx.debug_bounds("current-directory-breadcrumb")
+                .expect("the cwd breadcrumb has a stable target selector"),
+        );
+        let copy = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        start_drag(&mut cx, source, target, copy);
+        draw_window(&mut cx);
+        assert_eq!(active_drag_cursor(&mut cx), Some(CursorStyle::DragCopy));
+        dispatch_mouse_up(&mut cx, target, copy);
+        assert!(pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        settle_drop(&mut cx).await;
+        assert!(source_path.exists());
+        assert!(copied_path.exists());
+    }
+
+    #[gpui::test]
+    fn dnd_routing_items_rename_header_and_provider_reject(cx: &mut TestAppContext) {
+        let fixture = tempfile::tempdir().unwrap();
+        let first = fixture.path().join("a.txt");
+        let second = fixture.path().join("b.txt");
+        std::fs::write(&first, "a").unwrap();
+        std::fs::write(&second, "b").unwrap();
+        let (root, pane) = routed_pane(cx, fixture.path(), ViewMode::List);
+        let mut cx = VisualTestContext::from_window(root.into(), cx);
+        cx.simulate_resize(size(px(900.0), px(560.0)));
+        draw_window(&mut cx);
+
+        let source = item_point(&pane, &first, &cx);
+        let covered_file = item_point(&pane, &second, &cx);
+        let copy = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        start_drag(&mut cx, source, covered_file, copy);
+        draw_window(&mut cx);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::OperationNotAllowed),
+            "a measured file item blocks the otherwise-valid outer cwd copy target",
+        );
+        cx.simulate_mouse_up(covered_file, MouseButton::Left, copy);
+        assert!(!pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        assert!(!fixture.path().join("a (2).txt").exists());
+
+        let rename_index = pane.read_with(&cx, |pane, _cx| item_index(pane, &first));
+        cx.update(|window, app| {
+            pane.update(app, |pane, cx| pane.begin_rename(rename_index, window, cx));
+        });
+        draw_window(&mut cx);
+        let rename_input = item_name_point(&pane, &first, &cx);
+        start_drag(&mut cx, rename_input, rename_input, Modifiers::default());
+        assert!(
+            !active_drag(&mut cx),
+            "inline rename cannot originate a file drag"
+        );
+        cx.simulate_mouse_up(rename_input, MouseButton::Left, Modifiers::default());
+        pane.update(&mut cx, |pane, cx| pane.cancel_rename(cx));
+        draw_window(&mut cx);
+
+        let resize_control = center(
+            cx.debug_bounds("list-column-resize-0")
+                .expect("the list header control is rendered"),
+        );
+        start_drag(
+            &mut cx,
+            resize_control,
+            resize_control,
+            Modifiers::default(),
+        );
+        assert!(
+            !active_drag(&mut cx),
+            "header controls cannot originate file drags"
+        );
+        cx.simulate_mouse_up(resize_control, MouseButton::Left, Modifiers::default());
+
+        let provider_blank = blank_listing_point(&pane, &cx);
+        start_drag(&mut cx, source, provider_blank, copy);
+        assert!(active_drag(&mut cx));
+        pane.update(&mut cx, |pane, cx| {
+            pane.provider = Some(Arc::new(LocalFileSystemProvider));
+            cx.notify();
+        });
+        draw_window(&mut cx);
+        cx.simulate_mouse_move(provider_blank, Some(MouseButton::Left), copy);
+        assert_eq!(
+            active_drag_cursor(&mut cx),
+            Some(CursorStyle::OperationNotAllowed),
+            "provider panes cannot accept a local payload",
+        );
+        dispatch_mouse_up(&mut cx, provider_blank, copy);
+        assert!(!pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        assert!(!fixture.path().join("a (2).txt").exists());
+
+        let provider_item = item_point(&pane, &first, &cx);
+        start_drag(&mut cx, provider_item, provider_blank, Modifiers::default());
+        assert!(
+            !active_drag(&mut cx),
+            "provider entries cannot originate local drags"
+        );
+        cx.simulate_mouse_up(provider_blank, MouseButton::Left, Modifiers::default());
+        assert!(!pane.read_with(&cx, |pane, _cx| pane.drop_pending));
     }
 
     #[gpui::test]

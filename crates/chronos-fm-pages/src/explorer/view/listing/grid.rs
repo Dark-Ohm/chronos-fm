@@ -1,6 +1,9 @@
 use super::truncate_middle;
 use crate::explorer::ExplorerPane;
 use crate::explorer::clipboard::{self, ClipboardMode};
+use crate::explorer::dnd::{
+    DropTarget, DropTargetKind, FileDrag, file_drag_for_item, set_file_drag_cursor,
+};
 use crate::explorer::marquee::intersects_closed;
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_ui::theme::theme;
@@ -65,6 +68,18 @@ fn render_grid_item(
     let preview_item = item.clone();
     let context_menu_path = item.path.clone();
     let entity = cx.entity().clone();
+    let geometry_entity = entity.clone();
+    let file_drag = file_drag_for_item(page, &item, ix, entity.clone());
+    let folder_target = (item.kind == "dir"
+        && page.provider.is_none()
+        && !page
+            .renaming
+            .as_ref()
+            .is_some_and(|(renaming_ix, _)| *renaming_ix == ix))
+    .then(|| DropTarget {
+        directory: item.path.clone().into(),
+        kind: DropTargetKind::FolderItem,
+    });
 
     let bg_color = if selected {
         theme::bg_hover(cx)
@@ -81,7 +96,7 @@ fn render_grid_item(
     let clip = clipboard::current(cx);
     let is_cut = clip.mode == Some(ClipboardMode::Cut) && clip.paths.contains(&item.path);
 
-    div()
+    let tile = div()
         .id(("grid-item-menu", ix))
         .w(px(88.0))
         .px(px(6.0))
@@ -101,7 +116,7 @@ fn render_grid_item(
         .gap(px(7.0))
         .when(is_cut, |el| el.opacity(0.5))
         .on_prepaint(move |bounds, _window, cx| {
-            entity.update(cx, |pane, _cx| {
+            geometry_entity.update(cx, |pane, _cx| {
                 if let Some(token) = pane.geometry_token.clone() {
                     if intersects_closed(bounds, token.viewport) {
                         pane.record_item_bounds(ix, bounds, token);
@@ -123,25 +138,31 @@ fn render_grid_item(
                 cx.stop_propagation();
             }),
         )
-        .on_mouse_down(
-            gpui::MouseButton::Left,
-            cx.listener(move |this, event: &gpui::MouseDownEvent, window, cx| {
-                this.record_click(ix, event.click_count);
-                let modifiers = event.modifiers;
-                if modifiers.shift {
-                    this.select_range_to(ix);
-                } else if modifiers.platform || modifiers.control {
-                    this.toggle_select(ix);
-                } else {
-                    this.select_single(ix);
+        .on_click(
+            cx.listener(move |this, event: &gpui::ClickEvent, window, cx| {
+                if cx.has_active_drag() {
+                    return;
                 }
-                if preview_item.kind == "file" {
-                    this.open_preview(preview_item.path.clone(), window, cx);
+                if let gpui::ClickEvent::Mouse(mouse) = event
+                    && mouse.up.button == gpui::MouseButton::Left
+                {
+                    this.record_click(ix, mouse.up.click_count);
+                    let modifiers = mouse.up.modifiers;
+                    if modifiers.shift {
+                        this.select_range_to(ix);
+                    } else if modifiers.platform || modifiers.control {
+                        this.toggle_select(ix);
+                    } else {
+                        this.select_single(ix);
+                    }
+                    if preview_item.kind == "file" {
+                        this.open_preview(preview_item.path.clone(), window, cx);
+                    }
+                    if mouse.up.click_count >= 2 {
+                        this.activate_entry(activation_item.clone(), window, cx);
+                    }
+                    cx.notify();
                 }
-                if event.click_count >= 2 {
-                    this.activate_entry(activation_item.clone(), window, cx);
-                }
-                cx.notify();
             }),
         )
         .child(
@@ -185,6 +206,76 @@ fn render_grid_item(
                     .child(name)
                     .into_any_element()
             }
+        });
+
+    tile.when_some(file_drag, |tile, drag| {
+        tile.on_drag(drag, |drag, _offset, _window, cx| {
+            drag.activate(cx);
+            cx.new(|_cx| drag.preview())
         })
-        .into_any_element()
+    })
+    .when_some(folder_target, |tile, target| {
+        let target_id = entity.entity_id();
+        let pane_for_move = entity.clone();
+        let move_target = target.clone();
+        let pane_for_can_drop = entity.clone();
+        let can_drop_target = target.clone();
+        let pane_for_style = entity.clone();
+        let style_target = target.clone();
+        let drop_target = target.clone();
+
+        tile.on_drag_move::<FileDrag>(move |event, window, cx| {
+            if event.bounds.contains(&event.event.position)
+                && pane_for_move.read(cx).can_accept_file_drop(
+                    target_id,
+                    event.drag(cx),
+                    &move_target,
+                    event.event.modifiers,
+                    cx,
+                )
+            {
+                let cursor = if crate::explorer::dnd::drop_mode(event.event.modifiers)
+                    == crate::explorer::dnd::DropMode::Copy
+                {
+                    gpui::CursorStyle::DragCopy
+                } else {
+                    gpui::CursorStyle::ClosedHand
+                };
+                set_file_drag_cursor(cursor, window, cx);
+            }
+        })
+        .can_drop(move |value, window, cx| {
+            value.downcast_ref::<FileDrag>().is_some_and(|drag| {
+                pane_for_can_drop.read(cx).can_accept_file_drop(
+                    target_id,
+                    drag,
+                    &can_drop_target,
+                    window.modifiers(),
+                    cx,
+                )
+            })
+        })
+        .drag_over::<FileDrag>(move |style, drag, window, cx| {
+            if pane_for_style.read(cx).can_accept_file_drop(
+                target_id,
+                drag,
+                &style_target,
+                window.modifiers(),
+                cx,
+            ) {
+                style
+                    .border_color(theme::accent(cx))
+                    .bg(theme::accent_light(cx))
+            } else {
+                style
+            }
+        })
+        .on_drop(cx.listener(move |pane, drag: &FileDrag, window, cx| {
+            let target_id = cx.entity().entity_id();
+            if pane.can_accept_file_drop(target_id, drag, &drop_target, window.modifiers(), cx) {
+                pane.begin_file_drop(drag.clone(), drop_target.clone(), window.modifiers(), cx);
+            }
+        }))
+    })
+    .into_any_element()
 }

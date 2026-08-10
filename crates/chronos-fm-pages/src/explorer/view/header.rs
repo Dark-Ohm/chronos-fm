@@ -1,12 +1,15 @@
 use super::super::types::ViewMode;
 use crate::explorer::ExplorerPane;
+use crate::explorer::dnd::{
+    DropMode, DropTarget, DropTargetKind, FileDrag, drop_mode, set_file_drag_cursor,
+};
+use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
+use gpui_component::ActiveTheme;
 use gpui_component::breadcrumb::{Breadcrumb, BreadcrumbItem};
 use gpui_component::list::ListItem;
-use gpui_component::ActiveTheme;
 use gpui_component::{Icon, IconName};
-use chronos_fm_ui::theme::theme;
 
 /// Renders the explorer header with navigation buttons, the breadcrumb path
 /// bar, and view-mode controls.
@@ -70,6 +73,102 @@ pub fn render(
     // Store search_visible for use in search toggle style
     let search_visible = page.search_visible;
     let entry_count = page.filtered_entries.len();
+    let entity = cx.entity().clone();
+    let target_id = entity.entity_id();
+    let cwd_target = DropTarget {
+        directory: page.cwd.clone().into(),
+        kind: DropTargetKind::BreadcrumbCwd,
+    };
+    let pane_for_move = entity.clone();
+    let move_target = cwd_target.clone();
+    let pane_for_can_drop = entity.clone();
+    let can_drop_target = cwd_target.clone();
+    let pane_for_style = entity.clone();
+    let style_target = cwd_target.clone();
+    let drop_target = cwd_target.clone();
+    let cwd_breadcrumb = div()
+        .debug_selector(|| "current-directory-breadcrumb".to_string())
+        .flex_1()
+        .overflow_hidden()
+        .min_w(px(0.0))
+        .flex()
+        .items_center()
+        .gap_2()
+        .child(
+            Icon::new(Icon::empty())
+                .path("icons/folder.svg")
+                .w(px(12.0))
+                .h(px(12.0))
+                .flex_none()
+                .text_color(theme::muted(cx)),
+        )
+        .child(
+            div()
+                .flex_1()
+                .overflow_hidden()
+                .min_w(px(0.0))
+                .bg(theme::bg(cx))
+                .border_1()
+                .border_color(theme::border(cx))
+                .rounded(px(5.0))
+                .px(px(8.0))
+                .py(px(3.0))
+                .text_size(px(11.5))
+                .font_family(cx.theme().mono_font_family.clone())
+                .text_color(theme::fg_secondary(cx))
+                .child(div().flex().items_center().child(bc)),
+        )
+        .on_drag_move::<FileDrag>(move |event, window, cx| {
+            if event.bounds.contains(&event.event.position)
+                && pane_for_move.read(cx).can_accept_file_drop(
+                    target_id,
+                    event.drag(cx),
+                    &move_target,
+                    event.event.modifiers,
+                    cx,
+                )
+            {
+                let cursor = if drop_mode(event.event.modifiers) == DropMode::Copy {
+                    CursorStyle::DragCopy
+                } else {
+                    CursorStyle::ClosedHand
+                };
+                set_file_drag_cursor(cursor, window, cx);
+            }
+        })
+        .can_drop(move |value, window, cx| {
+            value.downcast_ref::<FileDrag>().is_some_and(|drag| {
+                pane_for_can_drop.read(cx).can_accept_file_drop(
+                    target_id,
+                    drag,
+                    &can_drop_target,
+                    window.modifiers(),
+                    cx,
+                )
+            })
+        })
+        .drag_over::<FileDrag>(move |style, drag, window, cx| {
+            if pane_for_style.read(cx).can_accept_file_drop(
+                target_id,
+                drag,
+                &style_target,
+                window.modifiers(),
+                cx,
+            ) {
+                style
+                    .border_1()
+                    .border_color(theme::accent(cx))
+                    .bg(theme::accent_light(cx))
+            } else {
+                style
+            }
+        })
+        .on_drop(cx.listener(move |pane, drag: &FileDrag, window, cx| {
+            let target_id = cx.entity().entity_id();
+            if pane.can_accept_file_drop(target_id, drag, &drop_target, window.modifiers(), cx) {
+                pane.begin_file_drop(drag.clone(), drop_target.clone(), window.modifiers(), cx);
+            }
+        }));
 
     div()
         .bg(theme::toolbar_bg(cx))
@@ -81,6 +180,11 @@ pub fn render(
         .px(px(14.0))
         .py(px(6.0))
         .gap_2()
+        .on_drag_move::<FileDrag>(|event, window, cx| {
+            if event.bounds.contains(&event.event.position) {
+                set_file_drag_cursor(CursorStyle::OperationNotAllowed, window, cx);
+            }
+        })
         .child(
             div()
                 .flex()
@@ -109,39 +213,7 @@ pub fn render(
                         .mx(px(4.0)),
                 ),
         )
-        .child(
-            div()
-                .flex_1()
-                .overflow_hidden()
-                .min_w(px(0.0))
-                .flex()
-                .items_center()
-                .gap_2()
-                .child(
-                    Icon::new(Icon::empty())
-                        .path("icons/folder.svg")
-                        .w(px(12.0))
-                        .h(px(12.0))
-                        .flex_none()
-                        .text_color(theme::muted(cx)),
-                )
-                .child(
-                    div()
-                        .flex_1()
-                        .overflow_hidden()
-                        .min_w(px(0.0))
-                        .bg(theme::bg(cx))
-                        .border_1()
-                        .border_color(theme::border(cx))
-                        .rounded(px(5.0))
-                        .px(px(8.0))
-                        .py(px(3.0))
-                        .text_size(px(11.5))
-                        .font_family(cx.theme().mono_font_family.clone())
-                        .text_color(theme::fg_secondary(cx))
-                        .child(div().flex().items_center().child(bc)),
-                ),
-        )
+        .child(cwd_breadcrumb)
         .child(
             div()
                 .flex()
