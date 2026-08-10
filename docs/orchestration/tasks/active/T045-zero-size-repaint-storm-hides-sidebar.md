@@ -1,26 +1,33 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering (was T037#5)
 
-> ## ⚖️ ARCHITECT (2026-08-10, pass 3): **PROGRESS — honest stop, not ACCEPT**
+> ## ⚖️ ARCHITECT (2026-08-10, pass 4): **PROGRESS — not ACCEPT; path 2 GO**
 >
-> Pass 2 findings still hold (H1/H4 falsified; SVG zero-bounds site;
-> double-paint pattern). Pass 3 / H5 narrowing **accepted**:
+> Pass 3 stamp was **stale** relative to `5305aba`. Frame-trace (path 1)
+> findings **accepted**:
 >
-> - **H5a FALSIFIED (static review):** unbalanced `element_offset_stack`
->   push/pop along `prepaint_at` / `with_absolute_element_offset` /
->   `with_content_mask` — RAII-scoped, single sites, no early-return leak.
-> - **Sharpened observation:** all 12 588 hits are exact `Bounds::default()`
->   (origin **and** size 0,0), not jittered/corrupted computed bounds →
->   favors a **second paint invocation that never resolved via
->   `layout_bounds()` this frame**, not a stale-cache half-value.
-> - **H5b still open:** nested `v_virtual_list` / Taffy re-entrancy may still
->   interact, but mechanism is **not** offset-stack leak.
+> - **H5a** still FALSIFIED (static RAII).
+> - **“Double paint (one correct + one zero)” RETRACTED** for instrumented
+>   `Svg::paint`: `icons/house.svg` — **494/494 calls** over ~22s / frames
+>   1–494 are `Bounds::default()`; **zero** non-zero paints through this path.
+> - Whatever shows a correct house icon on screen is **not** this code path
+>   (or compositing keeps a prior GPU texture without a successful element
+>   paint this session — renderer-level).
+> - Duplicate pane / split **ruled out** (`panes=1`).
+> - Instrumentation reverted; Source + FM clean; tests green per `5305aba`.
 >
-> **Approved next (either, not both blindly):**
-> 1. Live timed correlation: zero-bounds SVG paint vs nested layout window; or
-> 2. Minimal isolated repro under `Source/gpui/examples/` (no Chronos-FM).
+> ### Decision
+> - **Stop** more Chronos-FM release + `eprintln!` cycles on the element tree
+>   for this bug — diminishing returns.
+> - **Next executor work: path 2** — minimal isolated repro in
+>   `Source/gpui/examples/` (sidebar SVG + `v_virtual_list` + optional
+>   resizable; **no** Chronos-FM crates). Goal: reproduce zero-size SVG storm
+>   and/or missing sidebar layout without FM app code.
+> - **H6 (secondary, after or alongside path 2):** `gpui_wgpu` dirty-rect /
+>   atlas compositing — only if example does not reproduce or proves paint
+>   path is red herring for “sidebar missing”.
+> - Still **no blind Source layout patch**. T037 remains blocked on T045.
 >
-> No blind Source layout patch. Source clean. T037 still blocked.
-> Commit: `c76c059`. Report: `report/T045-…-report.md`.
+> Commit: `5305aba`. Report must stay aligned with pass 4 (not pass 3 only).
 
 **Priority:** P1 — blocks T037 §7 full visual ACCEPT (Places sidebar must be
 visible alongside a real listing, not just in isolation).
@@ -61,6 +68,10 @@ three-panel (`sidebar` + `h_resizable(listing, preview)`) tree.
 | H4 **FALSIFIED** | Unrelated to T044's restored subtree at all — pre-existed even with only the sidebar present, just below a detection threshold this session didn't check for (no log capture was done on the sidebar-only grims) | Re-run the sidebar-only tree (temporarily) with `RUST_LOG=info` captured and check whether the same "zero size" storm was already present before T044's fix |
 
 ## Progress (2026-08-10, same session, per architect GO)
+
+> **pass 4 note:** Early “double paint” wording below is **superseded** by the
+> frame-trace: house.svg never gets a non-zero `Svg::paint` in that trace.
+
 
 **H4 FALSIFIED with evidence.** Temporarily reverted `view.rs` to the
 sidebar-only tree (`git show 5b6fee3:...view.rs`), rebuilt, ran with

@@ -1,16 +1,16 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering — Report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 3): **PROGRESS — not ACCEPT**
+> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 4): **PROGRESS — not ACCEPT; path 2 GO**
 >
-> H1/H4 falsified (live). H5a unbalanced offset-stack **falsified (static)**.
-> All zero hits = exact `Bounds::default()` → second paint without layout
-> resolution this frame is the sharper lead. Next: timed live correlation or
-> `Source/gpui/examples` repro. No blind Source patch. T037 still blocked.
+> Path 1 (live frame-trace) done: every `Svg::paint` for `house.svg` is
+> zero-bounds from frame 1; no correct paint on that path; panes=1.
+> “Double paint” framing retracted. **Next: isolated `Source/gpui/examples`
+> repro** (path 2). Optional later: renderer/compositor (H6). No blind
+> Source layout patch. T037 still blocked.
+>
+> Executor commit: `5305aba`.
 
-
-
-
-**Status:** OPEN — H1/H4 closed; site found; root cause (H5 lead) not fixed
+**Status:** OPEN — path 1 complete; path 2 (gpui example repro) is next; not fixed
 **Date:** 2026-08-10
 **Executor:** Claude (Sonnet 5), discovered while verifying T044's fix
 
