@@ -59,6 +59,7 @@ impl ExplorerPane {
         column_index: usize,
         start_pos: gpui::Point<gpui::Pixels>,
     ) {
+        self.cancel_marquee();
         let start_width = match column_index {
             0 => self.col_name_width,
             1 => self.col_type_width,

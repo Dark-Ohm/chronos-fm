@@ -5,14 +5,15 @@ use chronos_fm_services::search::{SearchScope, SearchService};
 use chronos_fm_services::syntax::SyntaxService;
 use chronos_fm_ui::components::file_list::FileListDelegate;
 
-use gpui::{AppContext, Context, Entity, EventEmitter, FocusHandle, Focusable, Window, px, size};
+use gpui::{AppContext, Bounds, Context, Entity, EventEmitter, FocusHandle, Focusable, Modifiers, Pixels, Point, Window, point, px, size};
 use gpui_component::VirtualListScrollHandle;
 use gpui_component::input::InputState;
 use gpui_component::list::ListState;
 use gpui_component::resizable::ResizableState;
-use std::{rc::Rc, sync::Arc, time::Instant};
+use std::{collections::BTreeMap, rc::Rc, sync::Arc, time::Instant};
 
 use super::entries;
+use super::marquee::{GeometryToken, MarqueeDrag, MeasuredItem, completion_indices, intersects_closed, normalized_rect, past_threshold, selection_for_hits};
 use super::types::*;
 use super::view::preview::editor::PreviewEditor;
 
@@ -98,6 +99,20 @@ pub struct ExplorerPane {
     pub last_click_info: Option<LastClickInfo>,
     /// Whether the listing is shown as a list or a grid.
     pub view_mode: ViewMode,
+    /// The active empty-space selection drag, if one has begun.
+    pub(crate) marquee: Option<MarqueeDrag>,
+    /// Item bounds measured in the current listing layout token.
+    pub(crate) measured_items: BTreeMap<usize, Bounds<Pixels>>,
+    /// Bounds of the listing viewport measured in window coordinates.
+    pub(crate) listing_viewport: Option<Bounds<Pixels>>,
+    /// Token identifying the layout that produced the current measurements.
+    pub(crate) geometry_token: Option<GeometryToken>,
+    /// Bounds that may not start an empty-space marquee (headers and controls).
+    pub(crate) marquee_exclusions: Vec<Bounds<Pixels>>,
+    /// Monotonic generation for the current filtered entry order.
+    pub(crate) entries_revision: u64,
+    /// Monotonic generation for row/tile item sizes.
+    pub(crate) item_sizes_revision: u64,
     /// Whether the left quick-access sidebar is shown (toggled with `Cmd/Ctrl+B`).
     pub sidebar_visible: bool,
 
@@ -236,6 +251,13 @@ impl ExplorerPane {
             focus_requested: false,
             last_click_info: None,
             view_mode: ViewMode::List,
+            marquee: None,
+            measured_items: BTreeMap::new(),
+            listing_viewport: None,
+            geometry_token: None,
+            marquee_exclusions: Vec::new(),
+            entries_revision: 0,
+            item_sizes_revision: 0,
             // Visible by default so the Places sidebar shows on first launch
             // (mockup / Dolphin parity). Split-created panes override this
             // via `ExplorerPage::configure_tab` (issue #164, §2).
@@ -316,7 +338,9 @@ impl ExplorerPane {
 
     pub(crate) fn set_view_mode(&mut self, mode: ViewMode, cx: &mut Context<Self>) {
         if self.view_mode != mode {
+            self.cancel_marquee();
             self.view_mode = mode;
+            self.invalidate_marquee_measurements();
             cx.notify();
         }
     }
@@ -388,6 +412,184 @@ impl ExplorerPane {
         self.active_index = None;
     }
 
+    /// Records the listing's measured viewport and returns the token rows/tiles
+    /// must attach to measurements made during the same layout pass.
+    pub(crate) fn record_listing_viewport(
+        &mut self,
+        viewport: Bounds<Pixels>,
+        scroll_offset: Point<Pixels>,
+    ) -> GeometryToken {
+        let token = GeometryToken {
+            view_mode: self.view_mode,
+            entries_revision: self.entries_revision,
+            viewport,
+            scroll_offset,
+            item_sizes_revision: self.item_sizes_revision,
+        };
+
+        if self.geometry_token.as_ref() != Some(&token) {
+            self.measured_items.clear();
+            self.marquee_exclusions.clear();
+            self.geometry_token = Some(token.clone());
+        }
+        self.listing_viewport = Some(viewport);
+        token
+    }
+
+    /// Records a row or tile bound only when it belongs to the current layout.
+    pub(crate) fn record_item_bounds(
+        &mut self,
+        index: usize,
+        bounds: Bounds<Pixels>,
+        token: GeometryToken,
+    ) {
+        if self.geometry_token.as_ref() == Some(&token) {
+            self.measured_items.insert(index, bounds);
+        }
+    }
+
+    /// Records non-item listing chrome that must not be treated as empty space.
+    pub(crate) fn record_marquee_exclusion(
+        &mut self,
+        bounds: Bounds<Pixels>,
+        token: GeometryToken,
+    ) {
+        if self.geometry_token.as_ref() == Some(&token) {
+            self.marquee_exclusions.push(bounds);
+        }
+    }
+
+    /// Starts an empty-space marquee and returns whether the press was accepted.
+    pub(crate) fn begin_marquee(
+        &mut self,
+        position: Point<Pixels>,
+        modifiers: Modifiers,
+    ) -> bool {
+        let Some(viewport) = self.listing_viewport else {
+            return false;
+        };
+        let Some(token) = self.geometry_token.clone() else {
+            return false;
+        };
+        if !point_in_bounds(position, viewport)
+            || self
+                .measured_items
+                .values()
+                .any(|bounds| point_in_bounds(position, *bounds))
+            || self
+                .marquee_exclusions
+                .iter()
+                .any(|bounds| point_in_bounds(position, *bounds))
+        {
+            return false;
+        }
+
+        let additive = modifiers.control || modifiers.platform;
+        let base_selection = self.selection.clone();
+        let prior_anchor = self.selection_anchor;
+        let prior_active = self.active_index;
+        if !additive {
+            self.clear_selection();
+        }
+        self.marquee = Some(MarqueeDrag {
+            start: position,
+            current: position,
+            token,
+            hitboxes: self
+                .measured_items
+                .iter()
+                .map(|(&index, &bounds)| MeasuredItem { index, bounds })
+                .collect(),
+            base_selection,
+            prior_anchor,
+            prior_active,
+            additive,
+            hit_indices: Default::default(),
+        });
+        true
+    }
+
+    /// Updates the live selection for the active marquee. A stale layout token
+    /// drops the drag while retaining the last selection already shown.
+    pub(crate) fn update_marquee(&mut self, position: Point<Pixels>) {
+        let Some(drag) = self.marquee.as_mut() else {
+            return;
+        };
+        drag.current = position;
+        let Some(drag) = self.marquee.as_ref() else {
+            return;
+        };
+        let (token, start, current, hitboxes, base_selection, additive) = (
+            drag.token.clone(),
+            drag.start,
+            drag.current,
+            drag.hitboxes.clone(),
+            drag.base_selection.clone(),
+            drag.additive,
+        );
+        if self.geometry_token.as_ref() != Some(&token) {
+            self.cancel_marquee();
+            return;
+        }
+        if !past_threshold(start, current) {
+            return;
+        }
+
+        let Some(viewport) = self.listing_viewport else {
+            return;
+        };
+        let hits = match clip_to_bounds(normalized_rect(start, current), viewport) {
+            Some(rect) => hitboxes
+                .iter()
+                .filter(|item| intersects_closed(rect, item.bounds))
+                .map(|item| item.index)
+                .collect::<std::collections::BTreeSet<_>>(),
+            None => Default::default(),
+        };
+        if let Some(drag) = self.marquee.as_mut() {
+            drag.hit_indices = hits.clone();
+        }
+        self.selection = selection_for_hits(&base_selection, hits, additive);
+    }
+
+    /// Returns the visible, clipped marquee rectangle after drag threshold.
+    pub(crate) fn marquee_rect(&self) -> Option<Bounds<Pixels>> {
+        let drag = self.marquee.as_ref()?;
+        if !past_threshold(drag.start, drag.current) {
+            return None;
+        }
+        let viewport = self.listing_viewport?;
+        clip_to_bounds(normalized_rect(drag.start, drag.current), viewport)
+    }
+
+    /// Completes a marquee, applying its stable anchor and active-row rules.
+    pub(crate) fn finish_marquee(&mut self) {
+        let Some(drag) = self.marquee.take() else {
+            return;
+        };
+        if past_threshold(drag.start, drag.current) {
+            (self.selection_anchor, self.active_index) = completion_indices(
+                &drag.hit_indices,
+                drag.additive,
+                drag.prior_anchor,
+                drag.prior_active,
+            );
+        }
+    }
+
+    /// Cancels only the interaction state, leaving live selection unchanged.
+    pub(crate) fn cancel_marquee(&mut self) {
+        self.marquee = None;
+    }
+
+    fn invalidate_marquee_measurements(&mut self) {
+        self.cancel_marquee();
+        self.measured_items.clear();
+        self.marquee_exclusions.clear();
+        self.listing_viewport = None;
+        self.geometry_token = None;
+    }
+
     /// Moves the active row by `delta` rows, clamped to the visible range. With
     /// `extend` (Shift held) the selection grows from the anchor; otherwise the
     /// moved-to row becomes the sole selection. Selecting from an empty state
@@ -454,7 +656,11 @@ impl ExplorerPane {
                 size(px(total_width), px(total_height))
             })
             .collect();
-        self.item_sizes = Rc::new(sizes);
+        if self.item_sizes.as_ref() != &sizes {
+            self.item_sizes = Rc::new(sizes);
+            self.item_sizes_revision = self.item_sizes_revision.wrapping_add(1);
+            self.invalidate_marquee_measurements();
+        }
     }
 
     pub(crate) fn total_table_width(&self) -> f32 {
@@ -473,6 +679,12 @@ impl ExplorerPane {
         // inline-rename index is expressed the same way, so it is reset too —
         // committing against a stale row after a listing change would rename the
         // wrong entry.
+        let prior_filtered_paths = self
+            .filtered_entries
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect::<Vec<_>>();
+        self.cancel_marquee();
         self.clear_selection();
         self.renaming = None;
 
@@ -500,6 +712,10 @@ impl ExplorerPane {
         }
 
         entries::sort_entries(&mut self.filtered_entries, self.sort_key, self.sort_asc);
+        if filtered_entry_order_changed(&self.filtered_entries, &prior_filtered_paths) {
+            self.entries_revision = self.entries_revision.wrapping_add(1);
+            self.invalidate_marquee_measurements();
+        }
         self.update_item_sizes();
     }
 
@@ -540,6 +756,35 @@ impl ExplorerPane {
         entries::sort_entries(&mut self.entries, self.sort_key, self.sort_asc);
         self.apply_filter();
     }
+}
+
+fn point_in_bounds(point: Point<Pixels>, bounds: Bounds<Pixels>) -> bool {
+    point.x >= bounds.left()
+        && point.x <= bounds.right()
+        && point.y >= bounds.top()
+        && point.y <= bounds.bottom()
+}
+
+fn clip_to_bounds(rect: Bounds<Pixels>, viewport: Bounds<Pixels>) -> Option<Bounds<Pixels>> {
+    let left = rect.left().as_f32().max(viewport.left().as_f32());
+    let top = rect.top().as_f32().max(viewport.top().as_f32());
+    let right = rect.right().as_f32().min(viewport.right().as_f32());
+    let bottom = rect.bottom().as_f32().min(viewport.bottom().as_f32());
+    if right < left || bottom < top {
+        return None;
+    }
+    Some(Bounds::new(
+        point(px(left), px(top)),
+        size(px(right - left), px(bottom - top)),
+    ))
+}
+
+fn filtered_entry_order_changed(entries: &[FileEntryDto], prior_paths: &[String]) -> bool {
+    entries.len() != prior_paths.len()
+        || entries
+            .iter()
+            .zip(prior_paths)
+            .any(|(entry, prior_path)| entry.path != *prior_path)
 }
 
 fn sort_key_from_config(order: config::SortOrder) -> SortKey {

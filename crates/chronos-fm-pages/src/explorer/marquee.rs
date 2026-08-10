@@ -51,6 +51,7 @@ pub(crate) struct MarqueeDrag {
     pub prior_anchor: Option<usize>,
     pub prior_active: Option<usize>,
     pub additive: bool,
+    pub hit_indices: BTreeSet<usize>,
 }
 
 /// Returns the rectangle spanning `start` and `current`, regardless of drag direction.
@@ -117,9 +118,147 @@ pub(crate) fn completion_indices(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::explorer::ExplorerPane;
     use crate::explorer::types::ViewMode;
-    use gpui::{Bounds, point, px, size};
+    use gpui::{AppContext, Bounds, Modifiers, TestAppContext, WindowHandle, point, px, size};
+    use gpui_component::input::InputState;
+    use gpui_component::resizable::ResizableState;
     use std::collections::BTreeSet;
+
+    fn new_pane(cx: &mut TestAppContext) -> WindowHandle<ExplorerPane> {
+        cx.update(gpui_component::init);
+        cx.update(crate::explorer::clipboard::init);
+        cx.add_window(|window, cx| {
+            let resizable = cx.new(|_| ResizableState::default());
+            let search_input = cx.new(|cx| InputState::new(window, cx));
+            ExplorerPane::new(resizable, search_input, None, cx.focus_handle())
+        })
+    }
+
+    fn measure_pane(page: &mut ExplorerPane) {
+        let viewport = Bounds::new(point(px(0.), px(0.)), size(px(100.), px(100.)));
+        let token = page.record_listing_viewport(viewport, point(px(0.), px(0.)));
+        for (index, y) in [0., 15., 30., 60.].into_iter().enumerate() {
+            page.record_item_bounds(
+                index,
+                Bounds::new(point(px(10.), px(y)), size(px(20.), px(10.))),
+                token.clone(),
+            );
+        }
+    }
+
+    #[gpui::test]
+    async fn pane_plain_drag_replaces_selection_and_sets_completion_indices(
+        cx: &mut TestAppContext,
+    ) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                measure_pane(pane);
+
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), Modifiers::default()));
+                pane.update_marquee(point(px(40.), px(40.)));
+                assert_eq!(pane.selection, BTreeSet::from([0, 1, 2]));
+                assert!(pane.marquee_rect().is_some());
+
+                pane.finish_marquee();
+                assert_eq!(pane.selection_anchor, Some(0));
+                assert_eq!(pane.active_index, Some(2));
+                assert!(pane.marquee.is_none());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_ctrl_drag_unions_selection_and_preserves_anchor(cx: &mut TestAppContext) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                measure_pane(pane);
+                pane.selection = BTreeSet::from([3]);
+                pane.selection_anchor = Some(3);
+                pane.active_index = Some(3);
+
+                assert!(pane.begin_marquee(
+                    point(px(0.), px(0.)),
+                    Modifiers {
+                        control: true,
+                        ..Modifiers::default()
+                    },
+                ));
+                pane.update_marquee(point(px(40.), px(40.)));
+                pane.finish_marquee();
+
+                assert_eq!(pane.selection, BTreeSet::from([0, 1, 2, 3]));
+                assert_eq!(pane.selection_anchor, Some(3));
+                assert_eq!(pane.active_index, Some(2));
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_subthreshold_empty_click_keeps_plain_clear_and_ctrl_selection(
+        cx: &mut TestAppContext,
+    ) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                measure_pane(pane);
+                pane.selection = BTreeSet::from([2]);
+                pane.selection_anchor = Some(2);
+                pane.active_index = Some(2);
+
+                assert!(pane.begin_marquee(point(px(0.), px(80.)), Modifiers::default()));
+                pane.update_marquee(point(px(3.99), px(80.)));
+                assert!(pane.selection.is_empty());
+                assert!(pane.marquee_rect().is_none());
+                pane.finish_marquee();
+                assert_eq!(pane.selection_anchor, None);
+                assert_eq!(pane.active_index, None);
+
+                pane.selection = BTreeSet::from([2]);
+                pane.selection_anchor = Some(2);
+                pane.active_index = Some(2);
+                assert!(pane.begin_marquee(
+                    point(px(0.), px(80.)),
+                    Modifiers {
+                        control: true,
+                        ..Modifiers::default()
+                    },
+                ));
+                pane.update_marquee(point(px(3.99), px(80.)));
+                pane.finish_marquee();
+                assert_eq!(pane.selection, BTreeSet::from([2]));
+                assert_eq!(pane.selection_anchor, Some(2));
+                assert_eq!(pane.active_index, Some(2));
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_token_mismatch_cancels_and_keeps_last_live_selection(
+        cx: &mut TestAppContext,
+    ) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                measure_pane(pane);
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), Modifiers::default()));
+                pane.update_marquee(point(px(40.), px(40.)));
+                assert_eq!(pane.selection, BTreeSet::from([0, 1, 2]));
+
+                pane.record_listing_viewport(
+                    Bounds::new(point(px(1.), px(0.)), size(px(100.), px(100.))),
+                    point(px(0.), px(0.)),
+                );
+                pane.update_marquee(point(px(50.), px(50.)));
+
+                assert_eq!(pane.selection, BTreeSet::from([0, 1, 2]));
+                assert!(pane.marquee.is_none());
+                assert!(pane.marquee_rect().is_none());
+            })
+            .unwrap();
+    }
 
     #[test]
     fn normalizes_all_drag_directions() {
