@@ -259,6 +259,9 @@ impl super::ExplorerPane {
         });
         let dialog =
             cx.new(|cx| BatchRenameDialog::new(entries, window, cx, on_committed, on_cancel));
+        dialog.update(cx, |dialog, cx| {
+            dialog.pattern.update(cx, |input, cx| input.focus(window, cx));
+        });
         self.batch_rename = Some(dialog);
         cx.notify();
     }

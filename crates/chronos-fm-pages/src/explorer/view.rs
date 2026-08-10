@@ -51,11 +51,51 @@ pub fn render(
             }
             // Selection model (§5). Escape while searching is handled above, so
             // here it only clears the selection.
+            let pane_focused = this.focus_handle.is_focused(window);
             match key_lc.as_str() {
-                "a" if with_modifier => {
+                "a" if with_modifier && pane_focused => {
                     this.select_all();
                     cx.stop_propagation();
                     cx.notify();
+                }
+                "c" if with_modifier && pane_focused => {
+                    this.copy_selection(cx);
+                    cx.stop_propagation();
+                }
+                "x" if with_modifier && pane_focused => {
+                    this.cut_selection(cx);
+                    cx.stop_propagation();
+                }
+                "v" if with_modifier && pane_focused => {
+                    this.paste_clipboard(cx);
+                    cx.stop_propagation();
+                }
+                "n" if with_modifier && modifiers.shift && pane_focused => {
+                    this.new_folder(window, cx);
+                    cx.stop_propagation();
+                }
+                "f2" if pane_focused => {
+                    if let Some(ix) = this.active_index {
+                        this.rename_selection(ix, window, cx);
+                    }
+                    cx.stop_propagation();
+                }
+                "delete" if pane_focused => {
+                    this.confirm_delete_selection(window, cx);
+                    cx.stop_propagation();
+                }
+                "enter" if pane_focused => {
+                    let overlay_open = this.batch_rename.is_some()
+                        || this.properties_dialog.is_some()
+                        || this.context_menu.is_some();
+                    if !overlay_open && !this.search_visible {
+                        if let Some(ix) = this.active_index {
+                            if let Some(item) = this.filtered_entries.get(ix).cloned() {
+                                this.activate_entry(item, window, cx);
+                            }
+                        }
+                    }
+                    cx.stop_propagation();
                 }
                 "i" if with_modifier => {
                     this.show_properties(cx);

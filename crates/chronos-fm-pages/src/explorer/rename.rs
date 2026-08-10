@@ -32,6 +32,24 @@ impl ExplorerPane {
         cx.notify();
     }
 
+    /// Renames the current selection using the same single-versus-batch rule
+    /// for both F2 and the context menu.
+    pub(crate) fn rename_selection(
+        &mut self,
+        index: usize,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let selected = self.filtered_entries_for_selection();
+        if selected.is_empty() {
+            return;
+        } else if selected.len() > 1 {
+            self.open_batch_rename(selected, window, cx);
+        } else {
+            self.begin_rename(index, window, cx);
+        }
+    }
+
     /// Cancels an in-progress rename without changing anything on disk.
     pub(crate) fn cancel_rename(&mut self, cx: &mut Context<Self>) {
         self.renaming = None;
@@ -97,6 +115,60 @@ mod tests {
         assert!(dir.path().join("new.txt").exists());
         window
             .read_with(cx, |page, _cx| assert!(page.renaming.is_none()))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn rename_selection_single_starts_inline_rename(cx: &mut TestAppContext) {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("old.txt"), "x").unwrap();
+        let window = new_explorer_for_tests(cx, dir.path());
+        window.update(cx, |page, _window, _cx| page.reload()).unwrap();
+
+        window
+            .update(cx, |page, window, cx| {
+                page.select_single(0);
+                page.rename_selection(0, window, cx);
+                assert!(page.renaming.is_some());
+                assert!(page.batch_rename.is_none());
+                page.cancel_rename(cx);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn rename_selection_without_selection_is_a_noop(cx: &mut TestAppContext) {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("old.txt"), "x").unwrap();
+        let window = new_explorer_for_tests(cx, dir.path());
+        window.update(cx, |page, _window, _cx| page.reload()).unwrap();
+
+        window
+            .update(cx, |page, window, cx| {
+                page.rename_selection(0, window, cx);
+                assert!(page.renaming.is_none());
+                assert!(page.batch_rename.is_none());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn rename_selection_multi_opens_batch_dialog(cx: &mut TestAppContext) {
+        let dir = tempdir().unwrap();
+        fs::write(dir.path().join("a.txt"), "x").unwrap();
+        fs::write(dir.path().join("b.txt"), "y").unwrap();
+        let window = new_explorer_for_tests(cx, dir.path());
+        window.update(cx, |page, _window, _cx| page.reload()).unwrap();
+
+        window
+            .update(cx, |page, window, cx| {
+                page.select_single(0);
+                page.select_range_to(1);
+                page.rename_selection(0, window, cx);
+                assert!(page.batch_rename.is_some());
+                assert!(page.renaming.is_none());
+                page.close_batch_rename(cx);
+            })
             .unwrap();
     }
 

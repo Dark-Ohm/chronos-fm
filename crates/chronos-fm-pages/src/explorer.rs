@@ -22,6 +22,8 @@ pub mod view;
 pub mod context_menu;
 
 #[cfg(test)]
+mod keybindings;
+#[cfg(test)]
 pub(crate) mod tests;
 
 pub use page::ExplorerPage;

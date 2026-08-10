@@ -11,9 +11,6 @@ use chronos_fm_services::mime::{open_with, set_default_app, DesktopApp};
 use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::*;
-use gpui_component::WindowExt;
-use gpui_component::button::ButtonVariant;
-use gpui_component::dialog::DialogButtonProps;
 
 use super::ExplorerPane;
 use super::clipboard;
@@ -207,7 +204,7 @@ fn file_menu_items(
     items.push(separator(border).into_any_element());
 
     // Rename — a single selection renames inline; a multi-selection opens the
-    // Batch Rename dialog (T006 Task 5).
+    // Batch Rename dialog (T006 Task 5). F2 uses the same path.
     let rename_index = state.index;
     items.push(
         menu_row("Rename", fg, hover_bg, row_height)
@@ -215,12 +212,7 @@ fn file_menu_items(
                 gpui::MouseButton::Left,
                 cx.listener(move |this, _event, window, cx| {
                     if let Some(ix) = rename_index {
-                        let selected = this.filtered_entries_for_selection();
-                        if selected.len() > 1 {
-                            this.open_batch_rename(selected, window, cx);
-                        } else {
-                            this.begin_rename(ix, window, cx);
-                        }
+                        this.rename_selection(ix, window, cx);
                     }
                     this.close_context_menu(cx);
                 }),
@@ -354,26 +346,7 @@ fn delete_row(cx: &mut Context<ExplorerPane>, row_height: Pixels) -> AnyElement 
         .on_mouse_down(
             gpui::MouseButton::Left,
             cx.listener(move |this, _event, window, cx| {
-                let paths = this.selected_paths();
-                let count = paths.len();
-                let pane = cx.entity();
-                window.open_alert_dialog(cx, move |alert, _, _| {
-                    let paths = paths.clone();
-                    let pane = pane.clone();
-                    alert
-                        .title("Delete Selected Items?")
-                        .description(format!("{count} item(s) will be moved to Trash."))
-                        .button_props(
-                            DialogButtonProps::default()
-                                .ok_text("Delete")
-                                .ok_variant(ButtonVariant::Danger)
-                                .show_cancel(true),
-                        )
-                        .on_ok(move |_, _window, cx| {
-                            pane.update(cx, |pane, cx| pane.delete_paths(paths.clone(), cx));
-                            true
-                        })
-                });
+                this.confirm_delete_selection(window, cx);
                 this.close_context_menu(cx);
             }),
         )

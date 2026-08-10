@@ -5,6 +5,9 @@
 use std::path::Path;
 
 use gpui::{Context, Window};
+use gpui_component::WindowExt;
+use gpui_component::button::ButtonVariant;
+use gpui_component::dialog::DialogButtonProps;
 
 use chronos_fm_services::fs::ops;
 
@@ -95,6 +98,36 @@ impl ExplorerPane {
             }
         }
         cx.notify();
+    }
+
+    /// Opens the shared trash-confirmation dialog for the current selection.
+    /// Empty selections and repeated Delete events while a dialog is active
+    /// are no-ops.
+    pub(crate) fn confirm_delete_selection(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let paths = self.selected_paths();
+        if paths.is_empty() || window.has_active_dialog(cx) {
+            return;
+        }
+
+        let count = paths.len();
+        let pane = cx.entity();
+        window.open_alert_dialog(cx, move |alert, _, _| {
+            let paths = paths.clone();
+            let pane = pane.clone();
+            alert
+                .title("Delete Selected Items?")
+                .description(format!("{count} item(s) will be moved to Trash."))
+                .button_props(
+                    DialogButtonProps::default()
+                        .ok_text("Delete")
+                        .ok_variant(ButtonVariant::Danger)
+                        .show_cancel(true),
+                )
+                .on_ok(move |_, _window, cx| {
+                    pane.update(cx, |pane, cx| pane.delete_paths(paths.clone(), cx));
+                    true
+                })
+        });
     }
 
     /// Moves each of `paths` to the OS trash. Errors for individual paths are
@@ -206,6 +239,19 @@ mod tests {
             .unwrap();
 
         assert!(dir.path().join("New Folder (2)").is_dir());
+    }
+
+    #[gpui::test]
+    async fn confirm_delete_with_empty_selection_is_a_noop(cx: &mut TestAppContext) {
+        let dir = tempdir().unwrap();
+        let window = new_explorer_for_tests(cx, dir.path());
+
+        window
+            .update(cx, |page, window, cx| {
+                assert!(page.selected_paths().is_empty());
+                page.confirm_delete_selection(window, cx);
+            })
+            .unwrap();
     }
 
     #[gpui::test]
