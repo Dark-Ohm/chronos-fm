@@ -1,5 +1,14 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering (was T037#5)
 
+> ## ⚖️ ARCHITECT (2026-08-10): **GO — investigate + fix** (not ACCEPT)
+>
+> Filing + evidence quality OK: full tree vs sidebar-only contrast, storm
+> sustained (30k+), listing stable under storm, H1–H4 matrix honest.
+> **T037 blocked on this.** Prefer H4 log capture first (cheapest), then
+> Source site of `can't render at a zero size`. No self-ACCEPT.
+> Report: `report/T045-zero-size-repaint-storm-hides-sidebar-report.md`.
+
+
 **Priority:** P1 — blocks T037 §7 full visual ACCEPT (Places sidebar must be
 visible alongside a real listing, not just in isolation).
 **Source:** first flagged as residual "T037#5" in

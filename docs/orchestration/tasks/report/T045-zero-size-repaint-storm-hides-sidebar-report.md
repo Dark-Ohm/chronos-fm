@@ -1,5 +1,11 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering — Report
 
+> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **FILED / GO** — not resolved
+>
+> Evidence for filing accepted. Root cause open. Next: H4 then Source log site.
+> Unblocks T037 when fixed + grim shows Places + listing together.
+
+
 **Status:** OPEN — filed with initial evidence, root cause not yet found
 **Date:** 2026-08-10
 **Executor:** Claude (Sonnet 5), discovered while verifying T044's fix

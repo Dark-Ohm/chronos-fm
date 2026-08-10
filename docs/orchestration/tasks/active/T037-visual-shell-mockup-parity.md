@@ -1,51 +1,38 @@
-# T037 — Phase V: Explorer shell smart pixel-copy
-
-> ## Эталон (SoT) — **NEW 2026-08-10**
->
-> **`docs/design/mockups/chronos-file-manager.dc.html`**  
-> (= `docs/design/mockups/chronos-file-manager.dc.html`, identical)  
-> Previous: `archive/chronos-file-manager.v2-2026-08-09.dc.html`  
-> Spec `docs/design/T037-explorer-visual-spec.md` may lag — **HTML wins** on conflict.
-
-
-
-> ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT** — Places empty blocks V
->
-> Multi-column list + dark + toolbar progress on `after-sidebar-fix.png`.
-> Places content still empty → **T043**. Invalid grim: settled.png is not FM.
-> Not closed. Report: `report/T037-visual-shell-mockup-parity-report.md`
-
-> ## 🔧 EXECUTOR UPDATE (2026-08-10, second pass): T043 real fix + new T044
->
-> T043's self-closed "FIX-ACCEPT" evidence didn't reproduce. Real root cause
-> found and fixed in **Source** (`taffy.rs` T014-A frame layout memo silently
-> skipping text measurement — see `docs/DECISIONS.log` 2026-08-10). Fresh
-> release grim (`report-log/T037-shots/after-t014a-textmemo-fix.png`,
-> `hyprctl`-verified `class=chronos-fm`) now shows: Places header + all 7
-> labels + 2 devices, toolbar breadcrumb text, "40 Items" count — all
-> rendering. Sidebar §7 blocker is resolved.
->
-> **Still open:** same grim shows the Grid content pane empty despite
-> "40 Items" — filed as **T044** (distinct bug, listing-state not text).
-> T037 stays **not closed** until T044 lands; recommend architect review of
-> the Places-text fix specifically (it is independently verified and solid).
-
-> ## 🔧 EXECUTOR UPDATE (2026-08-10, third pass): T044 resolved, T045 filed
->
-> T044's real cause: T043's sidebar-bypass rewrite of `view.rs` dropped the
-> listing/preview panels from the render tree entirely (not a layout bug —
-> `listing::render` was dead code, zero call sites). Restored under
-> `h_resizable`'s original two panels. Verified on 3 independent release
-> grims: all 40 real entries render with populated Name/Type/Size/Modified.
-> Report: `report/T044-grid-view-empty-despite-item-count-report.md`.
->
-> **New blocker for full ACCEPT:** the same 3 grims show the Places sidebar
-> **gone** once listing/preview are back in the tree — correlated with a
-> continuous "can't render at a zero size" error storm (pre-existing,
-> previously log-noise-only "T037#5") that now visibly disrupts the
-> sidebar. Filed as **T045** with a hypothesis matrix, not yet root-caused.
->
-> T037 stays **not closed**. Chrome + Places-text + listing-content are all
-> now independently verified; T045 (sidebar-under-storm) is the one
-> remaining gate for §7.
-
+[38;5;8m   1[0m [37m# T037 — Phase V: Explorer shell smart pixel-copy[0m
+[38;5;8m   2[0m 
+[38;5;8m   3[0m [37m**Epic:** T042. **Priority:** P1.[0m
+[38;5;8m   4[0m 
+[38;5;8m   5[0m [37m## Эталон (SoT)[0m
+[38;5;8m   6[0m 
+[38;5;8m   7[0m [37m**`docs/design/mockups/chronos-file-manager.dc.html`** (2026-08-10)  [0m
+[38;5;8m   8[0m [37mArchive: `archive/chronos-file-manager.v2-2026-08-09.dc.html`  [0m
+[38;5;8m   9[0m [37mSpec `docs/design/T037-explorer-visual-spec.md` may lag — **HTML wins**.[0m
+[38;5;8m  10[0m 
+[38;5;8m  11[0m [37m## Architect status (2026-08-10)[0m
+[38;5;8m  12[0m 
+[38;5;8m  13[0m [37m| Gate | State |[0m
+[38;5;8m  14[0m [37m|------|--------|[0m
+[38;5;8m  15[0m [37m| Window `app_id=chronos-fm` | **done** |[0m
+[38;5;8m  16[0m [37m| Dark theme / density / icons | **landed** (code) |[0m
+[38;5;8m  17[0m [37m| Places **text** (T043) | **done** — Source T014-A memo + resizable path; grim verified |[0m
+[38;5;8m  18[0m [37m| Listing content (T044) | **done** — `listing::render` was dropped from tree; restored under `h_resizable` |[0m
+[38;5;8m  19[0m [37m| Places **alongside** listing | **blocked by T045** — zero-size repaint storm; sidebar missing when full tree present |[0m
+[38;5;8m  20[0m [37m| §7 full ACCEPT | **HOLD** |[0m
+[38;5;8m  21[0m 
+[38;5;8m  22[0m [37m**Verdict: PARTIAL — not closed.**  [0m
+[38;5;8m  23[0m [37mOnly remaining gate for Phase V ACCEPT: **T045**.[0m
+[38;5;8m  24[0m 
+[38;5;8m  25[0m [37m## Phase V Must (still)[0m
+[38;5;8m  26[0m 
+[38;5;8m  27[0m [37mMatch mockup shell: title, page-nav, address, Places, list columns, preview, footer — **all visible together** on release grim `class=chronos-fm`, vision §7.[0m
+[38;5;8m  28[0m 
+[38;5;8m  29[0m [37m## Strategy[0m
+[38;5;8m  30[0m 
+[38;5;8m  31[0m [37mSmart pixel-copy (Phase V) first — see T042. Icons ours only. Facts only. No self-ACCEPT.[0m
+[38;5;8m  32[0m 
+[38;5;8m  33[0m [37m## Related[0m
+[38;5;8m  34[0m 
+[38;5;8m  35[0m [37m- **T045** (blocker) — zero-size storm / sidebar under full tree  [0m
+[38;5;8m  36[0m [37m- T043 done · T044 done  [0m
+[38;5;8m  37[0m [37m- Reports: `report/T037-…`, `report/T044-…`, `report/T045-…`  [0m
+[38;5;8m  38[0m [37m- Shots: `report-log/T037-shots/`, `T044-shots/`, `T045-shots/`[0m
