@@ -107,8 +107,9 @@ pub struct ExplorerPane {
     pub(crate) listing_viewport: Option<Bounds<Pixels>>,
     /// Token identifying the layout that produced the current measurements.
     pub(crate) geometry_token: Option<GeometryToken>,
-    /// Bounds that may not start an empty-space marquee (headers and controls).
-    pub(crate) marquee_exclusions: Vec<Bounds<Pixels>>,
+    /// Bounds that may not start an empty-space marquee (headers and controls),
+    /// keyed by stable renderer IDs so repeated prepaint callbacks replace data.
+    pub(crate) marquee_exclusions: BTreeMap<&'static str, Bounds<Pixels>>,
     /// Monotonic generation for the current filtered entry order.
     pub(crate) entries_revision: u64,
     /// Monotonic generation for row/tile item sizes.
@@ -201,7 +202,14 @@ impl ExplorerPane {
     ) -> Self {
         let resizable = cx.new(|_| ResizableState::default());
         let search_input = cx.new(|cx| InputState::new(window, cx));
-        Self::new(resizable, search_input, search_service, cx.focus_handle())
+        let mut pane = Self::new(resizable, search_input, search_service, cx.focus_handle());
+        let focus_handle = pane.focus_handle.clone();
+        let focus_out = cx.on_focus_out(&focus_handle, window, |pane, _event, _window, cx| {
+            pane.cancel_marquee();
+            cx.notify();
+        });
+        pane.subs.push(focus_out);
+        pane
     }
 
     /// Creates a new explorer pane rooted at the current working directory,
@@ -255,7 +263,7 @@ impl ExplorerPane {
             measured_items: BTreeMap::new(),
             listing_viewport: None,
             geometry_token: None,
-            marquee_exclusions: Vec::new(),
+            marquee_exclusions: BTreeMap::new(),
             entries_revision: 0,
             item_sizes_revision: 0,
             // Visible by default so the Places sidebar shows on first launch
@@ -428,6 +436,7 @@ impl ExplorerPane {
         };
 
         if self.geometry_token.as_ref() != Some(&token) {
+            self.cancel_marquee();
             self.measured_items.clear();
             self.marquee_exclusions.clear();
             self.geometry_token = Some(token.clone());
@@ -451,11 +460,12 @@ impl ExplorerPane {
     /// Records non-item listing chrome that must not be treated as empty space.
     pub(crate) fn record_marquee_exclusion(
         &mut self,
+        id: &'static str,
         bounds: Bounds<Pixels>,
         token: GeometryToken,
     ) {
         if self.geometry_token.as_ref() == Some(&token) {
-            self.marquee_exclusions.push(bounds);
+            self.marquee_exclusions.insert(id, bounds);
         }
     }
 
@@ -478,7 +488,7 @@ impl ExplorerPane {
                 .any(|bounds| point_in_bounds(position, *bounds))
             || self
                 .marquee_exclusions
-                .iter()
+                .values()
                 .any(|bounds| point_in_bounds(position, *bounds))
         {
             return false;
@@ -504,6 +514,7 @@ impl ExplorerPane {
             prior_anchor,
             prior_active,
             additive,
+            dragging: false,
             hit_indices: Default::default(),
         });
         true
@@ -516,22 +527,24 @@ impl ExplorerPane {
             return;
         };
         drag.current = position;
+        drag.dragging |= past_threshold(drag.start, drag.current);
         let Some(drag) = self.marquee.as_ref() else {
             return;
         };
-        let (token, start, current, hitboxes, base_selection, additive) = (
+        let (token, start, current, hitboxes, base_selection, additive, dragging) = (
             drag.token.clone(),
             drag.start,
             drag.current,
             drag.hitboxes.clone(),
             drag.base_selection.clone(),
             drag.additive,
+            drag.dragging,
         );
         if self.geometry_token.as_ref() != Some(&token) {
             self.cancel_marquee();
             return;
         }
-        if !past_threshold(start, current) {
+        if !dragging {
             return;
         }
 
@@ -555,7 +568,7 @@ impl ExplorerPane {
     /// Returns the visible, clipped marquee rectangle after drag threshold.
     pub(crate) fn marquee_rect(&self) -> Option<Bounds<Pixels>> {
         let drag = self.marquee.as_ref()?;
-        if !past_threshold(drag.start, drag.current) {
+        if !drag.dragging {
             return None;
         }
         let viewport = self.listing_viewport?;
@@ -567,7 +580,7 @@ impl ExplorerPane {
         let Some(drag) = self.marquee.take() else {
             return;
         };
-        if past_threshold(drag.start, drag.current) {
+        if drag.dragging {
             (self.selection_anchor, self.active_index) = completion_indices(
                 &drag.hit_indices,
                 drag.additive,
@@ -679,11 +692,6 @@ impl ExplorerPane {
         // inline-rename index is expressed the same way, so it is reset too —
         // committing against a stale row after a listing change would rename the
         // wrong entry.
-        let prior_filtered_paths = self
-            .filtered_entries
-            .iter()
-            .map(|entry| entry.path.clone())
-            .collect::<Vec<_>>();
         self.cancel_marquee();
         self.clear_selection();
         self.renaming = None;
@@ -701,22 +709,38 @@ impl ExplorerPane {
             .iter()
             .filter(move |entry| show_hidden || !is_hidden(&entry.name));
 
-        if self.search_query.is_empty() {
-            self.filtered_entries = visible.cloned().collect();
+        let filtered_entries: Vec<FileEntryDto> = if self.search_query.is_empty() {
+            visible.cloned().collect()
         } else {
             let query = self.search_query.to_lowercase();
-            self.filtered_entries = visible
+            visible
                 .filter(|e| e.name.to_lowercase().contains(&query))
                 .cloned()
-                .collect();
-        }
+                .collect()
+        };
 
-        entries::sort_entries(&mut self.filtered_entries, self.sort_key, self.sort_asc);
-        if filtered_entry_order_changed(&self.filtered_entries, &prior_filtered_paths) {
+        let mut filtered_entries = filtered_entries;
+        entries::sort_entries(&mut filtered_entries, self.sort_key, self.sort_asc);
+        self.replace_filtered_entries(filtered_entries);
+        self.update_item_sizes();
+    }
+
+    /// Replaces index-addressed listing entries and invalidates measurements when
+    /// their visible order changes. Async search and reload failures use this
+    /// path instead of assigning `filtered_entries` directly.
+    pub(crate) fn replace_filtered_entries(&mut self, entries: Vec<FileEntryDto>) {
+        let prior_paths = self
+            .filtered_entries
+            .iter()
+            .map(|entry| entry.path.clone())
+            .collect::<Vec<_>>();
+        self.cancel_marquee();
+        let order_changed = filtered_entry_order_changed(&entries, &prior_paths);
+        self.filtered_entries = entries;
+        if order_changed {
             self.entries_revision = self.entries_revision.wrapping_add(1);
             self.invalidate_marquee_measurements();
         }
-        self.update_item_sizes();
     }
 
     /// Apply the `[ui]` config section to this open view, re-sorting and

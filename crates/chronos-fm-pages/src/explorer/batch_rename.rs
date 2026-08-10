@@ -239,6 +239,7 @@ impl super::ExplorerPane {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.cancel_marquee();
         let pane = cx.entity();
         let pane_for_cancel = pane.clone();
         let on_committed: CommitCallback = Rc::new(move |cx, errors| {

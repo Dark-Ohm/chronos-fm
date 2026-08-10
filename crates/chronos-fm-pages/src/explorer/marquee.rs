@@ -51,6 +51,8 @@ pub(crate) struct MarqueeDrag {
     pub prior_anchor: Option<usize>,
     pub prior_active: Option<usize>,
     pub additive: bool,
+    /// Whether this press has crossed the drag threshold at least once.
+    pub dragging: bool,
     pub hit_indices: BTreeSet<usize>,
 }
 
@@ -120,6 +122,7 @@ mod tests {
     use super::*;
     use crate::explorer::ExplorerPane;
     use crate::explorer::types::ViewMode;
+    use chronos_fm_services::fs::listing::FileEntryDto;
     use gpui::{AppContext, Bounds, Modifiers, TestAppContext, WindowHandle, point, px, size};
     use gpui_component::input::InputState;
     use gpui_component::resizable::ResizableState;
@@ -144,6 +147,16 @@ mod tests {
                 Bounds::new(point(px(10.), px(y)), size(px(20.), px(10.))),
                 token.clone(),
             );
+        }
+    }
+
+    fn file(name: &str) -> FileEntryDto {
+        FileEntryDto {
+            name: name.to_string(),
+            path: format!("/tmp/{name}"),
+            kind: "file".to_string(),
+            size: 1,
+            modified: 0,
         }
     }
 
@@ -256,6 +269,132 @@ mod tests {
                 assert_eq!(pane.selection, BTreeSet::from([0, 1, 2]));
                 assert!(pane.marquee.is_none());
                 assert!(pane.marquee_rect().is_none());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_viewport_token_change_cancels_before_mouse_up(cx: &mut TestAppContext) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                measure_pane(pane);
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), Modifiers::default()));
+                pane.update_marquee(point(px(40.), px(40.)));
+                assert_eq!(pane.selection, BTreeSet::from([0, 1, 2]));
+
+                pane.record_listing_viewport(
+                    Bounds::new(point(px(1.), px(0.)), size(px(100.), px(100.))),
+                    point(px(0.), px(0.)),
+                );
+
+                assert!(pane.marquee.is_none());
+                assert!(pane.marquee_rect().is_none());
+                assert_eq!(pane.selection, BTreeSet::from([0, 1, 2]));
+                pane.finish_marquee();
+                assert_eq!(pane.selection_anchor, None);
+                assert_eq!(pane.active_index, None);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_drag_threshold_latches_after_returning_below_four_pixels(
+        cx: &mut TestAppContext,
+    ) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                measure_pane(pane);
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), Modifiers::default()));
+                pane.update_marquee(point(px(40.), px(40.)));
+                assert_eq!(pane.selection, BTreeSet::from([0, 1, 2]));
+
+                pane.update_marquee(point(px(3.99), px(0.)));
+                assert!(pane.marquee_rect().is_some());
+                assert!(pane.selection.is_empty());
+                pane.finish_marquee();
+                assert_eq!(pane.selection_anchor, None);
+                assert_eq!(pane.active_index, None);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_replacing_filtered_entries_cancels_and_revisions_measurements(
+        cx: &mut TestAppContext,
+    ) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                pane.filtered_entries = vec![file("before")];
+                pane.update_item_sizes();
+                measure_pane(pane);
+                let revision = pane.entries_revision;
+                let item_sizes_revision = pane.item_sizes_revision;
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), Modifiers::default()));
+
+                pane.replace_filtered_entries(vec![file("search-result")]);
+                pane.update_item_sizes();
+
+                assert!(pane.marquee.is_none());
+                assert!(pane.measured_items.is_empty());
+                assert!(pane.geometry_token.is_none());
+                assert_eq!(pane.entries_revision, revision + 1);
+                assert_eq!(pane.item_sizes_revision, item_sizes_revision);
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_opening_listing_overlays_cancels_marquee(cx: &mut TestAppContext) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, cx| {
+                pane.filtered_entries = vec![file("selected")];
+                pane.active_index = Some(0);
+                measure_pane(pane);
+                let additive = Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                };
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), additive));
+                pane.show_properties(cx);
+                assert!(pane.marquee.is_none());
+
+                measure_pane(pane);
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), additive));
+                pane.open_context_menu_for_directory(point(px(0.), px(0.)), cx);
+                assert!(pane.marquee.is_none());
+
+                measure_pane(pane);
+                assert!(pane.begin_marquee(point(px(0.), px(0.)), additive));
+                pane.open_context_menu(
+                    "/tmp/selected".to_string(),
+                    0,
+                    point(px(0.), px(0.)),
+                    cx,
+                );
+                assert!(pane.marquee.is_none());
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn pane_deduplicates_same_token_exclusions(cx: &mut TestAppContext) {
+        let window = new_pane(cx);
+        window
+            .update(cx, |pane, _window, _cx| {
+                let viewport = Bounds::new(point(px(0.), px(0.)), size(px(100.), px(100.)));
+                let token = pane.record_listing_viewport(viewport, point(px(0.), px(0.)));
+                let exclusion = Bounds::new(point(px(0.), px(0.)), size(px(100.), px(10.)));
+                let replacement = Bounds::new(point(px(0.), px(2.)), size(px(100.), px(12.)));
+                pane.record_marquee_exclusion("header", exclusion, token.clone());
+                pane.record_marquee_exclusion("header", exclusion, token.clone());
+                pane.record_marquee_exclusion("header", replacement, token);
+
+                assert_eq!(pane.marquee_exclusions.len(), 1);
+                assert_eq!(pane.marquee_exclusions["header"], replacement);
             })
             .unwrap();
     }

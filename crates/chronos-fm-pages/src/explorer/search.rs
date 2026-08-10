@@ -72,14 +72,14 @@ impl ExplorerPane {
                         this.clear_selection();
                         match processed {
                             Ok((grouped, entries)) => {
-                                this.filtered_entries = entries;
+                                this.replace_filtered_entries(entries);
                                 this.search_results = Some(grouped);
                                 this.clear_status();
                             }
                             Err(error) => {
                                 tracing::error!("Search failed: {}", error);
                                 this.search_results = Some(Vec::new());
-                                this.filtered_entries = Vec::new();
+                                this.replace_filtered_entries(Vec::new());
                                 this.set_status(
                                     StatusLevel::Error,
                                     format!("Search failed: {}", error),

@@ -73,7 +73,7 @@ impl ExplorerPane {
             Err(e) => {
                 tracing::error!("Failed to list directory '{}': {}", self.cwd, e);
                 self.entries = Vec::new();
-                self.filtered_entries = Vec::new();
+                self.replace_filtered_entries(Vec::new());
                 self.update_item_sizes();
                 self.set_status(
                     StatusLevel::Error,
@@ -132,7 +132,7 @@ impl ExplorerPane {
                                 e
                             );
                             this.entries = Vec::new();
-                            this.filtered_entries = Vec::new();
+                            this.replace_filtered_entries(Vec::new());
                             this.update_item_sizes();
                             this.set_status(
                                 StatusLevel::Error,
@@ -281,6 +281,7 @@ impl ExplorerPane {
         let Some(item) = selected else {
             return;
         };
+        self.cancel_marquee();
         let item_clone = item.clone();
         let dialog = cx.new(|cx| super::properties::PropertiesDialog::new(item_clone, cx));
         self.properties_dialog = Some(dialog);
@@ -294,6 +295,7 @@ impl ExplorerPane {
         let Some(item) = self.filtered_entries.iter().find(|e| e.path == path).cloned() else {
             return;
         };
+        self.cancel_marquee();
         let dialog = cx.new(|cx| super::properties::PropertiesDialog::new(item, cx));
         self.properties_dialog = Some(dialog);
         cx.notify();
@@ -314,6 +316,7 @@ impl ExplorerPane {
         position: gpui::Point<gpui::Pixels>,
         cx: &mut gpui::Context<Self>,
     ) {
+        self.cancel_marquee();
         let state = super::context_menu::ContextMenuState::for_file(&file_path, index, position);
         self.context_menu = Some(state);
         cx.notify();
@@ -326,6 +329,7 @@ impl ExplorerPane {
         position: gpui::Point<gpui::Pixels>,
         cx: &mut gpui::Context<Self>,
     ) {
+        self.cancel_marquee();
         let state = super::context_menu::ContextMenuState::for_directory(position);
         self.context_menu = Some(state);
         cx.notify();
