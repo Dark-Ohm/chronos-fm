@@ -29,7 +29,7 @@ Source edits only if gpui DnD/input APIs are missing — **what / why / заче
 
 | ID | Title | Pri | Depends |
 |----|-------|-----|---------|
-| **T049** | File-ops keybindings (Ctrl+C/X/V, F2, Del, Ctrl+A, …) | P0 | — |
+| **T049** | File-ops keybindings (Ctrl+C/X/V, F2, Del, Ctrl+A, …) | P0 | **done ACCEPT** |
 | **T050** | Multi-select: Shift/Ctrl-click + **marquee (rubber-band) mouse** list+grid | P0 | — |
 | **T051** | **DnD in-app** (listing → folder, cross-pane move/copy) | P0 | T050 preferred |
 | **T052** | **DnD external** (into/out of Chronos-FM ↔ other apps) | P1 | T051 |

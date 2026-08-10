@@ -1,10 +1,13 @@
 # T049 — File-ops keybindings (Ctrl+C/X/V, F2, Del, Ctrl+A)
 
-> ## ⚖️ ARCHITECT (2026-08-10): **DESIGN APPROVED — IMPLEMENT GO**
+> ## ✅ ARCHITECT VERDICT: **ACCEPT / CLOSED** (2026-08-10)
 >
-> Spec: `docs/superpowers/specs/2026-08-10-file-ops-keybindings-design.md`
-> (APPROVE). Next: implementation plan, then land/salvage code + report.
-> No self-ACCEPT.
+> Commit `04b26bb`. Design approved; implementation re-verified (16 keybinding
+> tests + release check + live grims). Report:
+> `report/T049-file-ops-keybindings-report.md`. Shots: `report-log/T049-*.png`.
+>
+> Residual: user keymap Settings UI only (out of scope).
+
 
 **Epic:** T048. **Priority:** P0.  
 **Code:** `crates/chronos-fm-pages/src/explorer/` (actions + bindings on pane focus)

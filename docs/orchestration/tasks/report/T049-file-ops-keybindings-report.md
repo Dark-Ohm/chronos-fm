@@ -1,5 +1,29 @@
 # T049 - File-ops keybindings report
 
+> ## ✅ ARCHITECT VERDICT (2026-08-10): **ACCEPT / CLOSED**
+>
+> ### Re-verified
+> - `cargo test -p chronos-fm-pages --lib keybindings` → **16 passed, 0 failed**
+> - `cargo check -p chronos-fm --release` → **Finished** (url dep present on HEAD;
+>   the release-only `url` gap noted in the report is **cleared** by
+>   `6898488` / workspace `url` — not a T049 residual)
+> - Spot-check: pane `on_key_down` arms + `rename_selection` /
+>   `confirm_delete_selection` shared with context menu
+> - Live grims: delete confirm (3 items), F2 batch (3 files dialog),
+>   fixture path discipline `class=chronos-fm`
+>
+> ### Design match (2026-08-10-file-ops-keybindings-design.md)
+> Keys C/X/V, F2, Delete, A, Enter, Ctrl+Shift+N; input isolation; empty
+> no-ops; repeated-Delete guard — all land.
+>
+> ### Residual (non-blocking)
+> User keymap Settings UI (T049 non-goal). Cmd live untested on Linux host
+> (platform||control dual-bind accepted by design).
+>
+> Ticket → `done/T049-file-ops-keybindings.md`. Epic T048: T049 closed.
+
+
+
 **Status:** IMPLEMENTED - awaiting Architect review. Executor does not self-ACCEPT.
 
 ## Outcome
