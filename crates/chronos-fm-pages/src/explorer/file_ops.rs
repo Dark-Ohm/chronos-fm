@@ -61,7 +61,9 @@ impl ExplorerPane {
             clipboard::clear(cx);
         }
         self.reload();
-        if !report.failures.is_empty() {
+        let success_count = report.successes.len();
+        let failure_count = report.failures.len();
+        if failure_count > 0 {
             let errors = report
                 .failures
                 .into_iter()
@@ -77,7 +79,10 @@ impl ExplorerPane {
                 .collect::<Vec<_>>();
             self.set_status(
                 StatusLevel::Error,
-                format!("Paste failed for {}", errors.join(", ")),
+                format!(
+                    "Paste failed: {success_count} succeeded, {failure_count} failed; {}",
+                    errors.join(", ")
+                ),
             );
         }
         cx.notify();
@@ -283,10 +288,12 @@ mod tests {
         assert!(dst_dir.path().join("existing.txt").exists());
         window
             .update(cx, |page, _window, cx| {
-                assert!(
-                    page.status_for_footer()
-                        .is_some_and(|(_, is_error)| is_error)
-                );
+                let (status, is_error) = page
+                    .status_for_footer()
+                    .expect("partial paste reports a status");
+                assert!(is_error);
+                assert!(status.contains("1 succeeded, 1 failed"), "{status}");
+                assert!(status.contains("missing.txt"), "{status}");
                 let clip = clipboard::current(cx);
                 assert!(clip.mode.is_none());
                 assert!(clip.paths.is_empty());
