@@ -54,9 +54,58 @@ investigations on their own, and conflating them with T044's already-solid
 fix risked losing a clean, verified win under an open-ended investigation.
 Split intentionally so T044 could close on its own evidence.
 
+## Update (2026-08-10, per architect GO): H1 and H4 falsified, exact site found
+
+**H4 falsified.** Temporarily reverted `view.rs` to the sidebar-only tree
+(`git show 5b6fee3:...`), rebuilt, ran 20s with `RUST_LOG=info`: **zero**
+"zero size" errors. The storm is genuinely absent without the restored
+`h_resizable`/`v_virtual_list` subtree — not a pre-existing background
+condition this session missed. Restored the real `view.rs` afterward
+(`git checkout HEAD --`).
+
+**Exact log site found:** `Source/gpui/src/svg_renderer.rs:202`
+(`render_alpha_mask`'s `ensure!`), reached via `Window::paint_svg`
+(`window.rs:4164`) from `Svg::paint`'s `.log_err()`
+(`elements/svg.rs:130`) — every hit is swallowed, never a panic.
+
+**Instrumented `Svg::paint`** (temporary, reverted —
+`git -C Source checkout -- gpui/src/elements/svg.rs`) to log which icon
+path hits zero bounds. 15s run, `CHRONOS_SVG_DEBUG=1`: **12,588
+occurrences**, spanning every sidebar Places icon, every header/toolbar
+icon, and listing/device icons — **~14 distinct paths, all at
+`bounds=(origin (0,0), size (0,0))`**, continuously from the first log line
+to the last (not a startup transient). These same icons render correctly
+on screen (per T044's grims) — meaning each is painted **twice** per
+frame: once correctly, once bogus.
+
+**H1 falsified.** Suspected `ResizablePanelGroup::on_prepaint`
+(`gpui-component/.../resizable/panel.rs:159`) — strict `!=` comparison on
+`bounds.size` triggering `cx.notify()` on any float jitter, a classic
+self-sustaining loop shape. Instrumented (temporary, reverted —
+`git -C Source checkout -- gpui-component/crates/ui/src/resizable/
+panel.rs`) to log every `size_changed` event. Result: only **3**
+occurrences in 12s, all large real changes (window settling from `0px` to
+a stable `710px`), then it stops. Not a loop, not the storm's source.
+
+**New leading hypothesis for the next pass:** `v_virtual_list`'s per-item
+`item.layout_as_root(...)` (`virtual_list.rs:716`, traced in T044) calls
+`window.compute_layout(...)` (`element.rs:499`) — a **nested**, mid-paint
+invocation of the same frame-global `TaffyLayoutEngine` (the one T014-A's
+memo fix touched) that every other element's committed bounds also depend
+on. Worth checking whether a nested `compute_layout` call for one subtree
+disturbs `computed_layouts`/`frame_node_order`/`absolute_layout_bounds`
+for sibling nodes (sidebar/toolbar icons) whose paint callback fires later
+in the same outer frame, reading a stale/reset `(0,0)` bounds. Not tested
+this session — the fix site is inside core layout-engine re-entrancy
+handling, judged too risky to blind-fix without further isolation given
+the fork's blast radius (shared by ChronOS too).
+
 ## Verdict
 
-**Filed, not resolved.** Next executor: start with H4 (cheapest — does the
-storm already exist sidebar-only, with a log this time?) before the
-render-frequency/identity-stability hypotheses (H1–H3), which need code
-instrumentation.
+**Filed and substantially narrowed, not resolved.** Two of four original
+hypotheses falsified with hard evidence (H1, H4); exact log site and
+affected-icon set identified; a concrete, evidence-backed new hypothesis
+(nested `compute_layout` re-entrancy in `v_virtual_list`) handed to the
+next pass instead of the original vaguer H1–H3. All debug instrumentation
+reverted; tree is clean (`git status` on Source shows no diff from this
+investigation).

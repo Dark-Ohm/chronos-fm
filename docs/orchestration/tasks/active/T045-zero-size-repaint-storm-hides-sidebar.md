@@ -47,6 +47,70 @@ three-panel (`sidebar` + `h_resizable(listing, preview)`) tree.
 | H3 | The "can't render at a zero size" errors originate from the *listing/preview* subtree (not the sidebar) but the resulting reflow starves the sidebar's `flex_row` cross-axis allocation on the frames it fires | Find the error's log source location in `Source/gpui` (grep the exact log message) and correlate its call site with which element is zero-sized |
 | H4 | Unrelated to T044's restored subtree at all — pre-existed even with only the sidebar present, just below a detection threshold this session didn't check for (no log capture was done on the sidebar-only grims) | Re-run the sidebar-only tree (temporarily) with `RUST_LOG=info` captured and check whether the same "zero size" storm was already present before T044's fix |
 
+## Progress (2026-08-10, same session, per architect GO)
+
+**H4 FALSIFIED with evidence.** Temporarily reverted `view.rs` to the
+sidebar-only tree (`git show 5b6fee3:...view.rs`), rebuilt, ran with
+`RUST_LOG=info` captured over a 20s settle: **zero** "can't render at a
+zero size" errors (`grep -c "zero size" /tmp/t037_smoke.log` → `0`). The
+storm does not pre-exist — it is genuinely triggered by restoring
+`h_resizable`/`v_virtual_list` (T044's fix). Restored the real `view.rs`
+via `git checkout HEAD --` afterward.
+
+**Log source found:** `Source/gpui/src/svg_renderer.rs:202`,
+`render_alpha_mask`'s `anyhow::ensure!(!params.size.is_zero(), "can't
+render at a zero size")`, reached from `Window::paint_svg`
+(`window.rs:4164`) via `Svg::paint`'s `.log_err()` (`elements/svg.rs:130`)
+— every hit is swallowed and logged, never a crash.
+
+**Instrumented `Svg::paint` (temporary, reverted after — `git -C Source
+checkout -- gpui/src/elements/svg.rs`) to print which icon path hits zero
+bounds.** Result (15s run, `CHRONOS_SVG_DEBUG=1`): **12,588 occurrences**,
+spanning ~14 distinct icon paths — every sidebar Places icon
+(`house.svg`, `monitor.svg`, `file-text.svg`, `file-image.svg`,
+`download.svg`) **and** every header/toolbar icon (`search.svg`,
+`plus.svg`, `panel-bottom-open.svg`, `layout-dashboard.svg`,
+`circle-user.svg`, `chevron-left/right.svg`, `arrow-up.svg`) **and**
+listing/device icons (`folder.svg`, `hard-drive.svg`). All at
+`bounds = Bounds { origin: (0,0), size: (0,0) }` — not just zero size,
+zero origin too. First occurrence at process start (line 12 of the log,
+effectively immediately), last occurrence at the very last log line —
+**continuous for the entire run, not a startup transient.** These same
+icons **do** render correctly on screen in the grims (T044's evidence
+screenshots) — so each affected icon is being painted **twice** per frame:
+once correctly (what appears on screen) and once bogus (what errors).
+
+**H1 (my own hypothesis) FALSIFIED.** Suspected `ResizablePanelGroup`'s
+`on_prepaint` (`Source/gpui-component/crates/ui/src/resizable/panel.rs:159`)
+— it compares `state.bounds.size.along(axis) != bounds.size.along(axis)`
+with strict `!=` and calls `state.adjust_to_container_size(cx)` →
+unconditional `cx.notify()` on any change, which looked like a classic
+float-jitter self-notify loop. Instrumented it (temporary, reverted —
+`git -C Source checkout -- gpui-component/crates/ui/src/resizable/
+panel.rs`) to log every `size_changed` event with old/new/diff. Result: only
+**3** occurrences in 12s (`0px→1035px`, `1035px→717px`, `717px→710px`) —
+the window settling from initial layout to a stable size, then it stops.
+Not a loop; not the storm's source.
+
+**New leading hypothesis (not yet tested):** the double-paint pattern (every
+affected icon painting once correctly, once at exactly `(0,0)-(0,0)`,
+continuously) points at `v_virtual_list`'s per-item
+`item.layout_as_root(available_space, window, cx)` call inside its own
+`prepaint` (`Source/gpui-component/crates/ui/src/virtual_list.rs:716`,
+traced in T044's investigation). `layout_as_root` itself calls
+`window.compute_layout(...)` (`Source/gpui/src/element.rs:499`) — a nested,
+mid-paint invocation of the *same* frame-global layout engine
+(`TaffyLayoutEngine`, the one T014-A's memo fix touched) that every other
+element's `bounds` resolution also depends on. A nested `compute_layout`
+call while the outer frame's own layout/paint sequencing is still in
+progress is a plausible way for sibling elements (sidebar/toolbar icons,
+not part of the virtual list) to have their committed bounds transiently
+reset or read as a stale/degenerate `(0,0)` when *their* paint callback
+fires — worth checking `computed_layouts`/`frame_node_order`
+re-entrancy in `taffy.rs` for what happens when `compute_layout` is called
+again for a *different* subtree before the outer one has finished pinning
+every node's `absolute_layout_bounds`.
+
 ## Done when
 
 1. Root cause Claim → Evidence (one H* confirmed, others falsified).
