@@ -1,3 +1,11 @@
+# T040 — Phase V: Settings tab smart pixel-copy
+
+> ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
+>
+> Category shell + live config fields + honest unwired rows. Vision UNVERIFIED
+> (T046). Report: `report/T040-settings-tab-mockup-parity-report.md`.
+
+
 [38;5;8m   1[0m [37m# T040 — Phase V: Settings tab smart pixel-copy[0m
 [38;5;8m   2[0m 
 [38;5;8m   3[0m [37m**Epic:** T042. **Priority:** P1.[0m

@@ -102,7 +102,7 @@ impl RootView {
         let git = cx.new(|cx| GitPage::new(explorer.downgrade(), window, cx));
         let s3 = cx.new(|cx| S3Page::new(config.clone(), window, cx));
         let extensions = cx.new(|cx| ExtensionsPage::new(config.clone(), window, cx));
-        let settings = cx.new(|_cx| SettingsPage::new(config.clone()));
+        let settings = cx.new(|cx| SettingsPage::new(config.clone(), window, cx));
 
         let mut view = RootView {
             current_page: PageKind::Explorer,
