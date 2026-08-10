@@ -324,20 +324,49 @@ mod tests {
         cx.simulate_resize(size(px(900.), px(560.)));
         draw_window(&mut cx);
 
-        let row_points = pane.read_with(&cx, |pane, _cx| {
-            [0, 2, 4].map(|ix| {
+        let (row_points, header_bounds, header_point) = pane.read_with(&cx, |pane, _cx| {
+            let rows = [0, 2, 4].map(|ix| {
                 center(
                     *pane
                         .measured_items
                         .get(&ix)
                         .expect("list must measure the click-test row"),
                 )
-            })
+            });
+            let header = *pane
+                .marquee_exclusions
+                .get("list-header")
+                .expect("list must measure its header exclusion");
+            let blank_action_column = point(
+                header.left()
+                    + px(16.0
+                        + pane.col_name_width
+                        + pane.col_type_width
+                        + pane.col_size_width
+                        + pane.col_modified_width
+                        + pane.col_action_width / 2.0),
+                center(header).y,
+            );
+            (rows, header, blank_action_column)
         });
-        let resize_point = center(
-            cx.debug_bounds("list-column-resize-0")
-                .expect("list must render the nested name-column resize handle"),
+        let resize_bounds = [
+            "list-column-resize-0",
+            "list-column-resize-1",
+            "list-column-resize-2",
+            "list-column-resize-3",
+        ]
+        .map(|selector| {
+            cx.debug_bounds(selector)
+                .expect("list must render every nested column resize handle")
+        });
+        assert!(point_inside(header_bounds, header_point));
+        assert!(
+            resize_bounds
+                .iter()
+                .all(|bounds| !point_inside(*bounds, header_point)),
+            "blank header point must be outside nested resize controls"
         );
+        let resize_point = center(resize_bounds[0]);
 
         cx.simulate_mouse_down(row_points[0], MouseButton::Left, Modifiers::default());
         assert!(pane.read_with(&cx, |pane, _cx| pane.marquee.is_none()));
@@ -369,6 +398,16 @@ mod tests {
             assert_eq!(pane.selection, BTreeSet::from([2, 3, 4]));
             assert_eq!(pane.selection_anchor, Some(2));
         });
+        cx.simulate_mouse_down(header_point, MouseButton::Left, Modifiers::default());
+        pane.read_with(&cx, |pane, _cx| {
+            assert!(pane.marquee.is_none());
+            assert!(
+                pane.resizing_column.is_none(),
+                "blank header press must not be owned by a resize control"
+            );
+        });
+        cx.simulate_mouse_up(header_point, MouseButton::Left, Modifiers::default());
+
         cx.simulate_mouse_down(resize_point, MouseButton::Left, Modifiers::default());
         pane.read_with(&cx, |pane, _cx| {
             assert!(pane.marquee.is_none());
