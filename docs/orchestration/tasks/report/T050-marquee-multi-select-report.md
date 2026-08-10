@@ -1,5 +1,24 @@
 # T050 - Marquee multi-select report
 
+> ## ✅ ARCHITECT VERDICT (2026-08-10): **ACCEPT / CLOSED**
+>
+> ### Re-verified on main `f6c8f99` (FF merge)
+> - `cargo test -p chronos-fm-pages --lib marquee` → **22 passed, 0 failed**
+> - Report + workspace tests claimed green by executor; release build claimed OK
+> - Live grims `class=chronos-fm`: list (6 selected + dashed overlay), grid
+>   (5 selected + overlay) under `report-log/T050-marquee-{list,grid}.png`
+>
+> ### Spec match (2026-08-10-marquee-multi-select-design.md)
+> Measured bounds + geometry token; empty-space start; replace/Ctrl-additive;
+> 4 px threshold; min/max completion; sole `selection` model for T051 — land.
+>
+> ### Residual (non-blocking, per report)
+> No off-screen virtual selection / auto-scroll; DnD T051; Shift+Arrow residual.
+>
+> Ticket → `done/T050-marquee-multi-select.md`. Epic T048: next **T051** in-app DnD.
+
+
+
 **Status:** IMPLEMENTED - awaiting Architect review. Executor does not self-ACCEPT.
 
 ## Outcome
