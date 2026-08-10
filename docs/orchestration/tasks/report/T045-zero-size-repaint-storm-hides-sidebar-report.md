@@ -1,12 +1,15 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering — Report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **FILED / GO** — not resolved
+> ## ⚖️ ARCHITECT VERDICT (2026-08-10, pass 2): **PROGRESS — not ACCEPT**
 >
-> Evidence for filing accepted. Root cause open. Next: H4 then Source log site.
-> Unblocks T037 when fixed + grim shows Places + listing together.
+> H1+H4 falsified with evidence. Storm site = SVG alpha mask zero bounds
+> (double paint). Next: H5 nested `compute_layout` isolation — no blind Source
+> layout patch. Unblocks T037 when Places+listing co-visible on grim without storm
+> (or storm proven benign *and* sidebar fixed with evidence).
 
 
-**Status:** OPEN — filed with initial evidence, root cause not yet found
+
+**Status:** OPEN — H1/H4 closed; site found; root cause (H5 lead) not fixed
 **Date:** 2026-08-10
 **Executor:** Claude (Sonnet 5), discovered while verifying T044's fix
 

@@ -1,9 +1,103 @@
 # HANDOFF — контекст для новой сессии Архитектора (Chronos-FM)
 
-**Обновлено: 2026-08-07 (чекпоинт #5), HEAD `957a546`.** Цель сессии:
-«перекрасить Chronos-FM в Chronos + перенести дизайн-паттерны +
-доработать до состояния замены Thunar / Dolphin». Читать этот блок
-первым, §0-§5 ниже — история до 2026-07-18, остаётся верной.
+**Обновлено: 2026-08-10 (чекпоинт #6), HEAD `4ff6bf0`.**  
+Читать **этот блок первым**. Ниже — чекпоинты #5…#1 и §0–§5 (история).
+
+## Чекпоинт #6, 2026-08-10 — pixel-copy program, mockup SoT, T043–T045
+
+### Цель продукта (без изменений)
+Перекрасить Chronos-FM в Chronos + паттерны + довести до замены Thunar/Dolphin.
+**Mockup = видение продукта** (live догоняет; не резать эталон под live).
+
+### Стратегия доставки UI
+**Phase V (smart pixel-copy):** layout/IA/density = mockup; только реальные
+данные; нет API → chrome + empty/disabled honestly; **наши** SVG-иконки;
+proof = release + grim + **vision**.  
+**Phase F:** backend fill (history, transfers, plugin-host…) — отдельные
+тикеты **после** V.  
+Epic: `docs/orchestration/tasks/active/T042-pixel-copy-epic.md`.
+
+### Эталоны (canonical mockups)
+| Surface | Path | Ticket V |
+|---------|------|----------|
+| **Shell / Explorer** | `docs/design/mockups/chronos-file-manager.dc.html` | T037 |
+| Git | `docs/design/mockups/Chronos-Git-Tab.dc.html` | T038 |
+| S3 | `docs/design/mockups/Chronos-S3-Tab.dc.html` | T039 |
+| Settings | `docs/design/mockups/Chronos-File-Manager-Settings.dc.html` | T040 |
+| Extensions | `docs/design/mockups/Chronos-Extensions-Tab.dc.html` | T041 |
+
+Правило shell: **один** live SoT (`chronos-file-manager.dc.html`); старые в
+`docs/design/mockups/archive/`. Spec
+`docs/design/T037-explorer-visual-spec.md` может отставать — **HTML wins**.
+Индекс: `docs/design/mockups/README.md`.
+
+### Source
+- Path-deps: `../Source/*` → `/home/neo/projects/chronos-ecosystem/Source`
+- **Source = истина** gpui API (не Zed, не датасеты/RAG)
+- Source правки: **только в лучшую сторону** + **что / почему / зачем**
+- Chronos-FM app: `crates/*`
+
+### Evidence discipline
+Claim → Evidence → Truth base (Source | Chronos-FM | mockup | runtime | config).  
+UNVERIFIED ≠ ACCEPT. Secrets (AWS keys) не в toml/report/grim.
+
+### Состояние тикетов (2026-08-10)
+
+| ID | State | Note |
+|----|--------|------|
+| **T037** | **PARTIAL**, open | Phase V shell; blocked by **T045** (sidebar under full tree) |
+| **T038–T041** | open (V not shipped) | Design APPROVED where noted (T038/T039 option C = Phase F); pixel-copy V first |
+| **T042** | epic active | Pixel-copy program index |
+| **T043** | **done** | Places text: Source T014-A measure memo fix + resizable path |
+| **T044** | **done** | Listing was not in render tree (T043 bypass); restored under h_resizable |
+| **T045** | **active P1** | Storm = SVG zero-bounds double-paint; H1/H4 falsified; next H5 nested compute_layout (no blind Source patch) |
+| T010–T036 etc. | mostly done | See `docs/orchestration/tasks/done/` |
+
+Reports: `report/T037-…`, `T038-…`, `T039-…`, `T044-…`, `T045-…`.
+
+### Ключевые технические факты (session arc)
+
+1. **`app_id = Some("chronos-fm")`** in `crates/chronos-fm-ui/src/window.rs` —
+   Hyprland `class` matchable (was empty class false-negative).
+2. **T014-A layout memo** (`Source/gpui/src/taffy.rs`): skipping measure on
+   fingerprint match dropped **all text paint** (masked by T035 early-return).
+   Fix: no fast path when frame has measured leaf. See `docs/DECISIONS.log`
+   2026-08-10.
+3. Theme default **dark** product; user `~/.config/chronos-fm/config.toml` may
+   still say light — product default ≠ force-overwrite user file.
+4. S3: profiles in config + keyring credentials; no Chronos SaaS signup.
+5. Invalid evidence: do not use non-`class=chronos-fm` grims (e.g. browser
+   frames misfiled under T037-shots).
+
+### Роли
+- **Клиент:** vision mockups, priority.
+- **Архитектор:** decide, stamp reports, hygiene; not default implementer.
+- **Executor:** code + release grim; vision model for visual ACCEPT; no
+  self-ACCEPT.
+
+### Очередь (сейчас)
+1. **T045** — zero-size storm / Places with full tree → grim → architect vision.
+2. **T037** §7 full ACCEPT → `done/` + report-log.
+3. **T038–T041** Phase V pixel-copy (shell tokens stable after T037).
+4. Phase F backends (git history/remotes, S3 transfers, …) after V.
+5. `git push` (~150 commits ahead origin) — **only on user request**.
+6. Perf residuals (watcher home walk, CPU) — non-blocking visual; T014/T022/T033 history.
+
+### Где что лежит
+| Что | Путь |
+|-----|------|
+| Agent entry | `AGENTS.md` (this repo) |
+| Decisions | `docs/DECISIONS.log` |
+| Tasks | `docs/orchestration/tasks/{active,done,report,report-log}/` |
+| Shots | `docs/orchestration/tasks/report-log/T037-shots/` |
+| Smoke helper | `script/dev/t037_smoke.sh` (if present) |
+
+### Git (approx at handoff write)
+- Branch `main`, significantly **ahead of origin** (do not push unless asked).
+- Live binary: rebuild `cargo build --release -p chronos-fm` after Source
+  changes; path-deps pick up `../Source` automatically.
+
+---
 
 ## Чекпоинт #5, 2026-08-07 — пять тикетов закрыты живьём, T021 со
 ## второго захода, три ошибки брифа

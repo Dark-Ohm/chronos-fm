@@ -1,13 +1,21 @@
 # T045 — Zero-size repaint storm disrupts sidebar rendering (was T037#5)
 
-> ## ⚖️ ARCHITECT (2026-08-10): **GO — investigate + fix** (not ACCEPT)
+> ## ⚖️ ARCHITECT (2026-08-10, pass 2): **PROGRESS — not ACCEPT**
 >
-> Filing + evidence quality OK: full tree vs sidebar-only contrast, storm
-> sustained (30k+), listing stable under storm, H1–H4 matrix honest.
-> **T037 blocked on this.** Prefer H4 log capture first (cheapest), then
-> Source site of `can't render at a zero size`. No self-ACCEPT.
-> Report: `report/T045-zero-size-repaint-storm-hides-sidebar-report.md`.
-
+> Executor GO pass accepted on evidence:
+> - **H4 FALSIFIED** — sidebar-only 20s, 0× zero-size (storm only with full tree)
+> - **H1 FALSIFIED** — ResizablePanelGroup size_changed: 3 settles, not a loop
+> - **Log site:** `Source/gpui/src/svg_renderer.rs:202` via `Svg::paint` `.log_err()`
+> - **Pattern:** ~14 SVG paths paint at (0,0)/(0,0) continuously (12k+/15s) *and*
+>   also paint correctly on screen → double paint / wrong paint pass, not missing assets
+> - **Next lead (H5):** nested `layout_as_root` → `window.compute_layout` from
+>   `v_virtual_list` re-entering frame-global Taffy (T014-A engine) may reset
+>   sibling absolute bounds before second paint. **Do not blind-patch Source**
+>   without isolation repro (shared fork blast radius).
+>
+> Source tree clean after instrumentation revert — good.  
+> T037 still blocked. No self-ACCEPT.
+> Commit: `b1800f1` (docs progress). Report: `report/T045-…-report.md`.
 
 **Priority:** P1 — blocks T037 §7 full visual ACCEPT (Places sidebar must be
 visible alongside a real listing, not just in isolation).
@@ -42,10 +50,10 @@ three-panel (`sidebar` + `h_resizable(listing, preview)`) tree.
 
 | ID | Hypothesis | How to falsify |
 |----|------------|----------------|
-| H1 | `h_resizable`'s continuous re-layout (`page.resizable` state notifying every frame, e.g. from `v_virtual_list`'s scroll-handle bookkeeping) triggers a `cx.notify()` loop that never settles, and the sidebar's fixed-width div loses a size race against the resizable panels during some frames | Log a per-frame counter in `view.rs`'s outer `render` (call count over 5s) with only sidebar in the tree vs. with the full tree restored — compare render frequency |
+| H1 **FALSIFIED** | `h_resizable`'s continuous re-layout (`page.resizable` state notifying every frame, e.g. from `v_virtual_list`'s scroll-handle bookkeeping) triggers a `cx.notify()` loop that never settles, and the sidebar's fixed-width div loses a size race against the resizable panels during some frames | Log a per-frame counter in `view.rs`'s outer `render` (call count over 5s) with only sidebar in the tree vs. with the full tree restored — compare render frequency |
 | H2 | `v_virtual_list`'s own internal state (`scroll_handle`, `content_size`) recomputes unstably each frame because `page.item_sizes` (or another input) changes identity every render (e.g. a `Rc::new` rebuilt from scratch instead of memoized), so its content invalidates every frame and the request-layout tree keeps changing shape | Check whether `Rc<Vec<Size<Pixels>>>` passed to `v_virtual_list` is stable across frames (same `Rc` pointer) when nothing actually changed, or rebuilt every render in `list.rs` |
 | H3 | The "can't render at a zero size" errors originate from the *listing/preview* subtree (not the sidebar) but the resulting reflow starves the sidebar's `flex_row` cross-axis allocation on the frames it fires | Find the error's log source location in `Source/gpui` (grep the exact log message) and correlate its call site with which element is zero-sized |
-| H4 | Unrelated to T044's restored subtree at all — pre-existed even with only the sidebar present, just below a detection threshold this session didn't check for (no log capture was done on the sidebar-only grims) | Re-run the sidebar-only tree (temporarily) with `RUST_LOG=info` captured and check whether the same "zero size" storm was already present before T044's fix |
+| H4 **FALSIFIED** | Unrelated to T044's restored subtree at all — pre-existed even with only the sidebar present, just below a detection threshold this session didn't check for (no log capture was done on the sidebar-only grims) | Re-run the sidebar-only tree (temporarily) with `RUST_LOG=info` captured and check whether the same "zero size" storm was already present before T044's fix |
 
 ## Progress (2026-08-10, same session, per architect GO)
 
