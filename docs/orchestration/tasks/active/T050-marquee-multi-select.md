@@ -1,5 +1,11 @@
 # T050 — Multi-select: modifiers + marquee (rubber-band) mouse
 
+> ## ⚖️ ARCHITECT (2026-08-10): **DESIGN APPROVED — IMPLEMENT GO**
+>
+> Spec: `docs/superpowers/specs/2026-08-10-marquee-multi-select-design.md`
+> (commit `a228319`, stamped APPROVE). Approach 1 measured bounds.
+> Next: implementation plan, then code + report. No self-ACCEPT.
+
 **Epic:** T048. **Priority:** P0.  
 **Code:** listing list + grid (`explorer/view/listing*`), selection state on `ExplorerPane`
 

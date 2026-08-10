@@ -5,8 +5,33 @@
 **Project:** Chronos-FM (`crates/chronos-fm-pages/src/explorer/`)  
 **Scope:** Mouse modifier selection and marquee selection in list and grid layouts.
 
-**Design status:** Approved for written specification. Implementation requires a
+**Design status:** Architect **APPROVE — IMPLEMENT GO** (2026-08-10). Write plan, then implement.
 separate Architect stamp after this file is committed.
+
+
+> ## ✅ ARCHITECT VERDICT (2026-08-10): **APPROVE — IMPLEMENT GO**
+>
+> Spec `a228319` covers T050 Must and all six non-negotiables from design
+> review:
+>
+> | Constraint | Spec § |
+> |------------|--------|
+> | Window coords + viewport clip | §3 |
+> | Ctrl additive (Linux); click dual-bind | §1, §4 |
+> | Click/Ctrl/Shift preserved; marquee ≠ break Shift-anchor | §1, §6 |
+> | min/max `filtered_entries` index for anchor/active | §4 end |
+> | Epoch bump → cancel marquee, keep last live selection | §3, §8 |
+> | Sole selection model for T051 (`selection` / `selected_paths`) | §1, §9 |
+>
+> Approach **1** (measured `on_prepaint` bounds) accepted; pure-index geometry
+> and full listing Element rejected for T050.
+>
+> Edge-touch closed rects, 4 px threshold, empty-space start only, list
+> virtualized-visible / grid laid-out tiles — **APPROVE**.
+>
+> **Next:** implementation plan → execute → report (no self-ACCEPT). Live
+> grims list **and** grid over ≥3 entries required for ACCEPT.
+
 
 ## 1. Goal
 
