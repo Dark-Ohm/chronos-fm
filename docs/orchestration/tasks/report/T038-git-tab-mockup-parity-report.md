@@ -1,126 +1,219 @@
-# T038 — Git tab: visual parity with design mockup
+# T038 — Git tab mockup parity — Implementation report
 
-> ## ⚖️ ARCHITECT VERDICT: **DESIGN APPROVED — implement** (2026-08-09)
+> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT**
 >
-> Inventory facts OK (T010 ops live; no multi-view; no history/remotes API;
-> mockup 5 views). **Option C (extend backend + full view shell)** approved
-> as product-vision delivery — mockup is SoT to strive toward, not cut down.
-> Residuals listed (merge-graph, etc.) OK.
+> ### Service layer — **ACCEPT**
+> Spot-checked: `history` / `commit_detail` / `remotes` / `fetch` /
+> `add_remote` / `delete_remote` / `commit_amend` present; amend uses
+> `write_object` + `edit_reference` with `PreviousValue::MustExistAndMatch`
+> (not broken `commit_as` parent CAS). Architect re-ran
+> `cargo test -p chronos-fm-services git::` → **43/43**. TDD amend bug find
+> is real and correctly fixed.
 >
-> **Not** implementation ACCEPT. No code, no grim. Next: implementation
-> plan (tests first) → code → release grim → vision. Spec
-> `docs/superpowers/specs/2026-08-09-git-tab-mockup-parity-design.md` is
-> **go** for executor (user may still comment; no block unless conflict).
+> ### Page layer — **ACCEPT with documented deviation**
+> `GitView` enum, `select_view`, History/Remotes views, Commit/Amend control,
+> Branches/Stashes reuse — present. **Horizontal sub-nav** vs mockup **left
+> column** accepted as honest Phase V geometry (no invented ahead/behind).
+> Mockup residuals (merge-graph, remote branches, cherry-pick) stay residual.
 >
-> Ticket stays `active/`.
+> ### Live visual — **UNVERIFIED** (honest)
+> Hyprland Lua `focuswindow` broken → no Git-view grims. Not inferred as pass.
+> Residual: capture Changes/History/Branches/Stashes/Remotes against
+> `Chronos-Git-Tab.dc.html` when input routing works (or manual client click).
+>
+> ### fmt residual
+> Workspace-wide `cargo fmt` collateral — noted; not a code reject.
+>
+> ### Verdict
+> **PARTIAL-ACCEPT** — ship service+page code; **do not full-close** until
+> vision grims (or explicit client waiver). Ticket stays active with residual
+> "visual proof" or move to done with open residual ticket **T046** optional.
+>
+> Epic T042: Phase V Git function largely landed; visual polish residual.
 
 
-**Status:** DESIGN AGREED — implementation not started. This is an inventory +
-design-approval report, not an implementation/acceptance report.
+**Status:** IMPLEMENTED, NOT ACCEPTED — awaiting review. Do not treat this
+report as a self-grant of ACCEPT; per session policy the executor does not
+accept its own work.
+**Date:** 2026-08-10
+**Executor:** Claude (Sonnet 5)
+**Design spec:** `docs/superpowers/specs/2026-08-09-git-tab-mockup-parity-design.md` (architect-approved 2026-08-09)
 
-**Truth bases used:**
-- Chronos-FM source: `crates/*`
-- GPUI fork source: `/home/neo/projects/chronos-ecosystem/Source`
-- Visual authority: `docs/design/mockups/Chronos-Git-Tab.dc.html`
-- Ticket: `docs/orchestration/tasks/active/T038-git-tab-mockup-parity.md`
-- Approved design: `docs/superpowers/specs/2026-08-09-git-tab-mockup-parity-design.md`
+## Summary
 
-## Inventory (facts only)
+Implemented the design spec's service-layer extension and page-layer
+sub-navigation for the Git tab: `GitView::{Changes, History, Branches,
+Stashes, Remotes}`, bounded commit history + on-demand commit detail,
+normalized remotes with fetch/add/delete, and Commit/Amend segmented
+control on the existing commit box. TDD throughout — every new service
+function has unit tests written and run before/alongside the
+implementation, matching the spec's "pure parsing helpers receive unit
+tests first" requirement.
 
-### Current Git page (`crates/chronos-fm-pages/src/git.rs`)
+**What is verified:** service-layer correctness (25 new unit tests, all
+green, real git-repo fixtures — no mocked git), full-workspace test suite
+green, release build clean, diff scoped to exactly the two files this
+ticket touches.
 
-- **Claim:** The page already implements the T010 operation set.
-  **Evidence:** `git.rs` — `GitPage` struct (line 59), fields for status,
-  branches, stashes, commit/branch/stash inputs, busy guard (lines 59–93);
-  `push` (line 499), `pull` (line 524), `stash_push_action` (line 549),
-  `stash_pop` (line 579), `stash_drop` (line 604), stage/unstage/commit/
-  checkout/create-branch/show-diff handlers, and refresh loop.
-  **Truth base:** Chronos-FM source.
+**What is NOT verified:** the Git tab's live visual appearance and
+interactive behavior. See "Live verification — UNVERIFIED" below; this is
+an honest gap, not an inferred pass.
 
-- **Claim:** The render tree is a single vertical flow — header, branches,
-  stash, file sections, commit bar, diff panel — with no multi-view shell.
-  **Evidence:** `git.rs` render helpers: `render_header` (line 742 area),
-  `render_branches`, `render_stash_section` (line 1001), `render_file_section`,
-  `render_commit_bar`, `render_diff_panel` (line 922); `elevated_card` usage at
-  lines 710, 776, 928, 1007.
-  **Truth base:** Chronos-FM source.
+## Service layer (`crates/chronos-fm-services/src/git/mod.rs`)
 
-- **Claim:** Unified diff is produced service-side.
-  **Evidence:** `crates/chronos-fm-services/src/git/mod.rs:394`
-  (`unified_diff`), `render_unified_diff` (line 489); page calls it at
-  `git.rs:456`.
-  **Truth base:** Chronos-FM source.
+New public API, matching the design spec exactly:
 
-### Git service (`crates/chronos-fm-services/src/git/mod.rs`)
+| Item | What |
+|---|---|
+| `CommitEntry`, `CommitFileStat`, `CommitDetail`, `RemoteEntry` | Data types (design §1) |
+| `history(repo, limit)` | Bounded `git log`, `\x1f`/`\x1e`-delimited pretty format (unlikely to collide with subject/author/ref-name content — verified with a subject containing literal `,`/`:`) |
+| `commit_detail(repo, hash)` | `git show --numstat` + same pretty-format header; binary files parse additions/deletions to `None`, never `0` |
+| `remotes(repo)` | `git remote -v`, deduped fetch/push rows into one `RemoteEntry` per name |
+| `fetch(repo, remote)`, `delete_remote(repo, name)`, `add_remote(repo, name, url)` | Thin system-git wrappers; identifiers passed as separate `Command` arguments, never shell-interpolated |
+| `commit_amend(repo, message)` | New commit replacing `HEAD`, same parents as the original — **not** a flag on `commit()`, a separate function (design: "preserving the current non-amend call path") |
 
-- **Claim:** History/log and remote listing/management are NOT provided.
-  **Evidence:** public symbol inventory — `RepoStatus` (line 37), `StashEntry`
-  (line 294), `list_branches` (line 303), `create_branch` (line 324),
-  `checkout_branch` (line 364), `unified_diff` (line 394), `push` (line 569),
-  `pull` (line 577), stash operations (lines 585–658). No commit-log or
-  remote-list API exists.
-  **Truth base:** Chronos-FM source.
+### `commit_amend`'s real bug (found via TDD, not assumed)
 
-### Mockup (`docs/design/mockups/Chronos-Git-Tab.dc.html`)
+The first implementation used `repo.commit_as(sig, sig, "HEAD", ...)` — the
+same call shape as `commit()`'s non-amend path — and it failed every test
+with `"Reference ... was not supposed to exist ... but actual content
+was <original HEAD>"`. Traced into gix 0.86's `commit_as_inner`
+(`repository/object.rs:411-424`): its ref-update safety check requires the
+ref's **current** value to equal the **new commit's first parent**. That's
+correct for an ordinary commit (parent == old HEAD) but always wrong for
+an amend, whose parents are the *original* commit's own parents, not the
+original commit itself. Fixed by writing the commit object directly
+(`repo.write_object`) and moving `HEAD` via `repo.edit_reference` with an
+explicit `PreviousValue::MustExistAndMatch(original_head_id)` — a real CAS
+against the actual thing being replaced, not a parent-inferred one.
 
-- **Claim:** The mockup specifies a five-view content shell with badges.
-  **Evidence:** nav items at lines 588–593: `changes` (Changes, badge: changed
-  count), `history`, `branches`, `stashes`, `remotes`; view subtitles lines
-  628–633.
-  **Truth base:** mockup HTML.
+### Test coverage (25 new tests, `cargo test -p chronos-fm-services git::`)
 
-- **Claim:** The mockup specifies per-view toolbars and Actions view layout.
-  **Evidence:** Changes toolbar (Stage all / Unstage all / Refresh, lines
-  637–641), Commit/Amend segmented control (lines 700–702), diff pane with
-  add/del coloring (lines 738–745), History commit rows + detail (lines
-  760–807), Branches Local/Remote/Tags columns (lines 810–855), Stashes cards
-  with Apply/Pop/Drop (lines 857–881), Remotes cards with Fetch/Push/Delete
-  (lines 883–908).
-  **Truth base:** mockup HTML.
+Per design spec §"Verification" #1's explicit list — empty output,
+multiple parents, subjects with separator-like characters, binary numstat
+rows, fetch-only remotes, fetch+push remotes — plus amend-specific cases
+(message replace, message-preserving, folds in newly-staged changes,
+correct parent count). Pure-parser tests (`parse_history`,
+`parse_commit_fields`) run with zero I/O; integration tests use real
+temp-directory git repos via the existing `git()`/`git_output()`/
+`repo_with_base_commit()` fixtures, matching the file's established
+pattern — no new test infrastructure invented.
 
-## Approved design decisions
+```
+cargo test -p chronos-fm-services git::
+test result: ok. 43 passed; 0 failed; 0 ignored
+```
 
-1. **Chosen scope: option C — extend backend.**
-   Add thin system-Git reads for history and remotes: `history(repo, limit)`
-   via bounded `git log`, `commit_detail` via `git show --numstat`,
-   `remotes(repo)` via `git remote -v`, `fetch`, `delete_remote`, and amend
-   support in the existing commit path. Parsing helpers get unit tests first.
-   Identifiers are passed as separate `Command` arguments (no shell
-   interpolation).
-2. **UI:** internal `GitView::{Changes, History, Branches, Stashes, Remotes}`,
-   compact view switcher with honest badges, Changes density + commit/amend box
-   + separate diff pane, History list + selection detail, existing
-   Branches/Stashes moved into views (plus stash Apply, already available
-   service-side), Remotes cards + add form. Icons only from
-   `crates/chronos-fm-ui/assets/icons/`; palette only `chronos_fm_ui::theme`.
-3. **Safety:** T010 operations and busy guards preserved; errors stay visible;
-   no fake history/remotes/ahead-behind values.
-4. **Explicit residuals:** fancy merge-graph, checkout/cherry-pick of
-   historical commits, remote ahead/behind — only if existing data provides
-   them, else reported as residual with evidence.
-5. **No Source fork changes required.**
+## Page layer (`crates/chronos-fm-pages/src/git.rs`)
 
-Design document: `docs/superpowers/specs/2026-08-09-git-tab-mockup-parity-design.md`
-(user review pending before implementation).
+- `GitView` enum + `select_view` action; `render_sub_nav` — a compact
+  horizontal tab strip with honest count badges (changed-files total,
+  history/branches/stashes/remotes counts) derived from already-loaded
+  state, never invented.
+- `refresh`'s background read now also loads `history(repo, 50)` and
+  `remotes(repo)` alongside the existing status/branches/stashes read,
+  best-effort (`unwrap_or_default`, matching the existing branches/stashes
+  pattern — an empty result is not an error).
+- `select_commit` loads `commit_detail` on demand when a History row is
+  clicked; a stale in-flight read is discarded if the user selects a
+  different commit before it lands (same guard pattern as `refresh`'s
+  `refresh_generation`, applied per-selection here since History doesn't
+  need a monotonic counter — only "is this still the selected hash").
+- Changes view: existing Staged/Modified/Untracked sections + diff pane
+  unchanged; the commit bar gained a Commit/Amend segmented control
+  (`commit_mode_option`, explicit target-state set, not a naive toggle —
+  clicking the already-active option is a no-op, not a flip). `commit()`
+  branches on `self.amend` to call `commit_amend` instead of `commit`, and
+  allows an empty message only in Amend mode (keeps the original message),
+  matching design §"Interaction and safety rules".
+- History view: bounded commit list + selected-commit detail card
+  (subject, hash, per-file +/− stats, "binary" label instead of a fake
+  `+0`/`−0` for binary files).
+- Branches/Stashes views: **unchanged**, routed through the same
+  `render_branches`/`render_stash_section` functions as before — reused,
+  not rewritten, since they already had live create/checkout and
+  push/pop/drop wired from T010.
+- Remotes view: cards with fetch/push badges, Fetch/Delete actions, and an
+  Add Remote form (two `Input`s + button) wired to `add_remote_action`.
+
+## Explicit deviation from the mockup (flagging per design §"Explicit residuals")
+
+The mockup's sub-navigation is a **left sidebar column** (repo head +
+ahead/behind + nav list + footer with `origin`/`HEAD`/`gix` info). This
+implementation uses a **compact horizontal tab strip** instead — same IA
+(five views, honest badges), different geometry. Chosen for scope: the
+mockup's sidebar also carries repo-identity chrome (`origin ·
+N↑/N↓`, `HEAD <hash>`, `gix 0.68 · chronos-shell` version string) that
+either doesn't exist as live data yet (ahead/behind counts) or would
+duplicate the existing header bar's repo-path/branch display. Not
+reconciling those without inventing ahead/behind numbers felt more honest
+than a partial-fidelity sidebar. Flagging explicitly rather than silently
+shipping a different layout than the approved mockup.
+
+Also **not implemented** (all covered by design §"Explicit residuals" —
+no service data exists for these, would require inventing values):
+merge-graph rendering (mockup's `historyView` SVG lane graph), checkout/
+cherry-pick of historical commits, remote branch ahead/behind, and the
+mockup's separate `local`/`remote` branch two-column split (Branches view
+still uses the pre-existing single local-branch list — no remote-branch
+listing exists in the service; adding it was not in this ticket's approved
+backend scope).
 
 ## Verification
 
-- **Claim:** Implementation verified.
-  **Evidence:** **Not claimed.** No code changes for T038 exist in the working
-  tree at the time of this report.
-  **Truth base:** none — not started.
+| Check | Result |
+|---|---|
+| `cargo test -p chronos-fm-services git::` | 43/43 passed (25 new) |
+| `cargo test --workspace --no-fail-fast` | 0 failed, all crates |
+| `cargo build --release -p chronos-fm` | clean |
+| `cargo check -p chronos-fm-pages` | clean (only pre-existing missing-docs warnings) |
+| `cargo fmt --check` | **NOT run workspace-wide** — see below |
+| Diff scope (`git status`) | exactly `crates/chronos-fm-pages/src/git.rs` + `crates/chronos-fm-services/src/git/mod.rs` |
 
-- **Claim:** Visual parity proven by grim.
-  **Evidence:** **Not claimed.** Requires release binary + grim after
-  implementation, reviewed by a vision-capable model against the mockup.
-  **Truth base:** T038 "Done when" criteria.
+### `cargo fmt` — residual, not silently skipped
 
-## Next gate
+`cargo fmt -- <files>` does not scope to the given files the way I
+expected — it reformatted the *whole workspace* (51 files touched,
+confirmed via `git status`), which violates the design spec's explicit
+"only T038 files... preserve unrelated working-tree changes" rule. I
+reverted every file except my two targets. My two files are therefore
+**not guaranteed byte-identical to `rustfmt`'s output** — I hand-formatted
+new code to match the surrounding style, but a real `cargo fmt --check`
+on just these two files was not obtained without the collateral-damage
+risk. Whoever has a safe way to scope rustfmt to two files (or is willing
+to accept the workspace-wide reformat as a separate, disclosed commit)
+should close this gap — did not want to guess and possibly ship an
+un-disclosed unrelated-file diff.
 
-1. User reviews the approved design spec.
-2. Write implementation plan (tests first: history/detail/remote parsers).
-3. Implement backend + UI, run `cargo fmt --check`, targeted service/page
-   tests, `cargo check -p chronos-fm-pages`, release build
-   `cargo build --release -p chronos-fm`.
-4. Live grim pack (Changes/History/Branches/Stashes/Remotes) + vision review.
-5. Move this report to `report-log/` only after acceptance.
+### Live verification — UNVERIFIED (honest gap, not inferred)
+
+Per design spec §"Verification" #6: "If the environment cannot safely
+launch or exercise a state, report it as `UNVERIFIED` rather than infer
+it."
+
+- Confirmed the release binary launches cleanly and the **Explorer** tab
+  (T037/T045 work) still renders correctly — no regression from adding
+  fields to a sibling page.
+- Could **not** interactively navigate to the Git tab to capture
+  Changes/History/Branches/Stashes/Remotes grims. Root cause isolated,
+  not just "didn't work": `hyprctl dispatch focuswindow` fails in this
+  session's Lua-Hyprland config (`')' expected near 'class'`) — a known
+  dead API in this environment (matches an existing ChronOS field note:
+  "hyprctl dispatch мёртв в Lua-Hyprland 0.56.1"). Without a working focus
+  dispatch, synthetic `ydotool` clicks land on whatever window already has
+  focus (confirmed via `hyprctl activewindow`: a browser window, not
+  chronos-fm) rather than the target. Tried against an easy, large,
+  unambiguous target first (the Places sidebar's "Documents" row) before
+  concluding this was an input-routing problem, not a coordinate-math
+  problem specific to the Git nav icon.
+- **No screenshot evidence exists for any Git sub-view.** The visual
+  claims in this report (segmented control layout, badge styling, card
+  layout) are description of the code, not confirmed rendering. Do not
+  read "implemented" as "looks right" — that check is still open.
+
+## Recommendation
+
+Someone with working interactive input in this environment (or a
+different sandbox) needs to click through all five views on a real repo
+and grim each one against the mockup before this can be ACCEPTed. I did
+not attempt to lower this bar or claim the visual check some other way.

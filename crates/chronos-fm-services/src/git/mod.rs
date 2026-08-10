@@ -77,9 +77,11 @@ pub fn status(repo: &gix::Repository) -> Result<RepoStatus, GitError> {
                 use gix::status::index_worktree::iter::Summary;
                 match entry.summary() {
                     // `git add -N` entries show as untracked in `git status`.
-                    Some(Summary::Added) | Some(Summary::IntentToAdd) => untracked.push(RepoEntry {
-                        path: entry.rela_path().to_string(),
-                    }),
+                    Some(Summary::Added) | Some(Summary::IntentToAdd) => {
+                        untracked.push(RepoEntry {
+                            path: entry.rela_path().to_string(),
+                        })
+                    }
                     Some(
                         Summary::Modified
                         | Summary::Removed
@@ -199,9 +201,7 @@ pub fn commit(repo: &gix::Repository, message: &str) -> Result<(), GitError> {
     // Reject no-op commits: the index must differ from HEAD. `index.entries()`
     // is not usable for this — it lists every tracked file.
     if status(repo)?.staged.is_empty() {
-        return Err(GitError::Operation(
-            "nothing staged to commit".to_string(),
-        ));
+        return Err(GitError::Operation("nothing staged to commit".to_string()));
     }
 
     // Build a tree from the full index.
@@ -247,7 +247,7 @@ pub fn commit(repo: &gix::Repository, message: &str) -> Result<(), GitError> {
         name: gix::bstr::BStr::new(name.as_bytes()),
         email: gix::bstr::BStr::new(email.as_bytes()),
         time: &time_str,
-    };    // Unborn HEAD: `head()` succeeds with a symbolic reference that has no
+    }; // Unborn HEAD: `head()` succeeds with a symbolic reference that has no
     // object id yet — commit on the branch named by its symbolic target
     // (e.g. `refs/heads/main`) with no parents.
     let parent = repo.head().ok().and_then(|head| head.id());
@@ -269,6 +269,116 @@ pub fn commit(repo: &gix::Repository, message: &str) -> Result<(), GitError> {
             .map_err(|e| GitError::Operation(format!("commit: {e}")))?;
         }
     }
+    Ok(())
+}
+
+/// Replace `HEAD` with a new commit carrying `HEAD`'s own parents (T038).
+///
+/// The tree is rebuilt from the current index — same as [`commit`] — so any
+/// changes staged since the original commit are folded in, matching `git
+/// commit --amend`'s behavior. When `message` is empty or whitespace, the
+/// original commit's message is kept unchanged (message-preserving amend,
+/// e.g. after only re-staging a fix). Preserves the non-amend [`commit`]
+/// call path unchanged — this is a separate function, not a flag on it.
+pub fn commit_amend(repo: &gix::Repository, message: &str) -> Result<(), GitError> {
+    let head_commit = repo
+        .head_commit()
+        .map_err(|e| GitError::Operation(format!("no HEAD commit to amend: {e}")))?;
+
+    let index = repo
+        .index_or_empty()
+        .map_err(|e| GitError::Operation(e.to_string()))?;
+    let mut editor = repo
+        .edit_tree(gix::ObjectId::empty_tree(repo.object_hash()))
+        .map_err(|e| GitError::Operation(format!("edit tree: {e}")))?;
+    for entry in index.entries() {
+        let kind = entry
+            .mode
+            .to_tree_entry_mode()
+            .map(|m| m.kind())
+            .unwrap_or(gix::object::tree::EntryKind::Blob);
+        editor
+            .upsert(gix::bstr::BStr::new(entry.path(&index)), kind, entry.id)
+            .map_err(|e| GitError::Operation(format!("upsert tree: {e}")))?;
+    }
+    let tree_id = editor
+        .write()
+        .map_err(|e| GitError::Operation(format!("write tree: {e}")))?
+        .detach();
+
+    let snapshot = repo.config_snapshot();
+    let name = snapshot
+        .string("user.name")
+        .map(|n| n.to_string())
+        .unwrap_or_else(|| "Chronos FM".to_string());
+    let email = snapshot
+        .string("user.email")
+        .map(|e| e.to_string())
+        .unwrap_or_else(|| "chronos-fm@localhost".to_string());
+    let now = gix::date::Time::now_local_or_utc();
+    let mut time_buf = Vec::new();
+    now.write_to(&mut time_buf)
+        .map_err(|e| GitError::Operation(format!("format time: {e}")))?;
+    let time_str = String::from_utf8(time_buf)
+        .map_err(|e| GitError::Operation(format!("format time: {e}")))?;
+    let sig = gix::actor::SignatureRef {
+        name: gix::bstr::BStr::new(name.as_bytes()),
+        email: gix::bstr::BStr::new(email.as_bytes()),
+        time: &time_str,
+    };
+
+    let trimmed = message.trim();
+    let effective_message = if trimmed.is_empty() {
+        head_commit
+            .message_raw()
+            .map_err(|e| GitError::Operation(format!("read original message: {e}")))?
+            .to_string()
+    } else {
+        trimmed.to_string()
+    };
+    let parents: Vec<gix::ObjectId> = head_commit.parent_ids().map(|id| id.detach()).collect();
+    let original_head_id = head_commit.id().detach();
+
+    // `Repository::commit_as` (used by `commit()` above) ties its ref-update
+    // safety check to the NEW commit's first parent: it requires the ref's
+    // current value to equal `parents[0]` (or, for a first commit, requires
+    // the ref not to exist yet). That is correct for an ordinary commit
+    // (parent == old HEAD), but wrong for an amend: the new commit's parents
+    // are the ORIGINAL commit's own parents, not the original commit itself,
+    // so `commit_as`'s check always fails here ("was not supposed to
+    // exist... but actual content was <original HEAD>"). Write the object
+    // directly and move the ref ourselves instead, with the correct expected
+    // previous value — the original HEAD commit we are replacing.
+    let commit = gix::objs::Commit {
+        message: effective_message.clone().into(),
+        tree: tree_id,
+        author: sig.into(),
+        committer: sig.into(),
+        encoding: None,
+        parents: parents.into(),
+        extra_headers: Default::default(),
+    };
+    let new_commit_id = repo
+        .write_object(&commit)
+        .map_err(|e| GitError::Operation(format!("write amended commit: {e}")))?;
+
+    use gix::refs::transaction::{Change, LogChange, PreviousValue, RefEdit};
+    repo.edit_reference(RefEdit {
+        change: Change::Update {
+            log: LogChange {
+                mode: gix::refs::transaction::RefLog::AndReference,
+                force_create_reflog: false,
+                message: format!("commit (amend): {effective_message}").into(),
+            },
+            expected: PreviousValue::MustExistAndMatch(gix::refs::Target::Object(original_head_id)),
+            new: gix::refs::Target::Object(new_commit_id.detach()),
+        },
+        name: "HEAD"
+            .try_into()
+            .map_err(|e| GitError::Operation(format!("amend: invalid reference name HEAD: {e}")))?,
+        deref: true,
+    })
+    .map_err(|e| GitError::Operation(format!("amend: move HEAD: {e}")))?;
     Ok(())
 }
 
@@ -295,6 +405,52 @@ pub struct StashEntry {
     pub index: usize,
     pub branch: String,
     pub message: String,
+}
+
+/// One commit from bounded `git log` history (T038).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitEntry {
+    /// Abbreviated hash (`git log %h`).
+    pub hash: String,
+    /// Full hash (`git log %H`).
+    pub full_hash: String,
+    /// Subject line (`git log %s`).
+    pub subject: String,
+    /// Author name (`git log %an`).
+    pub author: String,
+    /// Human relative date (`git log %ar`, e.g. "3 days ago").
+    pub relative_date: String,
+    /// Parent full hashes, in order; more than one means a merge commit.
+    pub parent_hashes: Vec<String>,
+    /// Ref decorations (branch/tag names pointing at this commit), with the
+    /// `HEAD -> ` / `tag: ` prefixes stripped. Empty when undecorated.
+    pub tags: Vec<String>,
+}
+
+/// One file's stat line from `git show --numstat` (T038).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitFileStat {
+    pub path: String,
+    /// `None` when git reports `-` (binary file) rather than a byte count.
+    pub additions: Option<u32>,
+    /// `None` when git reports `-` (binary file) rather than a byte count.
+    pub deletions: Option<u32>,
+}
+
+/// A selected commit's metadata plus its per-file change stats (T038).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitDetail {
+    pub entry: CommitEntry,
+    pub files: Vec<CommitFileStat>,
+}
+
+/// One configured remote, deduped across the `(fetch)`/`(push)` rows
+/// `git remote -v` prints separately (T038).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RemoteEntry {
+    pub name: String,
+    pub fetch_url: Option<String>,
+    pub push_url: Option<String>,
 }
 
 // --- Milestone B: branches + unified diff ---------------------------------
@@ -429,11 +585,18 @@ pub fn unified_diff(
 
     let old_text = String::from_utf8_lossy(&old_bytes);
     let new_text = String::from_utf8_lossy(&new_bytes);
-    Ok(render_unified_diff(&old_label, &new_label, &old_text, &new_text))
+    Ok(render_unified_diff(
+        &old_label, &new_label, &old_text, &new_text,
+    ))
 }
 
 fn looks_binary(bytes: &[u8]) -> bool {
-    bytes.contains(&0) || bytes.iter().filter(|&&b| b < 9 || (b > 13 && b < 32)).count() > bytes.len() / 8
+    bytes.contains(&0)
+        || bytes
+            .iter()
+            .filter(|&&b| b < 9 || (b > 13 && b < 32))
+            .count()
+            > bytes.len() / 8
 }
 
 fn blob_from_index(repo: &gix::Repository, rela_path: &str) -> Result<Vec<u8>, GitError> {
@@ -569,7 +732,7 @@ fn run_git_cmd(workdir: &std::path::Path, args: &[&str]) -> Result<String, GitEr
 pub fn push(repo: &gix::Repository, remote: &str) -> Result<String, GitError> {
     let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
     let remote = if remote.is_empty() { "origin" } else { remote };
-    run_git_cmd(&workdir, &["push", remote, "HEAD"])  // C1, C3
+    run_git_cmd(&workdir, &["push", remote, "HEAD"]) // C1, C3
 }
 
 /// Fetch + fast-forward `remote/HEAD` into current branch.
@@ -577,7 +740,7 @@ pub fn push(repo: &gix::Repository, remote: &str) -> Result<String, GitError> {
 pub fn pull(repo: &gix::Repository, remote: &str) -> Result<String, GitError> {
     let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
     let remote = if remote.is_empty() { "origin" } else { remote };
-    run_git_cmd(&workdir, &["pull", "--ff-only", remote, "HEAD"])  // C2, C3
+    run_git_cmd(&workdir, &["pull", "--ff-only", remote, "HEAD"]) // C2, C3
 }
 
 /// Push working-tree changes onto the stash stack.
@@ -586,7 +749,7 @@ pub fn stash_push(repo: &gix::Repository, message: &str) -> Result<String, GitEr
     let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
     let trimmed = message.trim();
     if trimmed.is_empty() {
-        run_git_cmd(&workdir, &["stash", "push"])             // C5: no -m
+        run_git_cmd(&workdir, &["stash", "push"]) // C5: no -m
     } else {
         run_git_cmd(&workdir, &["stash", "push", "-m", trimmed])
     }
@@ -595,7 +758,7 @@ pub fn stash_push(repo: &gix::Repository, message: &str) -> Result<String, GitEr
 /// Pop (apply + drop) stash entry at `index`.
 pub fn stash_pop(repo: &gix::Repository, index: usize) -> Result<String, GitError> {
     let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
-    let refspec = format!("stash@{{{index}}}");  // P3: bind outside &[...]
+    let refspec = format!("stash@{{{index}}}"); // P3: bind outside &[...]
     run_git_cmd(&workdir, &["stash", "pop", &refspec])
 }
 
@@ -657,6 +820,188 @@ fn parse_branch_msg(rest: &str) -> (String, String) {
     }
 }
 
+// --- T038: history / commit detail / remotes (system git) ------------------
+
+/// Field separator (`\x1f`, ASCII unit separator) between `git log`/`git
+/// show --pretty=format:` fields — chosen because it cannot appear in a
+/// commit subject/author/date/ref-name in practice, unlike `,`/`|`/tab.
+const FIELD_SEP: char = '\u{1f}';
+/// Record separator (`\x1e`, ASCII record separator) between `git log`
+/// entries — lets a single `run_git_cmd` call return every record without
+/// relying on newlines, which a multi-line subject could otherwise produce
+/// (subjects are single-line by convention, but this is defense in depth).
+const RECORD_SEP: char = '\u{1e}';
+
+/// Bounded commit history via system `git log`, newest first (T038).
+pub fn history(repo: &gix::Repository, limit: usize) -> Result<Vec<CommitEntry>, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let count_arg = format!("-{}", limit.max(1));
+    let format_arg = format!(
+        "--pretty=format:%h{FIELD_SEP}%H{FIELD_SEP}%s{FIELD_SEP}%an{FIELD_SEP}%ar{FIELD_SEP}%P{FIELD_SEP}%D{RECORD_SEP}"
+    );
+    let text = run_git_cmd(&workdir, &["log", &count_arg, &format_arg])?;
+    parse_history(&text)
+}
+
+fn parse_history(text: &str) -> Result<Vec<CommitEntry>, GitError> {
+    let mut out = Vec::new();
+    for record in text.split(RECORD_SEP) {
+        let record = record.trim();
+        if record.is_empty() {
+            continue;
+        }
+        out.push(parse_commit_fields(record)?);
+    }
+    Ok(out)
+}
+
+/// Parse one `%h<FS>%H<FS>%s<FS>%an<FS>%ar<FS>%P<FS>%D` record into a
+/// [`CommitEntry`]. Shared by `history` (one record per line, `RECORD_SEP`-
+/// joined) and `commit_detail` (single header line, no trailing `%D` in
+/// some git versions when there are zero decorations — handled by treating
+/// a missing trailing field as empty rather than a parse error).
+fn parse_commit_fields(record: &str) -> Result<CommitEntry, GitError> {
+    let mut fields: Vec<&str> = record.split(FIELD_SEP).collect();
+    // Some git versions omit a trailing empty %D field entirely rather than
+    // emitting an empty one; pad rather than error on that specific case.
+    if fields.len() == 6 {
+        fields.push("");
+    }
+    let [short, full, subject, author, date, parents, refs]: [&str; 7] =
+        fields.clone().try_into().map_err(|_| {
+            GitError::Operation(format!(
+                "malformed git log record (expected 7 fields, got {}): {record:?}",
+                fields.len()
+            ))
+        })?;
+    let parent_hashes = parents.split_whitespace().map(str::to_string).collect();
+    let tags = refs
+        .split(", ")
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(|s| {
+            s.trim_start_matches("HEAD -> ")
+                .trim_start_matches("tag: ")
+                .to_string()
+        })
+        .collect();
+    Ok(CommitEntry {
+        hash: short.to_string(),
+        full_hash: full.to_string(),
+        subject: subject.to_string(),
+        author: author.to_string(),
+        relative_date: date.to_string(),
+        parent_hashes,
+        tags,
+    })
+}
+
+/// Bounded `git show --numstat` for one commit's metadata + file stats
+/// (T038). `hash` is passed as a separate `Command` argument, never
+/// interpolated into a shell string.
+pub fn commit_detail(repo: &gix::Repository, hash: &str) -> Result<CommitDetail, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let format_arg = format!(
+        "--pretty=format:%h{FIELD_SEP}%H{FIELD_SEP}%s{FIELD_SEP}%an{FIELD_SEP}%ar{FIELD_SEP}%P{FIELD_SEP}%D"
+    );
+    let text = run_git_cmd(&workdir, &["show", "--numstat", &format_arg, hash])?;
+    parse_commit_detail(&text)
+}
+
+fn parse_commit_detail(text: &str) -> Result<CommitDetail, GitError> {
+    let mut lines = text.lines();
+    let header = lines
+        .next()
+        .ok_or_else(|| GitError::Operation("empty git show output".to_string()))?;
+    let entry = parse_commit_fields(header)?;
+
+    let mut files = Vec::new();
+    for line in lines {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let mut parts = line.splitn(3, '\t');
+        let (Some(added), Some(deleted), Some(path)) = (parts.next(), parts.next(), parts.next())
+        else {
+            continue;
+        };
+        files.push(CommitFileStat {
+            path: path.to_string(),
+            // `-` (binary file) parses to None honestly rather than 0.
+            additions: added.parse().ok(),
+            deletions: deleted.parse().ok(),
+        });
+    }
+    Ok(CommitDetail { entry, files })
+}
+
+/// Configured remotes, deduped across the `(fetch)`/`(push)` rows `git
+/// remote -v` prints separately (T038).
+pub fn remotes(repo: &gix::Repository) -> Result<Vec<RemoteEntry>, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let text = run_git_cmd(&workdir, &["remote", "-v"])?;
+    Ok(parse_remotes(&text))
+}
+
+fn parse_remotes(text: &str) -> Vec<RemoteEntry> {
+    let mut out: Vec<RemoteEntry> = Vec::new();
+    for line in text.lines() {
+        let line = line.trim();
+        if line.is_empty() {
+            continue;
+        }
+        let Some((name, rest)) = line.split_once(char::is_whitespace) else {
+            continue;
+        };
+        let rest = rest.trim();
+        let Some(paren_start) = rest.rfind('(') else {
+            continue;
+        };
+        let url = rest[..paren_start].trim();
+        let kind = rest[paren_start..].trim_matches(['(', ')']);
+
+        let idx = out.iter().position(|e| e.name == name);
+        let idx = idx.unwrap_or_else(|| {
+            out.push(RemoteEntry {
+                name: name.to_string(),
+                fetch_url: None,
+                push_url: None,
+            });
+            out.len() - 1
+        });
+        match kind {
+            "fetch" => out[idx].fetch_url = Some(url.to_string()),
+            "push" => out[idx].push_url = Some(url.to_string()),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Fetch from `remote` (defaults to `"origin"` when empty), no merge.
+pub fn fetch(repo: &gix::Repository, remote: &str) -> Result<String, GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    let remote = if remote.is_empty() { "origin" } else { remote };
+    run_git_cmd(&workdir, &["fetch", remote])
+}
+
+/// Remove a configured remote through system git.
+pub fn delete_remote(repo: &gix::Repository, name: &str) -> Result<(), GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    run_git_cmd(&workdir, &["remote", "remove", name])?;
+    Ok(())
+}
+
+/// Add a configured remote (`git remote add <name> <url>`), used by the
+/// Remotes view's Add Remote form. `name` and `url` are passed as separate
+/// `Command` arguments (T038 safety rule — never shell-interpolated).
+pub fn add_remote(repo: &gix::Repository, name: &str, url: &str) -> Result<(), GitError> {
+    let workdir = repo.workdir().ok_or(GitError::NotARepository)?;
+    run_git_cmd(&workdir, &["remote", "add", name, url])?;
+    Ok(())
+}
+
 #[cfg(test)]
 #[allow(clippy::unwrap_used, clippy::disallowed_methods)]
 mod tests {
@@ -713,8 +1058,18 @@ mod tests {
         let repo = open_repo(&root).unwrap();
         let s = status(&repo).unwrap();
         assert!(s.staged.is_empty());
-        assert_eq!(s.modified, vec![RepoEntry { path: "a.txt".into() }]);
-        assert_eq!(s.untracked, vec![RepoEntry { path: "b.txt".into() }]);
+        assert_eq!(
+            s.modified,
+            vec![RepoEntry {
+                path: "a.txt".into()
+            }]
+        );
+        assert_eq!(
+            s.untracked,
+            vec![RepoEntry {
+                path: "b.txt".into()
+            }]
+        );
         assert_eq!(s.branch, "main");
         assert_eq!(s.workdir, root);
     }
@@ -739,13 +1094,23 @@ mod tests {
         let repo = open_repo(&root).unwrap();
         stage_path(&repo, "b.txt").unwrap();
         let s = status(&repo).unwrap();
-        assert_eq!(s.staged, vec![RepoEntry { path: "b.txt".into() }]);
+        assert_eq!(
+            s.staged,
+            vec![RepoEntry {
+                path: "b.txt".into()
+            }]
+        );
         assert!(s.untracked.is_empty());
 
         unstage_path(&repo, "b.txt").unwrap();
         let s = status(&repo).unwrap();
         assert!(s.staged.is_empty());
-        assert_eq!(s.untracked, vec![RepoEntry { path: "b.txt".into() }]);
+        assert_eq!(
+            s.untracked,
+            vec![RepoEntry {
+                path: "b.txt".into()
+            }]
+        );
     }
 
     #[test]
@@ -756,11 +1121,21 @@ mod tests {
         let repo = open_repo(&root).unwrap();
         let s = status(&repo).unwrap();
         assert!(s.staged.is_empty());
-        assert_eq!(s.modified, vec![RepoEntry { path: "a.txt".into() }]);
+        assert_eq!(
+            s.modified,
+            vec![RepoEntry {
+                path: "a.txt".into()
+            }]
+        );
 
         stage_path(&repo, "a.txt").unwrap();
         let s = status(&repo).unwrap();
-        assert_eq!(s.staged, vec![RepoEntry { path: "a.txt".into() }]);
+        assert_eq!(
+            s.staged,
+            vec![RepoEntry {
+                path: "a.txt".into()
+            }]
+        );
         assert!(s.modified.is_empty());
     }
 
@@ -807,10 +1182,7 @@ mod tests {
     fn commit_rejects_empty_staging() {
         let (_td, root) = repo_with_base_commit();
         let repo = open_repo(&root).unwrap();
-        assert!(matches!(
-            commit(&repo, "nope"),
-            Err(GitError::Operation(_))
-        ));
+        assert!(matches!(commit(&repo, "nope"), Err(GitError::Operation(_))));
     }
 
     #[test]
@@ -822,7 +1194,10 @@ mod tests {
         stage_path(&repo, "b.txt").unwrap();
         unstage_path(&repo, "b.txt").unwrap();
 
-        assert_eq!(std::fs::read_to_string(root.join("b.txt")).unwrap(), "content-123");
+        assert_eq!(
+            std::fs::read_to_string(root.join("b.txt")).unwrap(),
+            "content-123"
+        );
     }
 
     #[test]
@@ -835,7 +1210,12 @@ mod tests {
         stage_path(&repo, "sub/dir/file.txt").unwrap();
 
         let s = status(&repo).unwrap();
-        assert_eq!(s.staged, vec![RepoEntry { path: "sub/dir/file.txt".into() }]);
+        assert_eq!(
+            s.staged,
+            vec![RepoEntry {
+                path: "sub/dir/file.txt".into()
+            }]
+        );
         assert!(s.untracked.is_empty());
     }
 
@@ -882,25 +1262,35 @@ mod tests {
 
         let repo = open_repo(&root).unwrap();
         let s = status(&repo).unwrap();
-        assert_eq!(s.modified, vec![RepoEntry { path: "a.txt".into() }]);
+        assert_eq!(
+            s.modified,
+            vec![RepoEntry {
+                path: "a.txt".into()
+            }]
+        );
 
         stage_path(&repo, "a.txt").unwrap();
         let s = status(&repo).unwrap();
         assert!(s.modified.is_empty());
-        assert_eq!(s.staged, vec![RepoEntry { path: "a.txt".into() }]);
+        assert_eq!(
+            s.staged,
+            vec![RepoEntry {
+                path: "a.txt".into()
+            }]
+        );
 
         let porcelain = git_output(&root, &["status", "--porcelain"]);
-        assert!(porcelain.starts_with("D "), "expected staged deletion, got: {porcelain}");
+        assert!(
+            porcelain.starts_with("D "),
+            "expected staged deletion, got: {porcelain}"
+        );
     }
 
     #[test]
     fn outside_repo_is_not_a_repository() {
         let td = tempdir().unwrap();
         let root = std::fs::canonicalize(td.path()).unwrap();
-        assert!(matches!(
-            open_repo(&root),
-            Err(GitError::NotARepository)
-        ));
+        assert!(matches!(open_repo(&root), Err(GitError::NotARepository)));
     }
 
     // --- Milestone B -------------------------------------------------------
@@ -1007,7 +1397,13 @@ mod tests {
         git(&pusher, &["push", "-q", "origin", "HEAD:refs/heads/main"]);
         // Set HEAD on the bare remote so clone+fetch have a default branch.
         let head_set = std::process::Command::new("git")
-            .args(["--git-dir", bare.to_str().unwrap(), "symbolic-ref", "HEAD", "refs/heads/main"])
+            .args([
+                "--git-dir",
+                bare.to_str().unwrap(),
+                "symbolic-ref",
+                "HEAD",
+                "refs/heads/main",
+            ])
             .output()
             .unwrap();
         assert!(head_set.status.success(), "git symbolic-ref HEAD failed");
@@ -1015,7 +1411,12 @@ mod tests {
         let clone = base.join("clone");
         git(
             &base,
-            &["clone", "-q", bare.to_str().unwrap(), clone.to_str().unwrap()],
+            &[
+                "clone",
+                "-q",
+                bare.to_str().unwrap(),
+                clone.to_str().unwrap(),
+            ],
         );
         std::fs::write(pusher.join("a.txt"), "v2").unwrap();
         git(&pusher, &["add", "a.txt"]);
@@ -1086,5 +1487,330 @@ mod tests {
         stash_push(&repo, "  ").unwrap();
         let entries = stash_list(&repo).unwrap();
         assert_eq!(entries.len(), 2);
+    }
+
+    // --- T038: history / commit detail / remotes / amend -------------------
+
+    #[test]
+    fn parse_history_empty_output_returns_empty_vec() {
+        assert_eq!(parse_history("").unwrap(), Vec::new());
+        assert_eq!(parse_history("   \n  ").unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn parse_history_single_record_no_parents_no_tags() {
+        let record = format!(
+            "{}{RECORD_SEP}",
+            ["abc123", "abc123full", "init", "Test", "3 days ago", "", ""]
+                .join(&FIELD_SEP.to_string())
+        );
+        let entries = parse_history(&record).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].hash, "abc123");
+        assert_eq!(entries[0].subject, "init");
+        assert!(entries[0].parent_hashes.is_empty());
+        assert!(entries[0].tags.is_empty());
+    }
+
+    #[test]
+    fn parse_history_multiple_parents_are_split_on_whitespace() {
+        let record = format!(
+            "{}{RECORD_SEP}",
+            [
+                "m1",
+                "m1full",
+                "merge branches",
+                "Test",
+                "now",
+                "p1full p2full",
+                ""
+            ]
+            .join(&FIELD_SEP.to_string())
+        );
+        let entries = parse_history(&record).unwrap();
+        assert_eq!(entries[0].parent_hashes, vec!["p1full", "p2full"]);
+    }
+
+    #[test]
+    fn parse_history_strips_head_and_tag_decoration_prefixes() {
+        let record = format!(
+            "{}{RECORD_SEP}",
+            [
+                "h1",
+                "h1full",
+                "release",
+                "Test",
+                "now",
+                "",
+                "HEAD -> main, tag: v1.0.0, origin/main"
+            ]
+            .join(&FIELD_SEP.to_string())
+        );
+        let entries = parse_history(&record).unwrap();
+        assert_eq!(entries[0].tags, vec!["main", "v1.0.0", "origin/main"]);
+    }
+
+    #[test]
+    fn parse_history_malformed_record_is_an_error_not_invented_data() {
+        // Only 3 fields instead of 7 — must error, not silently fabricate a
+        // commit with empty remaining fields.
+        let record = format!(
+            "{}{RECORD_SEP}",
+            ["a", "b", "c"].join(&FIELD_SEP.to_string())
+        );
+        assert!(parse_history(&record).is_err());
+    }
+
+    #[test]
+    fn history_returns_bounded_entries_newest_first() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "two").unwrap();
+        git(&root, &["add", "a.txt"]);
+        git(&root, &["commit", "-q", "-m", "second"]);
+        let repo = open_repo(&root).unwrap();
+        let entries = history(&repo, 10).unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].subject, "second");
+        assert_eq!(entries[1].subject, "init");
+        assert!(entries[0].tags.iter().any(|t| t == "main"));
+    }
+
+    #[test]
+    fn history_limit_bounds_entry_count() {
+        let (_td, root) = repo_with_base_commit();
+        for i in 0..5 {
+            std::fs::write(root.join("a.txt"), format!("v{i}")).unwrap();
+            git(&root, &["add", "a.txt"]);
+            git(&root, &["commit", "-q", "-m", &format!("commit {i}")]);
+        }
+        let repo = open_repo(&root).unwrap();
+        let entries = history(&repo, 3).unwrap();
+        assert_eq!(entries.len(), 3);
+    }
+
+    #[test]
+    fn history_subject_with_comma_and_colon_round_trips() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "two").unwrap();
+        git(&root, &["add", "a.txt"]);
+        git(
+            &root,
+            &["commit", "-q", "-m", "fix: handle a, b, and c: done"],
+        );
+        let repo = open_repo(&root).unwrap();
+        let entries = history(&repo, 10).unwrap();
+        assert_eq!(entries[0].subject, "fix: handle a, b, and c: done");
+    }
+
+    #[test]
+    fn commit_detail_returns_file_stats() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("a.txt"), "one\ntwo\nthree").unwrap();
+        git(&root, &["add", "a.txt"]);
+        git(&root, &["commit", "-q", "-m", "grow a.txt"]);
+        let repo = open_repo(&root).unwrap();
+        let hash = git_output(&root, &["rev-parse", "HEAD"]);
+        let detail = commit_detail(&repo, &hash).unwrap();
+        assert_eq!(detail.entry.subject, "grow a.txt");
+        assert_eq!(detail.files.len(), 1);
+        assert_eq!(detail.files[0].path, "a.txt");
+        assert!(detail.files[0].additions.unwrap() >= 2);
+    }
+
+    #[test]
+    fn commit_detail_binary_file_reports_none_not_zero() {
+        let (_td, root) = repo_with_base_commit();
+        std::fs::write(root.join("bin.dat"), [0u8, 159, 146, 150]).unwrap();
+        git(&root, &["add", "bin.dat"]);
+        git(&root, &["commit", "-q", "-m", "add binary"]);
+        let repo = open_repo(&root).unwrap();
+        let hash = git_output(&root, &["rev-parse", "HEAD"]);
+        let detail = commit_detail(&repo, &hash).unwrap();
+        let bin_stat = detail.files.iter().find(|f| f.path == "bin.dat").unwrap();
+        assert_eq!(
+            bin_stat.additions, None,
+            "binary numstat '-' must parse to None, not 0"
+        );
+        assert_eq!(bin_stat.deletions, None);
+    }
+
+    #[test]
+    fn remotes_fetch_only() {
+        let (_td, root) = repo_with_base_commit();
+        git(
+            &root,
+            &["remote", "add", "ro", "https://example.invalid/ro.git"],
+        );
+        let repo = open_repo(&root).unwrap();
+        let list = remotes(&repo).unwrap();
+        let r = list.iter().find(|r| r.name == "ro").unwrap();
+        assert_eq!(
+            r.fetch_url.as_deref(),
+            Some("https://example.invalid/ro.git")
+        );
+        assert_eq!(
+            r.push_url.as_deref(),
+            Some("https://example.invalid/ro.git")
+        );
+    }
+
+    #[test]
+    fn remotes_fetch_and_push_urls_deduped_into_one_entry() {
+        let (_td, root) = repo_with_base_commit();
+        git(
+            &root,
+            &[
+                "remote",
+                "add",
+                "origin",
+                "https://example.invalid/fetch.git",
+            ],
+        );
+        git(
+            &root,
+            &[
+                "remote",
+                "set-url",
+                "--push",
+                "origin",
+                "https://example.invalid/push.git",
+            ],
+        );
+        let repo = open_repo(&root).unwrap();
+        let list = remotes(&repo).unwrap();
+        assert_eq!(list.len(), 1, "one remote name, not two rows");
+        assert_eq!(
+            list[0].fetch_url.as_deref(),
+            Some("https://example.invalid/fetch.git")
+        );
+        assert_eq!(
+            list[0].push_url.as_deref(),
+            Some("https://example.invalid/push.git")
+        );
+    }
+
+    #[test]
+    fn remotes_empty_when_none_configured() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        assert_eq!(remotes(&repo).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn fetch_from_bare_remote() {
+        let td = tempdir().unwrap();
+        let base = std::fs::canonicalize(td.path()).unwrap();
+        let bare = base.join("bare.git");
+        git(&base, &["init", "--bare", "-q", "bare.git"]);
+        let seed = base.join("seed");
+        std::fs::create_dir(&seed).unwrap();
+        init_repo(&seed);
+        std::fs::write(seed.join("a.txt"), "one").unwrap();
+        git(&seed, &["add", "a.txt"]);
+        git(&seed, &["commit", "-q", "-m", "init"]);
+        git(
+            &seed,
+            &["push", "-q", bare.to_str().unwrap(), "HEAD:refs/heads/main"],
+        );
+
+        let workdir = base.join("workdir");
+        std::fs::create_dir(&workdir).unwrap();
+        init_repo(&workdir);
+        std::fs::write(workdir.join("z.txt"), "z").unwrap();
+        git(&workdir, &["add", "z.txt"]);
+        git(&workdir, &["commit", "-q", "-m", "unrelated"]);
+        git(
+            &workdir,
+            &["remote", "add", "origin", bare.to_str().unwrap()],
+        );
+
+        let repo = open_repo(&workdir).unwrap();
+        fetch(&repo, "origin").unwrap();
+        let refs = git_output(&workdir, &["branch", "-r"]);
+        assert!(
+            refs.contains("origin/main"),
+            "fetch should create origin/main ref: {refs}"
+        );
+    }
+
+    #[test]
+    fn add_remote_creates_it_with_fetch_and_push_url() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        add_remote(&repo, "added", "https://example.invalid/added.git").unwrap();
+        let list = remotes(&repo).unwrap();
+        let r = list.iter().find(|r| r.name == "added").unwrap();
+        assert_eq!(
+            r.fetch_url.as_deref(),
+            Some("https://example.invalid/added.git")
+        );
+        assert_eq!(
+            r.push_url.as_deref(),
+            Some("https://example.invalid/added.git")
+        );
+    }
+
+    #[test]
+    fn delete_remote_removes_it() {
+        let (_td, root) = repo_with_base_commit();
+        git(
+            &root,
+            &["remote", "add", "gone", "https://example.invalid/gone.git"],
+        );
+        let repo = open_repo(&root).unwrap();
+        assert_eq!(remotes(&repo).unwrap().len(), 1);
+        delete_remote(&repo, "gone").unwrap();
+        assert_eq!(remotes(&repo).unwrap(), Vec::new());
+    }
+
+    #[test]
+    fn commit_amend_replaces_message_keeps_parent_count() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        let before = history(&repo, 1).unwrap();
+        assert_eq!(before[0].parent_hashes.len(), 0);
+
+        commit_amend(&repo, "amended message").unwrap();
+
+        let after = history(&repo, 2).unwrap();
+        assert_eq!(after.len(), 1, "amend replaces HEAD, does not add a commit");
+        assert_eq!(after[0].subject, "amended message");
+        assert_eq!(
+            after[0].parent_hashes.len(),
+            0,
+            "amend must keep the original commit's parents, not add HEAD as a parent"
+        );
+    }
+
+    #[test]
+    fn commit_amend_empty_message_keeps_original_message() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        std::fs::write(root.join("a.txt"), "two").unwrap();
+        stage_path(&repo, "a.txt").unwrap();
+
+        commit_amend(&repo, "").unwrap();
+
+        let after = history(&repo, 1).unwrap();
+        assert_eq!(
+            after[0].subject, "init",
+            "empty message must preserve the original"
+        );
+    }
+
+    #[test]
+    fn commit_amend_folds_in_newly_staged_changes() {
+        let (_td, root) = repo_with_base_commit();
+        let repo = open_repo(&root).unwrap();
+        std::fs::write(root.join("b.txt"), "new file").unwrap();
+        stage_path(&repo, "b.txt").unwrap();
+
+        commit_amend(&repo, "").unwrap();
+
+        let files = git_output(&root, &["show", "--stat", "--format=", "HEAD"]);
+        assert!(
+            files.contains("b.txt"),
+            "amend must fold in staged b.txt: {files}"
+        );
     }
 }

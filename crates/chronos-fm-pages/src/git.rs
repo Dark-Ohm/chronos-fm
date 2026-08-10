@@ -10,12 +10,14 @@
 //! foreground-poll pattern as `config.toml` hot reload in `root.rs`.
 
 use crate::explorer::ExplorerPage;
-use chronos_fm_services::git::{self, GitError, RepoStatus, StashEntry};
 use chronos_fm_services::git::watcher::GitWatcher;
+use chronos_fm_services::git::{
+    self, CommitDetail, CommitEntry, GitError, RemoteEntry, RepoStatus, StashEntry,
+};
 use chronos_fm_ui::patterns::{elevated_card, section_header};
 use chronos_fm_ui::theme::theme;
-use gpui::*;
 use gpui::prelude::*;
+use gpui::*;
 use gpui_component::input::Input;
 use gpui_component::input::InputState;
 use std::path::PathBuf;
@@ -38,11 +40,7 @@ fn resolve_follow_dir(
 /// Whether the refresh loop should trigger a reload: either a git-content
 /// change signal arrived (`changed`), or the follow-mode directory moved —
 /// which is how the panel tracks explorer navigation (T017).
-fn should_refresh(
-    changed: bool,
-    follow_dir: Option<&PathBuf>,
-    last_dir: Option<&PathBuf>,
-) -> bool {
+fn should_refresh(changed: bool, follow_dir: Option<&PathBuf>, last_dir: Option<&PathBuf>) -> bool {
     changed || follow_dir != last_dir
 }
 
@@ -54,6 +52,38 @@ struct DiffSelection {
     staged: bool,
     text: String,
 }
+
+/// Which of the Git tab's five sub-views is active (T038, mirrors the
+/// mockup's `changes | history | branches | stashes | remotes` sidebar nav).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum GitView {
+    /// Staged/unstaged/untracked file groups + commit/amend box + diff pane.
+    #[default]
+    Changes,
+    /// Bounded commit log + selected-commit detail.
+    History,
+    /// Local branch list/create/checkout.
+    Branches,
+    /// Stash push/pop/apply/drop.
+    Stashes,
+    /// Configured remotes + fetch/push/delete + Add Remote form.
+    Remotes,
+}
+
+impl GitView {
+    fn label(self) -> &'static str {
+        match self {
+            GitView::Changes => "Changes",
+            GitView::History => "History",
+            GitView::Branches => "Branches",
+            GitView::Stashes => "Stashes",
+            GitView::Remotes => "Remotes",
+        }
+    }
+}
+
+/// How many commits `history` bounds a single `git log` read to (T038).
+const HISTORY_LIMIT: usize = 50;
 
 /// The live Git status panel.
 pub struct GitPage {
@@ -89,6 +119,26 @@ pub struct GitPage {
     /// stale read cannot overwrite newer state after rapid follow-mode
     /// navigation (T017).
     refresh_generation: u64,
+
+    // --- T038: sub-navigation + History/Remotes/amend ----------------------
+    /// Active sub-view (Changes/History/Branches/Stashes/Remotes).
+    view: GitView,
+    /// Bounded commit history, refreshed alongside status.
+    history: Vec<CommitEntry>,
+    /// Full hash of the commit selected in History, if any.
+    selected_commit: Option<String>,
+    /// Detail (metadata + per-file stats) for `selected_commit`, loaded
+    /// on-demand when a commit row is clicked.
+    commit_detail: Option<CommitDetail>,
+    /// Configured remotes, refreshed alongside status.
+    remotes: Vec<RemoteEntry>,
+    /// Whether the commit box is in Amend mode (Changes view segmented
+    /// control).
+    amend: bool,
+    /// Add Remote form: name field.
+    remote_name_input: Entity<InputState>,
+    /// Add Remote form: URL field.
+    remote_url_input: Entity<InputState>,
 }
 
 impl GitPage {
@@ -111,9 +161,19 @@ impl GitPage {
             state
         });
 
-                let stash_input = cx.new(|cx| {
+        let stash_input = cx.new(|cx| {
             let mut state = InputState::new(window, cx);
             state.set_placeholder("Stash message", window, cx);
+            state
+        });
+        let remote_name_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_placeholder("name (e.g. upstream)", window, cx);
+            state
+        });
+        let remote_url_input = cx.new(|cx| {
+            let mut state = InputState::new(window, cx);
+            state.set_placeholder("url", window, cx);
             state
         });
 
@@ -139,6 +199,14 @@ impl GitPage {
             refresh_tx: Some(refresh_tx),
             last_dir: None,
             refresh_generation: 0,
+            view: GitView::default(),
+            history: Vec::new(),
+            selected_commit: None,
+            commit_detail: None,
+            remotes: Vec::new(),
+            amend: false,
+            remote_name_input,
+            remote_url_input,
         };
         page.start_refresh_loop(window, rx, cx);
         page
@@ -181,7 +249,14 @@ impl GitPage {
                         let status = git::status(&repo)?;
                         let branches = git::list_branches(&repo).unwrap_or_default();
                         let stashes = git::stash_list(&repo).unwrap_or_default();
-                        Ok::<_, GitError>((status, branches, stashes))
+                        // T038: History and Remotes are read best-effort — a
+                        // repo with no commits (empty history) or no
+                        // configured remotes is not an error, matches
+                        // `unwrap_or_default()` already used for
+                        // branches/stashes above.
+                        let history = git::history(&repo, HISTORY_LIMIT).unwrap_or_default();
+                        let remotes = git::remotes(&repo).unwrap_or_default();
+                        Ok::<_, GitError>((status, branches, stashes, history, remotes))
                     })
                     .await;
                 this.update(&mut cx, |page, cx| {
@@ -193,11 +268,24 @@ impl GitPage {
                     }
                     page.refreshing = false;
                     match result {
-                        Ok((status, branches, stashes)) => {
+                        Ok((status, branches, stashes, history, remotes)) => {
                             page.recreate_watcher(&status.git_dir);
                             page.status = Some(status);
                             page.branches = branches;
                             page.stashes = stashes;
+                            // Keep the selected commit's detail in sync (a
+                            // refresh can happen while History is open); drop
+                            // the selection if that commit no longer exists
+                            // in the bounded window instead of showing stale
+                            // detail for a hash that scrolled out.
+                            if let Some(hash) = &page.selected_commit {
+                                if !history.iter().any(|c| &c.full_hash == hash) {
+                                    page.selected_commit = None;
+                                    page.commit_detail = None;
+                                }
+                            }
+                            page.history = history;
+                            page.remotes = remotes;
                             page.no_repo = false;
                             page.error = None;
                         }
@@ -205,6 +293,10 @@ impl GitPage {
                             page.status = None;
                             page.branches.clear();
                             page.selected_diff = None;
+                            page.history.clear();
+                            page.remotes.clear();
+                            page.selected_commit = None;
+                            page.commit_detail = None;
                             page.no_repo = true;
                             page.error = None;
                             page._watcher = None;
@@ -293,73 +385,108 @@ impl GitPage {
         let dir = self.current_dir(cx);
         let path = path.to_string();
         let err_path = path.clone();
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::stage_path(&repo, &path).map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    if let Err(msg) = result {
-                        page.error = Some(format!("stage {err_path}: {msg}"));
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::stage_path(&repo, &path).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        if let Err(msg) = result {
+                            page.error = Some(format!("stage {err_path}: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn unstage(&mut self, path: &str, window: &mut Window, cx: &mut Context<Self>) {
         let dir = self.current_dir(cx);
         let path = path.to_string();
         let err_path = path.clone();
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::unstage_path(&repo, &path).map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    if let Err(msg) = result {
-                        page.error = Some(format!("unstage {err_path}: {msg}"));
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::unstage_path(&repo, &path).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        if let Err(msg) = result {
+                            page.error = Some(format!("unstage {err_path}: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn commit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let dir = self.current_dir(cx);
         let message = self.message_input.read(cx).text().to_string();
-        if message.trim().is_empty() {
+        let amend = self.amend;
+        // T038: an empty message is only valid for Amend (keeps the original
+        // commit's message unchanged) — a plain commit always needs a
+        // subject line.
+        if message.trim().is_empty() && !amend {
             self.error = Some("commit message is empty".to_string());
             cx.notify();
             return;
         }
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::commit(&repo, &message).map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    if let Err(msg) = result {
-                        page.error = Some(format!("commit: {msg}"));
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            if amend {
+                                git::commit_amend(&repo, &message).map_err(|e| e.to_string())
+                            } else {
+                                git::commit(&repo, &message).map_err(|e| e.to_string())
+                            }
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, window, cx| {
+                        if let Err(msg) = result {
+                            page.error =
+                                Some(format!("{}: {msg}", if amend { "amend" } else { "commit" }));
+                        } else {
+                            page.message_input.update(cx, |input, cx| {
+                                input.set_value("", window, cx);
+                            });
+                            page.amend = false;
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn toggle_pin(&mut self, cx: &mut Context<Self>) {
@@ -378,28 +505,31 @@ impl GitPage {
         let dir = self.current_dir(cx);
         let name = name.to_string();
         let err_name = name.clone();
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::checkout_branch(&repo, &name).map_err(|e| e.to_string())
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::checkout_branch(&repo, &name).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        if let Err(msg) = result {
+                            page.error = Some(format!("checkout {err_name}: {msg}"));
+                        } else {
+                            page.selected_diff = None;
+                        }
+                        page.refresh(cx);
                     })
-                    .await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    if let Err(msg) = result {
-                        page.error = Some(format!("checkout {err_name}: {msg}"));
-                    } else {
-                        page.selected_diff = None;
-                    }
-                    page.refresh(cx);
-                })
-                .ok();
-            }
-        })
+                    .ok();
+                }
+            },
+        )
         .detach();
     }
 
@@ -412,32 +542,35 @@ impl GitPage {
             return;
         }
         let err_name = name.clone();
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::create_branch(&repo, &name).map_err(|e| e.to_string())?;
-                        git::checkout_branch(&repo, &name).map_err(|e| e.to_string())
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::create_branch(&repo, &name).map_err(|e| e.to_string())?;
+                            git::checkout_branch(&repo, &name).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, window, cx| {
+                        if let Err(msg) = result {
+                            page.error = Some(format!("create branch {err_name}: {msg}"));
+                        } else {
+                            page.branch_input.update(cx, |input, cx| {
+                                input.set_value("", window, cx);
+                            });
+                            page.selected_diff = None;
+                        }
+                        page.refresh(cx);
                     })
-                    .await;
-                this.update_in(&mut cx, |page, window, cx| {
-                    if let Err(msg) = result {
-                        page.error = Some(format!("create branch {err_name}: {msg}"));
-                    } else {
-                        page.branch_input.update(cx, |input, cx| {
-                            input.set_value("", window, cx);
-                        });
-                        page.selected_diff = None;
-                    }
-                    page.refresh(cx);
-                })
-                .ok();
-            }
-        })
+                    .ok();
+                }
+            },
+        )
         .detach();
     }
 
@@ -445,36 +578,220 @@ impl GitPage {
         let dir = self.current_dir(cx);
         let path = path.to_string();
         let err_path = path.clone();
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx
-                    .background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::unified_diff(&repo, &path, staged).map_err(|e| e.to_string())
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::unified_diff(&repo, &path, staged).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        match result {
+                            Ok(text) => {
+                                page.selected_diff = Some(DiffSelection {
+                                    path: err_path,
+                                    staged,
+                                    text,
+                                });
+                                page.error = None;
+                            }
+                            Err(msg) => {
+                                page.error = Some(format!("diff {err_path}: {msg}"));
+                            }
+                        }
+                        cx.notify();
                     })
-                    .await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    match result {
-                        Ok(text) => {
-                            page.selected_diff = Some(DiffSelection {
-                                path: err_path,
-                                staged,
-                                text,
+                    .ok();
+                }
+            },
+        )
+        .detach();
+    }
+
+    // --- T038: sub-nav, History, Remotes, amend -----------------------------
+
+    fn select_view(&mut self, view: GitView, cx: &mut Context<Self>) {
+        self.view = view;
+        cx.notify();
+    }
+
+    fn toggle_amend(&mut self, cx: &mut Context<Self>) {
+        self.amend = !self.amend;
+        cx.notify();
+    }
+
+    /// Select a commit in History and load its detail (metadata + per-file
+    /// stats) on demand.
+    fn select_commit(&mut self, hash: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.selected_commit = Some(hash.to_string());
+        self.commit_detail = None;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        let hash = hash.to_string();
+        let err_hash = hash.clone();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::commit_detail(&repo, &hash).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        // The user may have selected a different commit (or
+                        // navigated away) while this background read was in
+                        // flight; only apply it if it's still the active
+                        // selection.
+                        if page.selected_commit.as_deref() != Some(err_hash.as_str()) {
+                            return;
+                        }
+                        match result {
+                            Ok(detail) => {
+                                page.commit_detail = Some(detail);
+                                page.error = None;
+                            }
+                            Err(msg) => {
+                                page.error = Some(format!("commit detail {err_hash}: {msg}"));
+                            }
+                        }
+                        cx.notify();
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
+    }
+
+    fn remote_fetch(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        let name = name.to_string();
+        let err_name = name.clone();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::fetch(&repo, &name).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("fetch {err_name}: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
+    }
+
+    fn remote_delete(&mut self, name: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        let name = name.to_string();
+        let err_name = name.clone();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::delete_remote(&repo, &name).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("remote delete {err_name}: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
+    }
+
+    fn add_remote_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.busy {
+            return;
+        }
+        let name = self.remote_name_input.read(cx).text().to_string();
+        let url = self.remote_url_input.read(cx).text().to_string();
+        if name.trim().is_empty() || url.trim().is_empty() {
+            self.error = Some("remote name and url are both required".to_string());
+            cx.notify();
+            return;
+        }
+        self.busy = true;
+        cx.notify();
+        let dir = self.current_dir(cx);
+        let err_name = name.clone();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::add_remote(&repo, &name, &url).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("add remote {err_name}: {msg}"));
+                        } else {
+                            page.remote_name_input.update(cx, |input, cx| {
+                                input.set_value("", window, cx);
                             });
-                            page.error = None;
+                            page.remote_url_input.update(cx, |input, cx| {
+                                input.set_value("", window, cx);
+                            });
                         }
-                        Err(msg) => {
-                            page.error = Some(format!("diff {err_path}: {msg}"));
-                        }
-                    }
-                    cx.notify();
-                })
-                .ok();
-            }
-        })
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
         .detach();
     }
 }
@@ -497,133 +814,178 @@ impl GitPage {
     // --- Milestone C: push / pull / stash ---------------------------------
 
     fn push(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy { return; }                    // C6
+        if self.busy {
+            return;
+        } // C6
         self.busy = true;
         cx.notify();
         let dir = self.current_dir(cx);
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::push(&repo, "origin").map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    page.busy = false;
-                    if let Err(msg) = result {
-                        page.error = Some(format!("push: {msg}"));
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::push(&repo, "origin").map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("push: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn pull(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy { return; }                    // C6
+        if self.busy {
+            return;
+        } // C6
         self.busy = true;
         cx.notify();
         let dir = self.current_dir(cx);
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::pull(&repo, "origin").map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    page.busy = false;
-                    if let Err(msg) = result {
-                        page.error = Some(format!("pull: {msg}"));
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::pull(&repo, "origin").map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("pull: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn stash_push_action(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy { return; }
+        if self.busy {
+            return;
+        }
         self.busy = true;
         cx.notify();
         let dir = self.current_dir(cx);
         let message = self.stash_input.read(cx).text().to_string();
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::stash_push(&repo, &message).map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, window, cx| {
-                    page.busy = false;
-                    if let Err(msg) = result {
-                        page.error = Some(format!("stash: {msg}"));
-                    } else {
-                        page.stash_input.update(cx, |input, cx| {
-                            input.set_value("", window, cx);
-                        });
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::stash_push(&repo, &message).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("stash: {msg}"));
+                        } else {
+                            page.stash_input.update(cx, |input, cx| {
+                                input.set_value("", window, cx);
+                            });
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn stash_pop(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy { return; }
+        if self.busy {
+            return;
+        }
         self.busy = true;
         cx.notify();
         let dir = self.current_dir(cx);
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::stash_pop(&repo, index).map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    page.busy = false;
-                    if let Err(msg) = result {
-                        page.error = Some(format!("stash pop: {msg}"));
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::stash_pop(&repo, index).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("stash pop: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn stash_drop(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
-        if self.busy { return; }
+        if self.busy {
+            return;
+        }
         self.busy = true;
         cx.notify();
         let dir = self.current_dir(cx);
-        cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
-            let mut cx = cx.clone();
-            async move {
-                let result = cx.background_executor()
-                    .spawn(async move {
-                        let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
-                        let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
-                        git::stash_drop(&repo, index).map_err(|e| e.to_string())
-                    }).await;
-                this.update_in(&mut cx, |page, _window, cx| {
-                    page.busy = false;
-                    if let Err(msg) = result {
-                        page.error = Some(format!("stash drop: {msg}"));
-                    }
-                    page.refresh(cx);
-                }).ok();
-            }
-        }).detach();
+        cx.spawn_in(
+            window,
+            move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
+                let mut cx = cx.clone();
+                async move {
+                    let result = cx
+                        .background_executor()
+                        .spawn(async move {
+                            let dir = dir.ok_or_else(|| "no repo dir".to_string())?;
+                            let repo = git::open_repo(&dir).map_err(|e| e.to_string())?;
+                            git::stash_drop(&repo, index).map_err(|e| e.to_string())
+                        })
+                        .await;
+                    this.update_in(&mut cx, |page, _window, cx| {
+                        page.busy = false;
+                        if let Err(msg) = result {
+                            page.error = Some(format!("stash drop: {msg}"));
+                        }
+                        page.refresh(cx);
+                    })
+                    .ok();
+                }
+            },
+        )
+        .detach();
     }
 
     fn render_body(&mut self, cx: &mut Context<Self>) -> impl IntoElement {
@@ -641,6 +1003,14 @@ impl GitPage {
         let branch_input = self.branch_input.clone();
         let stashes = self.stashes.clone();
         let stash_input = self.stash_input.clone();
+        let view = self.view;
+        let history = self.history.clone();
+        let remotes = self.remotes.clone();
+        let selected_commit = self.selected_commit.clone();
+        let commit_detail = self.commit_detail.clone();
+        let amend = self.amend;
+        let remote_name_input = self.remote_name_input.clone();
+        let remote_url_input = self.remote_url_input.clone();
 
         div()
             .size_full()
@@ -649,52 +1019,444 @@ impl GitPage {
             .gap(px(16.))
             .p(px(24.))
             .bg(theme::bg(cx))
-            .child(render_header(status.as_ref(), no_repo, error, refreshing, busy, cx))
+            .child(render_header(
+                status.as_ref(),
+                no_repo,
+                error,
+                refreshing,
+                busy,
+                cx,
+            ))
             .when_some(status.as_ref(), |el, s| {
-                el.child(render_branches(
-                    &branches,
-                    &current_branch,
-                    branch_input,
+                let staged_empty = s.staged.is_empty();
+                el.child(render_sub_nav(
+                    view,
+                    s.staged.len() + s.modified.len() + s.untracked.len(),
+                    history.len(),
+                    branches.len(),
+                    stashes.len(),
+                    remotes.len(),
                     cx,
                 ))
-                .child(render_stash_section(
-                    &stashes,
-                    stash_input,
-                    busy,
-                    cx,
-                ))
-                .child(render_file_section(
-                    "Staged",
-                    &s.staged,
-                    false,
-                    false,
-                    theme::accent(cx),
-                    cx,
-                ))
-                .child(render_file_section(
-                    "Modified",
-                    &s.modified,
-                    true,
-                    false,
-                    theme::muted(cx),
-                    cx,
-                ))
-                .child(render_file_section(
-                    "Untracked",
-                    &s.untracked,
-                    true,
-                    false,
-                    theme::fg_secondary(cx),
-                    cx,
-                ))
-                .child(render_commit_bar(
-                    self.message_input.clone(),
-                    s.staged.is_empty(),
-                    cx,
-                ))
-                .when_some(selected_diff.as_ref(), |el, d| el.child(render_diff_panel(d, cx)))
+                .child(match view {
+                    GitView::Changes => {
+                        changes_view(self, s, selected_diff.as_ref(), staged_empty, amend, cx)
+                            .into_any_element()
+                    }
+                    GitView::History => history_view(
+                        &history,
+                        selected_commit.as_deref(),
+                        commit_detail.as_ref(),
+                        cx,
+                    )
+                    .into_any_element(),
+                    GitView::Branches => {
+                        render_branches(&branches, &current_branch, branch_input, cx)
+                            .into_any_element()
+                    }
+                    GitView::Stashes => {
+                        render_stash_section(&stashes, stash_input, busy, cx).into_any_element()
+                    }
+                    GitView::Remotes => {
+                        remotes_view(&remotes, remote_name_input, remote_url_input, busy, cx)
+                            .into_any_element()
+                    }
+                })
             })
     }
+}
+
+/// Compact sub-navigation strip: one chip per [`GitView`], each with an
+/// honest count badge derived from already-loaded data (T038 — mirrors the
+/// mockup's sidebar nav, as a horizontal strip rather than a left column;
+/// see T038 report for the deviation).
+#[allow(clippy::too_many_arguments)]
+fn render_sub_nav(
+    active: GitView,
+    changes_count: usize,
+    history_count: usize,
+    branches_count: usize,
+    stashes_count: usize,
+    remotes_count: usize,
+    cx: &mut Context<GitPage>,
+) -> impl IntoElement {
+    let items = [
+        (GitView::Changes, changes_count),
+        (GitView::History, history_count),
+        (GitView::Branches, branches_count),
+        (GitView::Stashes, stashes_count),
+        (GitView::Remotes, remotes_count),
+    ];
+    div()
+        .flex()
+        .items_center()
+        .gap(px(4.))
+        .p(px(4.))
+        .rounded(px(10.))
+        .bg(theme::bg_secondary(cx))
+        .border_1()
+        .border_color(theme::border(cx))
+        .children(items.into_iter().map(|(view, count)| {
+            let is_active = view == active;
+            div()
+                .cursor_pointer()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .px(px(12.))
+                .py(px(6.))
+                .rounded(px(7.))
+                .text_sm()
+                .when(is_active, |this| {
+                    this.bg(theme::accent(cx))
+                        .text_color(theme::bg(cx))
+                        .font_weight(gpui::FontWeight::BOLD)
+                })
+                .when(!is_active, |this| {
+                    this.text_color(theme::fg_secondary(cx))
+                        .hover(|this| this.bg(theme::bg_hover(cx)))
+                })
+                .on_mouse_down(
+                    MouseButton::Left,
+                    cx.listener(move |this, _ev, _window, cx| {
+                        this.select_view(view, cx);
+                    }),
+                )
+                .child(view.label())
+                .when(count > 0, |this| {
+                    this.child(
+                        div()
+                            .px(px(6.))
+                            .rounded(px(999.))
+                            .text_xs()
+                            .when(is_active, |b| {
+                                b.bg(theme::bg(cx)).text_color(theme::accent(cx))
+                            })
+                            .when(!is_active, |b| {
+                                b.bg(theme::border(cx)).text_color(theme::fg_secondary(cx))
+                            })
+                            .child(count.to_string()),
+                    )
+                })
+        }))
+}
+
+/// Changes view: file sections + commit/amend box + diff pane (T038 §3 —
+/// the segmented Commit/Amend control replaces the plain commit bar).
+fn changes_view(
+    page: &GitPage,
+    s: &RepoStatus,
+    selected_diff: Option<&DiffSelection>,
+    staged_empty: bool,
+    amend: bool,
+    cx: &mut Context<GitPage>,
+) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(16.))
+        .child(render_file_section(
+            "Staged",
+            &s.staged,
+            false,
+            false,
+            theme::accent(cx),
+            cx,
+        ))
+        .child(render_file_section(
+            "Modified",
+            &s.modified,
+            true,
+            false,
+            theme::muted(cx),
+            cx,
+        ))
+        .child(render_file_section(
+            "Untracked",
+            &s.untracked,
+            true,
+            false,
+            theme::fg_secondary(cx),
+            cx,
+        ))
+        .child(render_commit_bar(
+            page.message_input.clone(),
+            staged_empty,
+            amend,
+            cx,
+        ))
+        .when_some(selected_diff, |el, d| el.child(render_diff_panel(d, cx)))
+}
+
+/// History view: bounded commit list + selected-commit detail (T038).
+fn history_view(
+    history: &[CommitEntry],
+    selected: Option<&str>,
+    detail: Option<&CommitDetail>,
+    cx: &mut Context<GitPage>,
+) -> impl IntoElement {
+    if history.is_empty() {
+        return elevated_card(cx)
+            .child(section_header(cx, "History", "no commits yet"))
+            .into_any_element();
+    }
+    elevated_card(cx)
+        .child(section_header(
+            cx,
+            "History",
+            &format!("{} commits", history.len()),
+        ))
+        .child(
+            div()
+                .id("git-history-scroll")
+                .mt(px(6.))
+                .max_h(px(260.))
+                .overflow_scroll()
+                .border_1()
+                .border_color(theme::border(cx))
+                .rounded(px(8.))
+                .children(history.iter().map(|c| {
+                    let is_sel = selected == Some(c.full_hash.as_str());
+                    let hash = c.full_hash.clone();
+                    div()
+                        .cursor_pointer()
+                        .flex()
+                        .flex_col()
+                        .px(px(12.))
+                        .py(px(6.))
+                        .border_b_1()
+                        .border_color(theme::border(cx))
+                        .when(is_sel, |this| this.bg(theme::bg_hover(cx)))
+                        .hover(|this| this.bg(theme::bg_hover(cx)))
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _ev, window, cx| {
+                                this.select_commit(&hash, window, cx);
+                            }),
+                        )
+                        .child(
+                            div()
+                                .text_sm()
+                                .text_color(theme::fg(cx))
+                                .child(c.subject.clone()),
+                        )
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(8.))
+                                .text_xs()
+                                .text_color(theme::muted(cx))
+                                .child(div().font_family("monospace").child(c.hash.clone()))
+                                .child(c.author.clone())
+                                .child(format!("· {}", c.relative_date))
+                                .children(c.tags.iter().map(|t| {
+                                    div()
+                                        .px(px(6.))
+                                        .rounded(px(4.))
+                                        .bg(theme::accent_light(cx))
+                                        .text_color(theme::accent(cx))
+                                        .child(t.clone())
+                                })),
+                        )
+                })),
+        )
+        .child(
+            div().mt(px(10.)).child(match detail {
+                Some(d) => render_commit_detail(d, cx).into_any_element(),
+                None if selected.is_some() => div()
+                    .text_sm()
+                    .text_color(theme::muted(cx))
+                    .child("Loading…")
+                    .into_any_element(),
+                None => div()
+                    .text_sm()
+                    .text_color(theme::fg_secondary(cx))
+                    .child("Select a commit")
+                    .into_any_element(),
+            }),
+        )
+        .into_any_element()
+}
+
+fn render_commit_detail(detail: &CommitDetail, cx: &mut Context<GitPage>) -> impl IntoElement {
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(6.))
+        .p(px(10.))
+        .rounded(px(8.))
+        .bg(theme::bg_secondary(cx))
+        .border_1()
+        .border_color(theme::border(cx))
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .child(
+                    div()
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .child(detail.entry.subject.clone()),
+                )
+                .child(
+                    div()
+                        .font_family("monospace")
+                        .text_xs()
+                        .text_color(theme::muted(cx))
+                        .child(detail.entry.hash.clone()),
+                ),
+        )
+        .children(detail.files.iter().map(|f| {
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
+                .text_xs()
+                .child(
+                    div()
+                        .font_family("monospace")
+                        .text_color(theme::fg(cx))
+                        .child(f.path.clone()),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(6.))
+                        // Binary files honestly show no +/- count (T038: additions/deletions parse to None, never 0).
+                        .child(
+                            div()
+                                .text_color(theme::accent(cx))
+                                .child(match f.additions {
+                                    Some(n) => format!("+{n}"),
+                                    None => "binary".to_string(),
+                                }),
+                        )
+                        .when_some(f.deletions, |el, n| {
+                            el.child(div().text_color(theme::danger(cx)).child(format!("−{n}")))
+                        }),
+                )
+        }))
+}
+
+/// Remotes view: remote cards + Add Remote form (T038).
+fn remotes_view(
+    remotes: &[RemoteEntry],
+    remote_name_input: Entity<InputState>,
+    remote_url_input: Entity<InputState>,
+    busy: bool,
+    cx: &mut Context<GitPage>,
+) -> impl IntoElement {
+    elevated_card(cx)
+        .child(section_header(
+            cx,
+            "Remotes",
+            &format!("{} configured", remotes.len()),
+        ))
+        .when(remotes.is_empty(), |el| {
+            el.child(
+                div()
+                    .mt(px(6.))
+                    .text_sm()
+                    .text_color(theme::fg_secondary(cx))
+                    .child("No remotes configured"),
+            )
+        })
+        .children(remotes.iter().map(|r| {
+            let name = r.name.clone();
+            let name_for_fetch = name.clone();
+            div()
+                .mt(px(6.))
+                .flex()
+                .items_center()
+                .justify_between()
+                .p(px(10.))
+                .rounded(px(8.))
+                .border_1()
+                .border_color(theme::border(cx))
+                .child(
+                    div()
+                        .flex()
+                        .flex_col()
+                        .child(
+                            div()
+                                .flex()
+                                .items_center()
+                                .gap(px(6.))
+                                .text_sm()
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .child(r.name.clone())
+                                .when(r.fetch_url.is_some(), |el| {
+                                    el.child(
+                                        div()
+                                            .px(px(6.))
+                                            .rounded(px(4.))
+                                            .text_xs()
+                                            .bg(theme::accent_light(cx))
+                                            .text_color(theme::accent(cx))
+                                            .child("fetch"),
+                                    )
+                                })
+                                .when(r.push_url.is_some(), |el| {
+                                    el.child(
+                                        div()
+                                            .px(px(6.))
+                                            .rounded(px(4.))
+                                            .text_xs()
+                                            .bg(theme::accent_light(cx))
+                                            .text_color(theme::accent(cx))
+                                            .child("push"),
+                                    )
+                                }),
+                        )
+                        .child(
+                            div()
+                                .font_family("monospace")
+                                .text_xs()
+                                .text_color(theme::muted(cx))
+                                .child(r.fetch_url.clone().unwrap_or_default()),
+                        ),
+                )
+                .child(
+                    div()
+                        .flex()
+                        .gap(px(6.))
+                        .child(render_action_button(
+                            "Fetch",
+                            busy,
+                            cx,
+                            move |this, _ev, window, cx| {
+                                this.remote_fetch(&name_for_fetch, window, cx);
+                            },
+                        ))
+                        .child(render_action_button(
+                            "Delete",
+                            busy,
+                            cx,
+                            move |this, _ev, window, cx| {
+                                this.remote_delete(&name, window, cx);
+                            },
+                        )),
+                )
+        }))
+        .child(
+            div()
+                .mt(px(10.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(div().flex_1().child(Input::new(&remote_name_input)))
+                .child(div().flex_1().child(Input::new(&remote_url_input)))
+                .child(render_action_button(
+                    "Add remote",
+                    busy,
+                    cx,
+                    |this, _ev, window, cx| {
+                        this.add_remote_action(window, cx);
+                    },
+                )),
+        )
 }
 
 // --- sub-renders -----------------------------------------------------------
@@ -709,29 +1471,67 @@ fn render_header(
 ) -> impl IntoElement {
     elevated_card(cx)
         .child(
-            div().flex().items_center().justify_between()
+            div()
+                .flex()
+                .items_center()
+                .justify_between()
                 .child(if no_repo || (status.is_none() && !refreshing) {
-                    div().text_color(theme::fg_secondary(cx)).text_sm().child("Not a git repository")
+                    div()
+                        .text_color(theme::fg_secondary(cx))
+                        .text_sm()
+                        .child("Not a git repository")
                 } else if let Some(s) = status {
-                    div().flex().items_center().gap(px(8.)).text_sm()
-                        .child(div().text_color(theme::muted(cx)).child(format!("{} ", s.workdir.display())))
-                        .child(div().text_color(theme::accent(cx)).font_weight(gpui::FontWeight::BOLD).child(format!("⏵ {}", s.branch)))
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .text_sm()
+                        .child(
+                            div()
+                                .text_color(theme::muted(cx))
+                                .child(format!("{} ", s.workdir.display())),
+                        )
+                        .child(
+                            div()
+                                .text_color(theme::accent(cx))
+                                .font_weight(gpui::FontWeight::BOLD)
+                                .child(format!("⏵ {}", s.branch)),
+                        )
                 } else {
-                    div().text_color(theme::muted(cx)).text_sm().child("Loading…")
+                    div()
+                        .text_color(theme::muted(cx))
+                        .text_sm()
+                        .child("Loading…")
                 })
                 .child(
-                    div().flex().items_center().gap(px(8.))
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
                         .child(refresh_button(refreshing, cx))
                         .child(pin_button(cx)),
                 )
                 .child(
-                    div().flex().items_center().gap(px(8.))
-                        .child(render_action_button("Pull", busy, cx, |this, _ev, window, cx| {
-                            this.pull(window, cx);
-                        }))
-                        .child(render_action_button("Push", busy, cx, |this, _ev, window, cx| {
-                            this.push(window, cx);
-                        })),
+                    div()
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(render_action_button(
+                            "Pull",
+                            busy,
+                            cx,
+                            |this, _ev, window, cx| {
+                                this.pull(window, cx);
+                            },
+                        ))
+                        .child(render_action_button(
+                            "Push",
+                            busy,
+                            cx,
+                            |this, _ev, window, cx| {
+                                this.push(window, cx);
+                            },
+                        )),
                 ),
         )
         .when_some(error, |el, error| {
@@ -742,27 +1542,39 @@ fn render_header(
 fn refresh_button(refreshing: bool, cx: &mut Context<GitPage>) -> impl IntoElement {
     div()
         .cursor_pointer()
-        .px(px(10.)).py(px(4.)).rounded(px(6.))
+        .px(px(10.))
+        .py(px(4.))
+        .rounded(px(6.))
         .bg(theme::bg_hover(cx))
-        .text_sm().text_color(theme::fg(cx))
+        .text_sm()
+        .text_color(theme::fg(cx))
         .when(refreshing, |this| this.opacity(0.5))
         .hover(|this| this.bg(theme::bg(cx)))
-        .on_mouse_down(MouseButton::Left, cx.listener(|this, _ev, _window, cx| {
-            this.refresh(cx);
-        }))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _ev, _window, cx| {
+                this.refresh(cx);
+            }),
+        )
         .child("↻ Refresh")
 }
 
 fn pin_button(cx: &mut Context<GitPage>) -> impl IntoElement {
     div()
         .cursor_pointer()
-        .px(px(10.)).py(px(4.)).rounded(px(6.))
+        .px(px(10.))
+        .py(px(4.))
+        .rounded(px(6.))
         .bg(theme::bg_hover(cx))
-        .text_sm().text_color(theme::fg(cx))
+        .text_sm()
+        .text_color(theme::fg(cx))
         .hover(|this| this.bg(theme::bg(cx)))
-        .on_mouse_down(MouseButton::Left, cx.listener(|this, _ev, _window, cx| {
-            this.toggle_pin(cx);
-        }))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(|this, _ev, _window, cx| {
+                this.toggle_pin(cx);
+            }),
+        )
         .child("📌 Pin")
 }
 
@@ -774,7 +1586,11 @@ fn render_branches(
 ) -> impl IntoElement {
     let current = current.to_string();
     elevated_card(cx)
-        .child(section_header(cx, "Branches", &format!("{} local", branches.len())))
+        .child(section_header(
+            cx,
+            "Branches",
+            &format!("{} local", branches.len()),
+        ))
         .child(
             div()
                 .mt(px(6.))
@@ -805,11 +1621,12 @@ fn render_branches(
                             cx.listener({
                                 let name = name.clone();
                                 move |this, _ev, window, cx| {
-                                    if name != this
-                                        .status
-                                        .as_ref()
-                                        .map(|s| s.branch.as_str())
-                                        .unwrap_or("")
+                                    if name
+                                        != this
+                                            .status
+                                            .as_ref()
+                                            .map(|s| s.branch.as_str())
+                                            .unwrap_or("")
                                     {
                                         this.checkout_branch(&name, window, cx);
                                     }
@@ -867,15 +1684,27 @@ fn render_file_section(
     // Staged section: show_stage=false (unstage button); diff uses staged=true.
     let diff_staged = !show_stage || staged_section;
     div()
-        .child(section_header(cx, label, &format!("{count} file{}", if count == 1 { "" } else { "s" })))
+        .child(section_header(
+            cx,
+            label,
+            &format!("{count} file{}", if count == 1 { "" } else { "s" }),
+        ))
         .child(
-            div().mt(px(4.)).border_1().border_color(theme::border(cx)).rounded(px(8.)).overflow_x_hidden()
+            div()
+                .mt(px(4.))
+                .border_1()
+                .border_color(theme::border(cx))
+                .rounded(px(8.))
+                .overflow_x_hidden()
                 .children(entries.iter().map(|entry| {
                     let path = entry.path.clone();
                     let path_for_diff = entry.path.clone();
                     div()
-                        .flex().items_center().justify_between()
-                        .px(px(12.)).py(px(6.))
+                        .flex()
+                        .items_center()
+                        .justify_between()
+                        .px(px(12.))
+                        .py(px(6.))
                         .hover(|this| this.bg(theme::bg_hover(cx)))
                         .child(
                             div()
@@ -897,20 +1726,27 @@ fn render_file_section(
                             div().flex().gap(px(6.)).child(
                                 div()
                                     .cursor_pointer()
-                                    .px(px(8.)).py(px(2.)).rounded(px(4.))
-                                    .text_xs().font_weight(gpui::FontWeight::MEDIUM)
-                                    .bg(theme::bg_hover(cx)).text_color(theme::fg(cx))
+                                    .px(px(8.))
+                                    .py(px(2.))
+                                    .rounded(px(4.))
+                                    .text_xs()
+                                    .font_weight(gpui::FontWeight::MEDIUM)
+                                    .bg(theme::bg_hover(cx))
+                                    .text_color(theme::fg(cx))
                                     .hover(|this| this.bg(theme::border(cx)))
-                                    .on_mouse_down(MouseButton::Left, cx.listener({
-                                        let path = path.clone();
-                                        move |this, _ev, window, cx| {
-                                            if show_stage {
-                                                this.stage(&path, window, cx);
-                                            } else {
-                                                this.unstage(&path, window, cx);
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener({
+                                            let path = path.clone();
+                                            move |this, _ev, window, cx| {
+                                                if show_stage {
+                                                    this.stage(&path, window, cx);
+                                                } else {
+                                                    this.unstage(&path, window, cx);
+                                                }
                                             }
-                                        }
-                                    }))
+                                        }),
+                                    )
                                     .child(if show_stage { "+ Stage" } else { "− Unstage" }),
                             ),
                         )
@@ -968,34 +1804,97 @@ fn render_diff_panel(diff: &DiffSelection, cx: &mut Context<GitPage>) -> impl In
 fn render_commit_bar(
     input: Entity<InputState>,
     staged_empty: bool,
+    amend: bool,
+    cx: &mut Context<GitPage>,
+) -> impl IntoElement {
+    // T038 §3: Amend can commit even with nothing staged (message-only
+    // amend); a plain commit still requires staged changes.
+    let can_commit = amend || !staged_empty;
+    div()
+        .flex()
+        .flex_col()
+        .gap(px(8.))
+        .p(px(12.))
+        .bg(theme::bg_secondary(cx))
+        .border_1()
+        .border_color(theme::border(cx))
+        .rounded(px(12.))
+        .shadow_md()
+        .child(
+            // Commit/Amend segmented control (mockup §Changes toolbar).
+            div()
+                .flex()
+                .gap(px(4.))
+                .p(px(2.))
+                .rounded(px(6.))
+                .bg(theme::bg(cx))
+                .child(commit_mode_option("Commit", !amend, false, cx))
+                .child(commit_mode_option("Amend", amend, true, cx)),
+        )
+        .child(
+            div()
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(div().flex_1().child(Input::new(&input)))
+                .child(
+                    div()
+                        .px(px(12.))
+                        .py(px(6.))
+                        .rounded(px(6.))
+                        .text_sm()
+                        .font_weight(gpui::FontWeight::BOLD)
+                        .when(!can_commit, |this| {
+                            this.bg(theme::border(cx))
+                                .text_color(theme::muted(cx))
+                                .opacity(0.6)
+                        })
+                        .when(can_commit, |this| {
+                            this.bg(theme::accent(cx))
+                                .text_color(theme::bg(cx))
+                                .hover(|this| this.bg(theme::accent_hover(cx)))
+                                .cursor_pointer()
+                        })
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(move |this, _ev, window, cx| {
+                                if can_commit {
+                                    this.commit(window, cx);
+                                }
+                            }),
+                        )
+                        .child(if amend { "Amend" } else { "Commit" }),
+                ),
+        )
+}
+
+fn commit_mode_option(
+    label: &'static str,
+    active: bool,
+    target_amend: bool,
     cx: &mut Context<GitPage>,
 ) -> impl IntoElement {
     div()
-        .flex().items_center().gap(px(8.))
-        .p(px(12.))
-        .bg(theme::bg_secondary(cx))
-        .border_1().border_color(theme::border(cx))
-        .rounded(px(12.)).shadow_md()
-        .child(div().flex_1().child(Input::new(&input)))
-        .child(
-            div()
-                .px(px(12.)).py(px(6.)).rounded(px(6.))
-                .text_sm().font_weight(gpui::FontWeight::BOLD)
-                .when(staged_empty, |this| {
-                    this.bg(theme::border(cx)).text_color(theme::muted(cx)).opacity(0.6)
-                })
-                .when(!staged_empty, |this| {
-                    this.bg(theme::accent(cx)).text_color(theme::bg(cx))
-                        .hover(|this| this.bg(theme::accent_hover(cx)))
-                        .cursor_pointer()
-                })
-                .on_mouse_down(MouseButton::Left, cx.listener(move |this, _ev, window, cx| {
-                    if !staged_empty {
-                        this.commit(window, cx);
-                    }
-                }))
-                .child("Commit"),
+        .cursor_pointer()
+        .px(px(10.))
+        .py(px(4.))
+        .rounded(px(5.))
+        .text_xs()
+        .when(active, |this| {
+            this.bg(theme::accent(cx))
+                .text_color(theme::bg(cx))
+                .font_weight(gpui::FontWeight::BOLD)
+        })
+        .when(!active, |this| this.text_color(theme::fg_secondary(cx)))
+        .on_mouse_down(
+            MouseButton::Left,
+            cx.listener(move |this, _ev, _window, cx| {
+                if this.amend != target_amend {
+                    this.toggle_amend(cx);
+                }
+            }),
         )
+        .child(label)
 }
 
 fn render_stash_section(
@@ -1005,32 +1904,67 @@ fn render_stash_section(
     cx: &mut Context<GitPage>,
 ) -> impl IntoElement {
     elevated_card(cx)
-        .child(section_header(cx, "Stash", &format!("{} entr{}", entries.len(),
-            if entries.len() == 1 { "y" } else { "ies" })))
+        .child(section_header(
+            cx,
+            "Stash",
+            &format!(
+                "{} entr{}",
+                entries.len(),
+                if entries.len() == 1 { "y" } else { "ies" }
+            ),
+        ))
         .children(entries.iter().map(|entry| {
             let index = entry.index;
-            let desc = format!("stash@{{{}}}: {} -- {}", entry.index, entry.branch, entry.message);
+            let desc = format!(
+                "stash@{{{}}}: {} -- {}",
+                entry.index, entry.branch, entry.message
+            );
             div()
-                .flex().items_center().justify_between()
-                .px(px(12.)).py(px(4.))
-                .text_sm().text_color(theme::fg(cx))
+                .flex()
+                .items_center()
+                .justify_between()
+                .px(px(12.))
+                .py(px(4.))
+                .text_sm()
+                .text_color(theme::fg(cx))
                 .child(div().truncate().child(desc))
                 .child(
-                    div().flex().gap(px(4.))
-                        .child(render_action_button("Pop", busy, cx, move |this, _ev, window, cx| {
-                            this.stash_pop(index, window, cx);
-                        }))
-                        .child(render_action_button("Drop", busy, cx, move |this, _ev, window, cx| {
-                            this.stash_drop(index, window, cx);
-                        })),
+                    div()
+                        .flex()
+                        .gap(px(4.))
+                        .child(render_action_button(
+                            "Pop",
+                            busy,
+                            cx,
+                            move |this, _ev, window, cx| {
+                                this.stash_pop(index, window, cx);
+                            },
+                        ))
+                        .child(render_action_button(
+                            "Drop",
+                            busy,
+                            cx,
+                            move |this, _ev, window, cx| {
+                                this.stash_drop(index, window, cx);
+                            },
+                        )),
                 )
         }))
         .child(
-            div().mt(px(8.)).flex().items_center().gap(px(8.))
+            div()
+                .mt(px(8.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
                 .child(div().flex_1().child(Input::new(&stash_input)))
-                .child(render_action_button("Stash push", busy, cx, |this, _ev, window, cx| {
-                    this.stash_push_action(window, cx);
-                })),
+                .child(render_action_button(
+                    "Stash push",
+                    busy,
+                    cx,
+                    |this, _ev, window, cx| {
+                        this.stash_push_action(window, cx);
+                    },
+                )),
         )
 }
 
@@ -1041,13 +1975,19 @@ fn render_action_button(
     f: impl Fn(&mut GitPage, &MouseDownEvent, &mut Window, &mut Context<GitPage>) + 'static,
 ) -> impl IntoElement {
     div()
-        .px(px(8.)).py(px(2.)).rounded(px(4.))
-        .text_xs().font_weight(gpui::FontWeight::MEDIUM)
+        .px(px(8.))
+        .py(px(2.))
+        .rounded(px(4.))
+        .text_xs()
+        .font_weight(gpui::FontWeight::MEDIUM)
         .when(busy, |this| {
-            this.bg(theme::border(cx)).text_color(theme::muted(cx)).opacity(0.6)
+            this.bg(theme::border(cx))
+                .text_color(theme::muted(cx))
+                .opacity(0.6)
         })
         .when(!busy, |this| {
-            this.bg(theme::bg_hover(cx)).text_color(theme::fg(cx))
+            this.bg(theme::bg_hover(cx))
+                .text_color(theme::fg(cx))
                 .hover(|this| this.bg(theme::border(cx)))
                 .cursor_pointer()
         })

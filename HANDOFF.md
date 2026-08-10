@@ -46,7 +46,8 @@ UNVERIFIED ≠ ACCEPT. Secrets (AWS keys) не в toml/report/grim.
 | ID | State | Note |
 |----|--------|------|
 | **T037** | **done ACCEPT** | Phase V shell; Places+list co-visible after T045 |
-| **T038–T041** | open (V not shipped) | Design APPROVED where noted (T038/T039 option C = Phase F); pixel-copy V first |
+| **T038** | **PARTIAL-ACCEPT** | Git service+page done; vision grims residual |
+| **T039–T041** | open (V not shipped) | pixel-copy / design |
 | **T042** | epic active | Pixel-copy program index |
 | **T043** | **done** | Places text: Source T014-A measure memo fix + resizable path |
 | **T044** | **done** | Listing was not in render tree (T043 bypass); restored under h_resizable |

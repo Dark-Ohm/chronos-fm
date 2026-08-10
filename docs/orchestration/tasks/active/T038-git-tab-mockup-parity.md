@@ -1,3 +1,12 @@
+# T038 — Phase V: Git tab smart pixel-copy / function
+
+> ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
+>
+> Service + page implemented (43 git service tests green). Horizontal sub-nav
+> deviation OK. **Live vision UNVERIFIED** (hypr focus dead) — residual.
+> Report: `report/T038-git-tab-mockup-parity-report.md`.
+
+
 [38;5;8m   1[0m [37m# T038 — Phase V: Git tab smart pixel-copy[0m
 [38;5;8m   2[0m 
 [38;5;8m   3[0m [37m**Epic:** T042. **Priority:** P1 after T037 shell tokens stable (can start in parallel).[0m
