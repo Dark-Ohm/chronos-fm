@@ -1,5 +1,11 @@
 # T049 — File-ops keybindings (Ctrl+C/X/V, F2, Del, Ctrl+A)
 
+> ## ⚖️ ARCHITECT (2026-08-10): **DESIGN APPROVED — IMPLEMENT GO**
+>
+> Spec: `docs/superpowers/specs/2026-08-10-file-ops-keybindings-design.md`
+> (APPROVE). Next: implementation plan, then land/salvage code + report.
+> No self-ACCEPT.
+
 **Epic:** T048. **Priority:** P0.  
 **Code:** `crates/chronos-fm-pages/src/explorer/` (actions + bindings on pane focus)
 

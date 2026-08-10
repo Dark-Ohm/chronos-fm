@@ -5,6 +5,40 @@
 **Project:** Chronos-FM (`crates/chronos-fm-pages/src/explorer/`)  
 **Scope:** Built-in file-operation shortcuts for a focused explorer pane.
 
+
+> ## ✅ ARCHITECT VERDICT (2026-08-10): **APPROVE — IMPLEMENT GO**
+>
+> Design matches T049 Must table and the correct Chronos-FM routing model
+> (pane owns file-ops keys; page owns split/tab). Shared operation paths,
+> input isolation, and Root-wrapped keystroke tests are the right gates.
+>
+> ### Approved decisions
+> 1. **Dispatch:** pane `on_key_down` (not new `bind_keys` on page) so focused
+>    InputState/search/rename keep copy/cut/paste/select-all/Delete/Enter.
+> 2. **Keys:** Ctrl+C/X/V/A, F2, Delete, Enter, Ctrl+Shift+N; Cmd mirrors via
+>    platform modifier (same as existing Ctrl+A/F/I).
+> 3. **Shared paths:** copy/cut/paste, `rename_selection` (inline vs batch),
+>    `confirm_delete_selection` (never raw `delete_paths` from key),
+>    `activate_entry`, `new_folder`.
+> 4. **Tests:** `simulate_keystrokes` through `gpui_component::Root` harness.
+>
+> ### Plan must keep (not optional polish)
+> - Delete while dialog open → no stacked confirms (auto-repeat).
+> - Empty selection / missing active row → no-op.
+> - Salvage uncommitted T049 diff only where it matches this design + green
+>   tests; drop divergence, no unrelated worktree cleanup.
+>
+> ### Explicit non-goals (reaffirmed)
+> Keymap Settings UI · Undo (T054) · DnD (T051/T052) · conflict dialog (T053).
+>
+> ### Note for plan
+> Uncommitted explorer keybinding work already exists; `cargo test -p
+> chronos-fm-pages --lib keybindings` was **10/10** at review time. Plan may
+> be “align/fix/report + live evidence” rather than greenfield rewrite.
+>
+> **Next:** implementation plan → execute → report (no self-ACCEPT).
+
+
 ## 1. Goal
 
 Add the standard file-manager shortcuts from T049 without introducing a user
