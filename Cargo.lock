@@ -1718,6 +1718,7 @@ name = "chronos-fm-services"
 version = "0.0.1"
 dependencies = [
  "anyhow",
+ "ashpd",
  "async-channel 2.5.0",
  "async-trait",
  "aws-config",
@@ -1735,6 +1736,7 @@ dependencies = [
  "lru 0.18.2",
  "notify 8.2.0",
  "notify-debouncer-mini",
+ "percent-encoding",
  "postage",
  "serde",
  "syntect",

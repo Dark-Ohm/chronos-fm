@@ -15,6 +15,8 @@ pub mod devices;
 pub mod git;
 /// S3-compatible object storage client (T011).
 pub mod s3;
+/// Native file/directory picker via the XDG desktop portal (T039 gate 1).
+pub mod dialogs;
 /// Syntax highlighting backed by `syntect`, mapped to GPUI colors.
 #[cfg(feature = "gui")]
 pub mod syntax;

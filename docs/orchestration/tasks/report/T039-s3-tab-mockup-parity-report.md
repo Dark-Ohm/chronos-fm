@@ -1,131 +1,141 @@
-# T039 — S3 tab: visual parity with design mockup
+# T039 — S3 tab mockup parity — Progress report (gates 1 + 2)
 
-> ## ⚖️ ARCHITECT VERDICT: **DESIGN APPROVED (option C) — with gates** (2026-08-09)
+> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **GATES 1+2 ACCEPT — IMPLEMENT GO**
 >
-> Inventory facts OK (5 connect states; embed pane only; no transfer jobs;
-> multipart available in SDK; mockup 4 views). **Option C full transfer
-> subsystem** approved as product vision — real progress/cancel, not fake
-> queue. Whole-object provider paths must stay (T011/T021).
+> ### Gate 1 (ashpd) — **ACCEPT**
+> Spot-checked `dialogs.rs`: `pick_file` / `pick_directory` via portal
+> FileChooser; cancel → `None` honest; `uri_to_path` file:// only +
+> percent-decode; rejects non-file schemes. Direct ashpd pin matches Source
+> style; Cargo.lock ashpd/zbus counts = 1 (no dup graph). Architect re-ran
+> `cargo test -p chronos-fm-services dialogs::` → **3/3**. Unwired to UI is
+> correct for this gate.
 >
-> **Open gates before heavy impl:**
-> 1. Compile probe **ashpd** FileChooser (or document chosen dialog path).
-> 2. Design spec file (like T038) with job state machine + error matrix.
-> 3. Secrets never in report/grim.
+> ### Gate 2 (design spec) — **DESIGN APPROVED**
+> Spec `docs/superpowers/specs/2026-08-10-s3-tab-mockup-parity-design.md`
+> is sound for Phase F transfer subsystem + Phase V shell:
+> - sequential 8 MiB chunked upload/download — OK v1
+> - state machine without Paused — OK (mockup)
+> - cancel between chunks; leave partial download — OK
+> - retry 1× transient only, never 4xx — OK
+> - error matrix (6 cases) — OK
+> - `S3View` 4 views mirroring T038 pattern — OK
+> - whole-object provider path preserved (T011/T021) — **hard wall**
+> - secrets discipline in spec — OK
 >
-> **Not** implementation ACCEPT. Ticket stays `active/`.
+> Optional later revisits (not blocking GO): parallel parts, pause/resume.
+>
+> ### Gate 3 — ongoing discipline (not a one-shot)
+> No secrets in artifacts/grim/report. Continue through impl.
+>
+> ### Not ACCEPT for full T039
+> Implementation not started — correct stop after T038 vision lesson.
+> Next executor: implement per approved design (TDD chunk split + state
+> machine first), then vision grims (hypr focus residual same as T046).
+>
+> Ticket stays **active**. Ship gate code + spec as commit.
 
 
-**Status:** DESIGN AGREED (option C) — implementation not started. This is an
-inventory + design-approval report, not an implementation/acceptance report.
+**Status:** GATES RESOLVED, IMPLEMENTATION NOT STARTED — not accepted,
+not claimed done. Per session policy the executor does not accept its own
+work.
+**Date:** 2026-08-10
+**Executor:** Claude (Sonnet 5)
 
-**Truth bases used:**
-- Chronos-FM source: `crates/*`
-- GPUI fork source: `/home/neo/projects/chronos-ecosystem/Source`
-- Visual authority: `docs/design/mockups/Chronos-S3-Tab.dc.html`
-- Ticket: `docs/orchestration/tasks/active/T039-s3-tab-mockup-parity.md`
+## Summary
 
-## Inventory (facts only)
+The architect's 2026-08-09 verdict on T039 required three gates before
+heavy implementation: (1) compile-probe `ashpd` FileChooser, (2) a written
+design spec (like T038's) with job state machine + error matrix, (3)
+secrets never in report/grim. This session resolved (1) with real code +
+tests, wrote (2) as
+`docs/superpowers/specs/2026-08-10-s3-tab-mockup-parity-design.md`, and
+(3) is a discipline rule threaded through that document rather than a
+one-time check — nothing here touches credentials.
 
-### Current S3 page (`crates/chronos-fm-pages/src/s3.rs`)
+**Full T039 implementation (chunked transfer engine, job state machine,
+4-view UI shell) is genuinely out of scope for this pass** — it's
+comparable in size to T038, which was its own full session. Rather than
+rush a large, unverified implementation right after T038's visual-proof
+gap (T046), this pass stopped at "gates resolved, spec ready for review"
+so the actual build can start from an approved design instead of guessing
+at scope mid-implementation.
 
-- **Claim:** The page has a five-state connect/browse flow and embeds the
-  explorer pane after connect.
-  **Evidence:** `S3State` enum (lines 22–28: `NoProfiles`, `NeedCredentials`,
-  `Connecting`, `Browsing`, `Error { message }`); `S3Page` struct (lines 30–40,
-  `s3_pane: Option<Entity<ExplorerPane>>`); `start_connect` (lines 98–195);
-  `wire_pane` (lines 207–224); render switch at `content` (lines 250–296);
-  card helpers (lines 298–420).
-  **Truth base:** Chronos-FM source.
+## Gate 1 — ashpd compile probe: done, with code
 
-- **Claim:** There is no multi-view shell today — after connect the page
-  renders only the embedded pane.
-  **Evidence:** `content()` lines 250–296: Browsing/Connecting branch renders
-  `page.s3_pane` inside a `div().flex_1().relative()`; no view switcher, no
-  bucket/transfer/properties sub-views exist.
-  **Truth base:** Chronos-FM source.
+`crates/chronos-fm-services/src/dialogs.rs` (new file, ~70 lines):
+`pick_file`/`pick_directory` wrapping `ashpd::desktop::file_chooser::
+SelectedFiles::open_file()`, `uri_to_path` for the `file://`-URI → local
+path conversion.
 
-### S3 service (`crates/chronos-fm-services/src/s3/`)
+- Added `ashpd = { version = "0.13", default-features = false, features =
+  ["async-io", "file_chooser"] }` + `percent-encoding = "2"` directly to
+  `chronos-fm-services/Cargo.toml`, matching Source's own workspace pin.
+- **Confirmed no duplicate dependency graph:** `grep -c '^name = "zbus"'
+  Cargo.lock` and `'^name = "ashpd"'` both return `1` — this resolves to
+  the *same* already-locked instance pulled in transitively via
+  `gpui_linux`/`oo7`, not a second copy (the exact risk the original T039
+  report flagged as an open sub-decision).
+- `ashpd::Uri` turned out to be a thin string wrapper (not `url::Url` as
+  I first assumed) — no built-in path-conversion helper, so `uri_to_path`
+  hand-parses the `file://` prefix and percent-decodes via
+  `percent-encoding` (already transitively present, confirmed before
+  adding it directly). 3 unit tests: accepts `file://`, rejects a non-file
+  scheme (`mtp://`, honestly — no silent mangling into a bogus local
+  path), percent-decode round-trip (`%20` → space).
 
-- **Claim:** The client already provides bucket/object operations and metadata.
-  **Evidence:** `mod.rs` — `list_buckets` (line 80), `list_objects` (line
-  123), `get_object` (line 193), `put_object` (line 210), `delete_object`
-  (line 230), `head_object` (line 247); path helpers `parse_s3_path`,
-  `s3_bucket_path`, `s3_profile_root` (lines 270–306); `provider.rs`
-  implements the sync `FileSystemProvider`.
-  **Truth base:** Chronos-FM source.
+```
+cargo test -p chronos-fm-services dialogs::
+test result: ok. 3 passed; 0 failed
+```
 
-- **Claim:** No transfer/job model exists; current operations are whole-object
-  and synchronous (`Vec<u8>` via `block_on`).
-  **Evidence:** `get_object` returns `Result<Vec<u8>>` (line 193);
-  `put_object` takes `&[u8]` and builds `ByteStream::from(content.to_vec())`
-  (line 210–216); every method runs through `self.runtime.block_on`.
-  **Truth base:** Chronos-FM source.
+**Not wired up:** nothing calls `pick_file`/`pick_directory` yet — that's
+Transfers-view implementation, not this gate.
 
-- **Claim:** SDK version and multipart API are available.
-  **Evidence:** `aws-sdk-s3 = "1"` (`crates/chronos-fm-services/Cargo.toml`),
-  locked at `1.140.0` (`Cargo.lock`); local source at
-  `~/.cargo/registry/src/index.crates.io-*/aws-sdk-s3-1.140.0` includes
-  `create_multipart_upload`, `upload_part`, `complete_multipart_upload`,
-  `abort_multipart_upload` operations.
-  **Truth base:** Cargo.lock + local registry source.
+## Gate 2 — design spec: written, not yet reviewed/approved
 
-### Mockup (`docs/design/mockups/Chronos-S3-Tab.dc.html`)
+`docs/superpowers/specs/2026-08-10-s3-tab-mockup-parity-design.md`. Key
+decisions, each with a stated reason (not just an assertion):
 
-- **Claim:** The mockup specifies a four-view shell with toolbar and transfer
-  queue.
-  **Evidence:** sidebar nav Explorer / Buckets / Transfers / Properties (lines
-  465–470); view headers/subtitles (lines 503–520); Explorer breadcrumb +
-  object table + preview pane (lines 541–623); Buckets table (lines 625–638);
-  Transfers rows with progress bar and `done`/`queued`/`in progress` labels
-  (lines 640–655); Properties cards (lines 657–725).
-  **Truth base:** mockup HTML.
+- **Chunked engine:** sequential (not parallel) 8 MiB multipart parts for
+  upload, ranged `GetObject` windows for download — same chunk size both
+  directions for symmetric progress. Sequential-not-parallel chosen for
+  simpler cancellation/progress semantics in v1, explicitly flagged as
+  revisitable if throughput proves insufficient.
+- **Job state machine:** `Queued → InProgress → {Completed | Failed |
+  Cancelled}`, no `Paused` state — the mockup doesn't show a pause
+  control, and pause/resume needs part-ETag persistence across restarts,
+  which is real scope the mockup doesn't ask for.
+- **Cancellation:** cooperative, checked between chunks (not mid-chunk —
+  an S3 part is atomic). Cancel-during-download leaves the partial local
+  file in place (matches ordinary browser-download behavior) rather than
+  deleting it.
+- **Retry:** one automatic retry per chunk on a transient error only
+  (never on 4xx — retrying an auth/permissions failure just delays a real
+  error, doesn't fix it).
+- **Error matrix:** six concrete failure shapes with their exact
+  user-facing message templates (local file vanished, network timeout
+  post-retry, 403, 404, disk full, multipart-abort-itself-fails-during-
+  cancel — the last one intentionally logged, not double-surfaced, since
+  the job is already Cancelled from the user's perspective).
+- **Views:** `S3View::{Explorer, Buckets, Transfers, Properties}` — same
+  shape as T038's `GitView`, reusing a pattern instead of inventing a new
+  one.
 
-## Approved design decisions
+## What is verified vs. not
 
-1. **Chosen scope: option C — full transfer subsystem.**
-   Real upload/download jobs with measurable progress, cooperative
-   cancellation, retry, and Clear-finished; not a cosmetic queue.
-2. **Transfer engine: chunked S3 engine.**
-   `S3Client` gains thin chunked/streaming APIs (part-based download and
-   multipart upload) so progress is real and cancellation is cooperative
-   between parts. Whole-object `get_object`/`put_object` paths remain for the
-   existing provider, avoiding a rewrite of T011/T021 semantics.
-3. **Local source/destination: native file dialogs.**
-   User picks local files/directories through a system dialog.
-   **Open sub-decision:** the project has no established native dialog
-   dependency (`rfd` absent; `ashpd` present only transitively via
-   `gpui_linux`/`oo7`). Recommended: add a direct `ashpd` dependency
-   (xdg-desktop-portal FileChooser); must be verified with a compile probe
-   against local `ashpd 0.13.13` sources before spec finalization.
-4. **UI:** S3 wrapper shell with Explorer / Buckets / Transfers / Properties
-   views, S3-native chrome, honest empty/loading/error states per T023; icons
-   only from `crates/chronos-fm-ui/assets/icons/`; palette only
-   `chronos_fm_ui::theme`.
-5. **Safety:** T011/T021 connect/browse semantics preserved; secrets stay in
-   the keyring; no secrets in config/report/screenshots; no fake progress or
-   fake transfer state.
+| Claim | Evidence |
+|---|---|
+| ashpd compiles against the real dependency graph, no duplication | `cargo build -p chronos-fm-services` clean; `grep -c` on Cargo.lock |
+| `dialogs.rs` conversion logic is correct | 3 unit tests, green |
+| No regression in the rest of the workspace | `cargo test --workspace --no-fail-fast`: 0 failed |
+| Release build still clean | `cargo build --release -p chronos-fm`: clean |
+| Design spec is architecturally sound | **NOT verified by anyone but me** — this needs the same review T038's spec got before implementation started, not a rubber stamp |
+| Chunked engine / job state machine / 4-view UI | **NOT IMPLEMENTED** — this report doesn't claim otherwise anywhere |
 
-## Verification
+## Recommendation
 
-- **Claim:** Implementation verified.
-  **Evidence:** **Not claimed.** No code changes for T039 exist in the working
-  tree at the time of this report.
-  **Truth base:** none — not started.
-
-- **Claim:** Visual parity proven by grim.
-  **Evidence:** **Not claimed.** Requires release binary + grim after
-  implementation, reviewed by a vision-capable model against the mockup.
-  **Truth base:** T039 "Done when" criteria.
-
-## Next gate
-
-1. Resolve the native dialog sub-decision (compile probe for `ashpd` vs fork
-   API) and finalize the T039 design spec.
-2. Write implementation plan (tests first: chunked transfer engine, job
-   state machine, parser helpers).
-3. Implement service + UI, run `cargo fmt --check`, targeted service/page
-   tests, `cargo check -p chronos-fm-pages`, release build
-   `cargo build --release -p chronos-fm`.
-4. Live grim pack (NoProfiles, Browsing, Buckets, Transfers, Properties) +
-   vision review; no secrets in artifacts.
-5. Move this report to `report-log/` only after acceptance.
+Review the design spec (same process as T038's 2026-08-09 spec review)
+before I or anyone starts the chunked-engine implementation — several of
+its calls (sequential-not-parallel parts, no-pause-in-v1, single-job-per-
+profile-in-flight) are real scope decisions a reviewer might want to
+push back on before code gets written around them.

@@ -51,6 +51,14 @@ aws-sdk-s3 = "1"
 aws-config = { version = "1", features = ["behavior-version-latest"] }
 aws-credential-types = "1"
 tokio = { version = "1.53.1", features = ["rt", "macros"] }
+# T039 gate 1: native file/directory picker for S3 transfer local source/
+# destination selection. Version + feature set matches Source's own
+# workspace pin (Source/Cargo.toml) so this resolves to the SAME already-
+# locked ashpd/zbus instance pulled in transitively via gpui_linux/oo7,
+# not a second copy — see T039 report's "no established native dialog
+# dependency" open sub-decision.
+ashpd = { version = "0.13", default-features = false, features = ["async-io", "file_chooser"] }
+percent-encoding = "2"
 
 [dev-dependencies]
 tempfile = "3"

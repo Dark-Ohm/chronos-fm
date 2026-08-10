@@ -1,3 +1,12 @@
+# T039 — Phase V/F: S3 tab mockup parity
+
+> ## ⚖️ ARCHITECT (2026-08-10): **GATES 1+2 ACCEPT — IMPLEMENT GO**
+>
+> ashpd dialogs + design spec approved. Full transfer/UI impl still open.
+> Spec: `docs/superpowers/specs/2026-08-10-s3-tab-mockup-parity-design.md`
+> Report: `report/T039-s3-tab-mockup-parity-report.md`
+
+
 [38;5;8m   1[0m [37m# T039 — Phase V: S3 tab smart pixel-copy[0m
 [38;5;8m   2[0m 
 [38;5;8m   3[0m [37m**Epic:** T042. **Priority:** P1.[0m

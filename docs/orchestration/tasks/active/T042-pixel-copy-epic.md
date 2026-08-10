@@ -20,7 +20,7 @@
 [38;5;8m  20[0m [37m|--------|---------|--------|--------|[0m
 [38;5;8m  21[0m [37m| **T037** | Explorer shell | `chronos-file-manager.dc.html` | **done ACCEPT** |[0m
 [38;5;8m  22[0m [37m| **T038** | Git | `Chronos-Git-Tab.dc.html` | **PARTIAL-ACCEPT** (code; vision residual) |[0m
-[38;5;8m  23[0m [37m| **T039** | S3 | `Chronos-S3-Tab.dc.html` | open (V not shipped) |[0m
+[38;5;8m  23[0m [37m| **T039** | S3 | `Chronos-S3-Tab.dc.html` | **gates 1+2 ACCEPT; impl GO** |[0m
 [38;5;8m  24[0m [37m| **T040** | Settings | `Chronos-File-Manager-Settings.dc.html` | open (V not shipped) |[0m
 [38;5;8m  25[0m [37m| **T041** | Extensions | `Chronos-Extensions-Tab.dc.html` | open (V not shipped) |[0m
 [38;5;8m  26[0m 
