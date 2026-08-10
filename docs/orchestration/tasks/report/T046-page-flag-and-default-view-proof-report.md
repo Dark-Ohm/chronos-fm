@@ -1,33 +1,10 @@
 # T046 — `--page=<name>` CLI flag + default-view proof — Implementation report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT**
+> ## ✅ ARCHITECT FINAL (2026-08-10): **ACCEPT / CLOSED** (with sub-view slice)
 >
-> ### Mechanism — **ACCEPT**
-> Spot-checked: `PageKind::from_cli_name`, `Cli::initial_page` (warn-and-
-> ignore like `--theme`), `RootView::new(initial_page)` defaults Explorer.
-> Architect re-ran pages from_cli_name **4/4**, chronos-fm **8/8**. Smoke
-> script `t046_page_smoke.sh` follows class=chronos-fm discipline.
->
-> ### Default-view live grims — **ACCEPT (empty-state paths)**
-> Vision-reviewed:
-> - **Settings** — 9-cat shell, Files live rows + unwired pills, search
-> - **Extensions** — 4-view nav, pre-P4, honest empty Installed
-> - **Git** — honest "Not a git repository" (cwd not a repo)
-> - **S3** — honest NoProfiles + Open Settings
->
-> Shots: `report-log/T046-shots/t046_{settings,extensions,git,s3}.png`
->
-> ### Still open (honest)
-> 1. In-page sub-views (Git 5 tabs, S3 4, Settings cats, Ext 3) need
->    clicks or **`--page=page:subview`** extension
-> 2. Populated-data paths (real repo / S3 profile / plugins)
-> 3. Hypr focus/click path (H1/H2) untouched — still needed for interaction
->
-> ### Verdict
-> Ship `--page=` + smoke. **Do not** full-close T038–T041. Residual T046
-> remains active for sub-view flag and/or click path. Prefer next:
-> `--page=settings:appearance` style sub-view picker (mechanical).
-
+> Mechanism + default-view grims **ACCEPT**. Residual hypr-click **WAIVED**
+> (superseded by `--page=`). Sub-view slice + T047: see companion report.
+> Ticket moved `active/` → `done/T046-shared-visual-proof.md`.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED — not claimed done, and T038 is
 **not** moved to `done/` (not enough evidence yet, see "What's still

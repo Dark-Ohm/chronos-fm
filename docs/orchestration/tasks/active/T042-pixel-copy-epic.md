@@ -1,53 +1,55 @@
-[38;5;8m   1[0m [37m# T042 — Epic: smart pixel-copy of product mockups (Phase V)[0m
-[38;5;8m   2[0m 
-[38;5;8m   3[0m [37m**Priority:** P0 program. **Role:** index only — work lives in children.[0m
-[38;5;8m   4[0m 
-[38;5;8m   5[0m [37m## Strategy[0m
-[38;5;8m   6[0m 
-[38;5;8m   7[0m [37m| Phase | Meaning |[0m
-[38;5;8m   8[0m [37m|-------|---------|[0m
-[38;5;8m   9[0m [37m| **V** | Visual/IA = mockup; real data only; missing API → empty/disabled honestly |[0m
-[38;5;8m  10[0m [37m| **F** | Function fill (git history, S3 transfers, plugin host…) after V ACCEPT |[0m
-[38;5;8m  11[0m 
-[38;5;8m  12[0m [37mMockup = product vision. Live догоняет. Icons: `crates/chronos-fm-ui/assets/icons/`.  [0m
-[38;5;8m  13[0m [37mSource truth: `/home/neo/projects/chronos-ecosystem/Source`. Facts only. Vision for visual ACCEPT.[0m
-[38;5;8m  14[0m 
-[38;5;8m  15[0m [37m## Children[0m
-[38;5;8m  16[0m 
-[38;5;8m  17[0m [37m### Phase V pages[0m
-[38;5;8m  18[0m 
-[38;5;8m  19[0m [37m| Ticket | Surface | Mockup | Status |[0m
-[38;5;8m  20[0m [37m|--------|---------|--------|--------|[0m
-[38;5;8m  21[0m [37m| **T037** | Explorer shell | `chronos-file-manager.dc.html` | **done ACCEPT** |[0m
-[38;5;8m  22[0m [37m| **T038** | Git | `Chronos-Git-Tab.dc.html` | **PARTIAL-ACCEPT** (code; vision residual) |[0m
-[38;5;8m  23[0m [37m| **T039** | S3 | `Chronos-S3-Tab.dc.html` | **PARTIAL-ACCEPT** (code; vision+RustFS residual) |[0m
-[38;5;8m  24[0m [37m| **T040** | Settings | `Chronos-File-Manager-Settings.dc.html` | **PARTIAL-ACCEPT** (code; vision residual) |[0m
-[38;5;8m  25[0m [37m| **T041** | Extensions | `Chronos-Extensions-Tab.dc.html` | **PARTIAL-ACCEPT** (code; vision residual) |[0m
-[38;5;8m  26[0m 
-[38;5;8m  27[0m [37m### Residuals[0m
-[38;5;8m  28[0m 
-[38;5;8m  29[0m [37m| Ticket | Issue | Status |[0m
-[38;5;8m  30[0m [37m|--------|-------|--------|[0m
-[38;5;8m  31[0m [37m| **T043** | Places empty / text missing | **done** |[0m
-[38;5;8m  32[0m [37m| **T044** | Listing not in tree / empty pane | **done** |[0m
-[38;5;8m  33[0m [37m| **T045** | `snapshot_memo` sibling poison | **done ACCEPT** (Source fix) |[0m
-[38;5;8m  34[0m [37m| **T046** | Shared visual proof | **PARTIAL-ACCEPT** (`--page=` + `page:sub`); residual hypr click |
-| **T047** | Git History empty on >4KB log | **done ACCEPT** |[0m
-[38;5;8m  35[0m 
-[38;5;8m  36[0m [37m## Order[0m
-[38;5;8m  37[0m 
-[38;5;8m  38[0m [37m1. ~~T037 / T043–T045~~ **done**[0m
-[38;5;8m  39[0m [37m2. T038–T041 Phase V **code PARTIAL-ACCEPT** — residual **T046**[0m
-[38;5;8m  40[0m [37m3. Phase F per page after vision or client waiver[0m
-[38;5;8m  41[0m [37m4. Optional: `--page=<name>` CLI for scripted grims[0m
-[38;5;8m  42[0m 
-[38;5;8m  43[0m [37m## Non-negotiables[0m
-[38;5;8m  44[0m 
-[38;5;8m  45[0m [37m- Source edits only better + what/why/зачем[0m
-[38;5;8m  46[0m [37m- `class=chronos-fm` grims only[0m
-[38;5;8m  47[0m [37m- No secrets in artifacts[0m
-[38;5;8m  48[0m [37m- Executors do not self-ACCEPT[0m
-[38;5;8m  49[0m 
-[38;5;8m  50[0m [37m## Done when (epic)[0m
-[38;5;8m  51[0m 
-[38;5;8m  52[0m [37mAll five page children have full Phase V ACCEPT (vision) or PARTIAL + residual closed/waived. Phase F separate.[0m
+# T042 — Epic: smart pixel-copy of product mockups (Phase V)
+
+**Priority:** P0 program. **Role:** index only — work lives in children.
+
+## Strategy
+
+| Phase | Meaning |
+|-------|---------|
+| **V** | Visual/IA = mockup; real data only; missing API → empty/disabled honestly |
+| **F** | Function fill (git remotes polish, S3 transfers live, plugin host…) after V ACCEPT |
+
+Mockup = product vision. Live догоняет. Icons: `crates/chronos-fm-ui/assets/icons/`.  
+Source truth: `/home/neo/projects/chronos-ecosystem/Source`. Facts only. Vision for visual ACCEPT.
+
+## Children
+
+### Phase V pages
+
+| Ticket | Surface | Mockup | Status |
+|--------|---------|--------|--------|
+| **T037** | Explorer shell | `chronos-file-manager.dc.html` | **done ACCEPT** |
+| **T038** | Git | `Chronos-Git-Tab.dc.html` | **PARTIAL-ACCEPT** — residual: Changes/Branches/Stashes/Remotes grims |
+| **T039** | S3 | `Chronos-S3-Tab.dc.html` | **PARTIAL-ACCEPT** — residual: sub-view grims + RustFS |
+| **T040** | Settings | `Chronos-File-Manager-Settings.dc.html` | **done ACCEPT** (Phase V) |
+| **T041** | Extensions | `Chronos-Extensions-Tab.dc.html` | **done ACCEPT** (Phase V) |
+
+### Residuals / tooling
+
+| Ticket | Issue | Status |
+|--------|-------|--------|
+| **T043** | Places empty / text missing | **done** |
+| **T044** | Listing not in tree / empty pane | **done** |
+| **T045** | `snapshot_memo` sibling poison | **done ACCEPT** (Source fix) |
+| **T046** | Shared visual proof (`--page=` / sub) | **done ACCEPT** (hypr residual waived) |
+| **T047** | Git History empty on >4KB log | **done ACCEPT** |
+
+## Order
+
+1. ~~T037 / T043–T045~~ **done**
+2. ~~T040 / T041~~ Phase V **done ACCEPT**
+3. **T038** finish sub-view vision grims → full V ACCEPT
+4. **T039** sub-view grims + optional RustFS → full V ACCEPT (or waiver)
+5. Phase F per page after V
+6. Tooling: `script/dev/t046_page_smoke.sh` + `--page=page:sub`
+
+## Non-negotiables
+
+- Source edits only better + what/why/зачем
+- `class=chronos-fm` grims only
+- No secrets in artifacts
+- Executors do not self-ACCEPT
+
+## Done when (epic)
+
+All five page children have full Phase V ACCEPT (vision) or PARTIAL + residual closed/waived. Phase F separate.

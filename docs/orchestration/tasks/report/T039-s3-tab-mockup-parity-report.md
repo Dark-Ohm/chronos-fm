@@ -1,33 +1,13 @@
 # T039 — S3 tab mockup parity — Implementation report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT**
+> ## ⚖️ ARCHITECT UPDATE (2026-08-10): **PARTIAL-ACCEPT** (unchanged gates)
 >
-> ### Pure engine + UI structure — **ACCEPT**
-> Spot-checked: `CHUNK_SIZE` 8 MiB, `split_into_chunks`, `TransferState` +
-> `can_transition_to`, `CancelHandle`, `run_upload`/`run_download`,
-> `spawn_upload`/`spawn_download` on dedicated thread+runtime; whole-object
-> `get_object`/`put_object` still present (T011/T021 wall). Page: `S3View`
-> 4-way + sub-nav, Buckets/Transfers/Properties, pick_file/pick_directory
-> wired. Architect re-ran `s3::transfer::` **9/9**, pages `s3::` **4/4**.
+> T046 closed with empty-state grim only (`t046_s3.png` NoProfiles).
+> Still open:
+> 1. Sub-view grims: `s3:explorer|buckets|transfers|properties` (honest empty OK)
+> 2. RustFS integration (real transfer bytes) — Phase F / residual
 >
-> ### Horizontal sub-nav vs mockup left rail — **accepted** (same as T038)
-> Honest Phase V geometry; no fake chrome.
->
-> ### Network path (RustFS) — **UNVERIFIED** residual
-> Engine never moved real S3 bytes this session. Residual: integration pass
-> (upload/download/cancel mid-transfer byte check). Optional ticket or
-> section under T039 residual.
->
-> ### Live visual vs mockup — **UNVERIFIED** residual
-> Startup grim/GRIM_OK only. Sub-views need interactive input (T046 class).
-> Do not infer mockup parity.
->
-> ### Verdict
-> **PARTIAL-ACCEPT** — ship code; ticket stays active until vision and/or
-> RustFS residual closed (or client waives). No secrets claimed in artifacts.
->
-> Next: T046-style visual proof when focus works; RustFS integration when stand ready.
-
+> Code ship stands; not full-close.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED — not claimed done. Per session policy
 the executor does not accept its own work; every claim below is either a

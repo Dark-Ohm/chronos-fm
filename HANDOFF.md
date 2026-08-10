@@ -1,7 +1,92 @@
 # HANDOFF — контекст для новой сессии Архитектора (Chronos-FM)
 
-**Обновлено: 2026-08-10 (чекпоинт #6), HEAD `4ff6bf0`.**  
-Читать **этот блок первым**. Ниже — чекпоинты #5…#1 и §0–§5 (история).
+**Обновлено: 2026-08-10 (чекпоинт #7), HEAD was pre-hygiene; refresh after commit.**  
+Читать **этот блок первым**. Ниже — чекпоинты #6…#1 и §0–§5 (история).
+
+## Чекпоинт #7, 2026-08-10 — Phase V tails closed (T040/T041/T046/T047)
+
+### Цель продукта (без изменений)
+Перекрасить Chronos-FM в Chronos + паттерны + довести до замены Thunar/Dolphin.
+**Mockup = видение продукта** (live догоняет; не резать эталон под live).
+
+### Стратегия доставки UI
+**Phase V (smart pixel-copy):** layout/IA/density = mockup; только реальные
+данные; нет API → chrome + empty/disabled honestly; **наши** SVG-иконки;
+proof = release + grim + **vision**.  
+**Phase F:** backend fill — отдельные тикеты **после** V.  
+Epic: `docs/orchestration/tasks/active/T042-pixel-copy-epic.md`.
+
+### Эталоны (canonical mockups)
+| Surface | Path | Ticket V |
+|---------|------|----------|
+| **Shell / Explorer** | `docs/design/mockups/chronos-file-manager.dc.html` | T037 |
+| Git | `docs/design/mockups/Chronos-Git-Tab.dc.html` | T038 |
+| S3 | `docs/design/mockups/Chronos-S3-Tab.dc.html` | T039 |
+| Settings | `docs/design/mockups/Chronos-File-Manager-Settings.dc.html` | T040 |
+| Extensions | `docs/design/mockups/Chronos-Extensions-Tab.dc.html` | T041 |
+
+### Source
+- Path-deps: `../Source/*` → `/home/neo/projects/chronos-ecosystem/Source`
+- **Source = истина** gpui API (не Zed, не датасеты/RAG)
+- Source правки: **только в лучшую сторону** + **что / почему / зачем**
+
+### Evidence discipline
+Claim → Evidence → Truth base. UNVERIFIED ≠ ACCEPT. No secrets in artifacts.
+Visual ACCEPT: release + grim of `class=chronos-fm` + vision.  
+**Tooling:** `./target/release/chronos-fm --page=<name|page:sub>` +
+`script/dev/t046_page_smoke.sh` (T046 ACCEPT).
+
+### Состояние тикетов (чекпоинт #7)
+
+| ID | State | Note |
+|----|--------|------|
+| **T037** | **done ACCEPT** | Phase V shell |
+| **T038** | **PARTIAL-ACCEPT** | History ACCEPT (T047); residual: Changes/Branches/Stashes/Remotes grims |
+| **T039** | **PARTIAL-ACCEPT** | code OK; residual: sub-view grims + RustFS |
+| **T040** | **done ACCEPT** | Phase V settings shell (T046 grims) |
+| **T041** | **done ACCEPT** | Phase V extensions shell (T046 grim) |
+| **T042** | epic active | index only |
+| **T043–T045** | **done** | Places / listing / snapshot_memo |
+| **T046** | **done ACCEPT** | `--page=` + sub; hypr residual **waived** |
+| **T047** | **done ACCEPT** | History 256KB + no silent empty |
+| T010–T036 | mostly done | `docs/orchestration/tasks/done/` |
+
+Active queue files: `T038`, `T039`, `T042` only.
+
+### Ключевые технические факты
+1. `app_id = Some("chronos-fm")` — Hyprland class matchable.
+2. T014-A layout memo + T045 `snapshot_memo` subtree scope (Source).
+3. Theme default **dark** product; user config may still say light.
+4. S3: profiles + keyring; no Chronos SaaS signup.
+5. Git history: was 4KB silent empty → T047 256KB cap.
+6. CLI: `--page=git:history`, `settings:appearance`, etc.
+
+### Роли
+- **Клиент:** vision mockups, priority.
+- **Архитектор:** decide, stamp reports, hygiene; not default implementer.
+- **Executor:** code + release grim; vision for visual ACCEPT; no self-ACCEPT.
+
+### Очередь (сейчас)
+1. **T038** — grim remaining Git sub-views → full V ACCEPT.
+2. **T039** — grim S3 sub-views; RustFS optional residual.
+3. Phase F backends after each full V ACCEPT.
+4. `git push` (ahead origin) — **only on user request**.
+5. Perf residuals — non-blocking.
+
+### Где что лежит
+| Что | Путь |
+|-----|------|
+| Agent entry | `AGENTS.md` |
+| Decisions | `docs/DECISIONS.log` |
+| Tasks | `docs/orchestration/tasks/{active,done,report,report-log}/` |
+| Smoke | `script/dev/t046_page_smoke.sh`, `t037_smoke.sh` |
+| Shots | `report-log/T046-shots/`, `T047-shots/`, `T037-shots/` |
+
+### Git
+- Branch `main`, significantly **ahead of origin** (do not push unless asked).
+- Rebuild release after Source changes: `cargo build --release -p chronos-fm`.
+
+---
 
 ## Чекпоинт #6, 2026-08-10 — pixel-copy program, mockup SoT, T043–T045
 

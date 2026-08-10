@@ -1,28 +1,9 @@
 # T046 — `--page=page:sub` extension + history defect found
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT** (flag) + **T047 filed**
+> ## ✅ ARCHITECT FINAL (2026-08-10): **ACCEPT / CLOSED**
 >
-> ### `--page=page:sub` — **ACCEPT**
-> Spot-checked: per-page `from_cli_name` + `set_initial_subview`,
-> `split_page_arg` / `initial_subview`, RootView dispatch. Architect re-ran
-> chronos-fm **13/13**, pages **103/103**. Sub-view grims
-> (`settings:appearance`, `git:history`) prove routing works.
->
-> ### Git History empty — **CONFIRMED defect → T047**
-> Spot-checked: `truncate_4k` @ `run_git_cmd` ~727; this repo
-> `git log -50` pretty format **8880 bytes** > 4KB; page
-> `unwrap_or_default()` masks `Err` as empty. Design call for fix shape
-> is **T047** (preferred: history-specific larger bound / clean partial
-> parse; min: surface error not silent empty). Not fixed in T046.
->
-> ### Accent-on-active white note
-> Flagged for later polish; not a T046 reject.
->
-> ### Verdict
-> Ship sub-view flag. Keep T046 active only if more residual work remains
-> (hypr click); else residual is **T047** + optional populated-data grims.
-> T038 History claim weakened until T047 lands.
-
+> `--page=page:sub` **ACCEPT**. History empty defect → **T047 ACCEPT**.
+> T046 closed; hypr residual waived. See `done/T046-shared-visual-proof.md`.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED. Defect described below is
 **reported, not fixed** — out of this pass's scope, flagged for triage.

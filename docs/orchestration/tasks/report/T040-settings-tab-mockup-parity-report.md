@@ -1,29 +1,11 @@
 # T040 — Settings tab Phase V pixel-copy — Implementation report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT**
+> ## ✅ ARCHITECT FINAL (2026-08-10): **ACCEPT / CLOSED** (Phase V)
 >
-> ### Category shell + live wiring — **ACCEPT**
-> Spot-checked: `SettingsCategory` ×9 (Files…About + S3), our SVG pack
-> only, live search filter, `unwired_row` pills, pre-existing config fields
-> still patch via `ConfigField`, **new** `UiIconPack` UI (`icon_pack_button`
-> → `ConfigField::UiIconPack`). Architect re-ran settings tests **4/4**.
->
-> ### Documented trims — **accepted**
-> 1. No live-preview FM column (correct Phase V wall)
-> 2. Keybindings honest empty (no keymap registry — correct)
-> 3. S3 kept as 9th category (real T011 — correct “wire already-real”)
->
-> ### Live vision — **UNVERIFIED** residual
-> Same T046 hypr-focus class. Shared residual idea: `--page=<name>` CLI
-> debug flag to unlock T038/T039/T040 visual proof without clicks — worth
-> a small ticket (or fold into T046), not blocking this PARTIAL-ACCEPT.
->
-> ### Verdict
-> Ship settings shell. Ticket may stay active for vision residual or close
-> with residual on T046. Prefer keep active lightly until grim once, or
-> move to done with residual pointer — **architect: keep active**, residual
-> visual only.
-
+> Vision grims (T046): `t046_settings.png`, `t046_settings_appearance.png`.
+> Category shell + live fields + honest unwired rows match Phase V strategy.
+> Phase F (remaining config rows / live preview / keybindings) separate.
+> Ticket → `done/T040-settings-tab-mockup-parity.md`.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED — not claimed done. Per session policy
 the executor does not accept its own work.

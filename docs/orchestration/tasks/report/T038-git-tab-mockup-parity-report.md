@@ -1,36 +1,16 @@
 # T038 — Git tab mockup parity — Implementation report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT**
+> ## ⚖️ ARCHITECT UPDATE (2026-08-10): **PARTIAL-ACCEPT** (vision progress)
 >
-> ### Service layer — **ACCEPT**
-> Spot-checked: `history` / `commit_detail` / `remotes` / `fetch` /
-> `add_remote` / `delete_remote` / `commit_amend` present; amend uses
-> `write_object` + `edit_reference` with `PreviousValue::MustExistAndMatch`
-> (not broken `commit_as` parent CAS). Architect re-ran
-> `cargo test -p chronos-fm-services git::` → **43/43**. TDD amend bug find
-> is real and correctly fixed.
+> After T046/T047:
+> - Service+page code — still **ACCEPT**
+> - History populated grim — **ACCEPT** (`T047-shots/t047_git_history_fixed.png`, 50 commits)
+> - Empty/not-a-repo path — **ACCEPT** (`T046-shots/t046_git.png`)
+> - Still missing vision: **Changes / Branches / Stashes / Remotes** sub-view grims
+>   (run via `--page=git:changes|branches|stashes|remotes`)
 >
-> ### Page layer — **ACCEPT with documented deviation**
-> `GitView` enum, `select_view`, History/Remotes views, Commit/Amend control,
-> Branches/Stashes reuse — present. **Horizontal sub-nav** vs mockup **left
-> column** accepted as honest Phase V geometry (no invented ahead/behind).
-> Mockup residuals (merge-graph, remote branches, cherry-pick) stay residual.
->
-> ### Live visual — **UNVERIFIED** (honest)
-> Hyprland Lua `focuswindow` broken → no Git-view grims. Not inferred as pass.
-> Residual: capture Changes/History/Branches/Stashes/Remotes against
-> `Chronos-Git-Tab.dc.html` when input routing works (or manual client click).
->
-> ### fmt residual
-> Workspace-wide `cargo fmt` collateral — noted; not a code reject.
->
-> ### Verdict
-> **PARTIAL-ACCEPT** — ship service+page code; **do not full-close** until
-> vision grims (or explicit client waiver). Ticket stays active with residual
-> "visual proof" or move to done with open residual ticket **T046** optional.
->
-> Epic T042: Phase V Git function largely landed; visual polish residual.
-
+> Do **not** full-close until remaining sub-views grimmed (or client waiver).
+> T046 closed; residual lives on this ticket only.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED — awaiting review. Do not treat this
 report as a self-grant of ACCEPT; per session policy the executor does not

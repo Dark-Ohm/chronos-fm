@@ -1,28 +1,10 @@
 # T041 — Extensions tab Phase V pixel-copy — Implementation report
 
-> ## ⚖️ ARCHITECT VERDICT (2026-08-10): **PARTIAL-ACCEPT**
+> ## ✅ ARCHITECT FINAL (2026-08-10): **ACCEPT / CLOSED** (Phase V)
 >
-> ### Shell + honesty — **ACCEPT**
-> Spot-checked: `ExtensionsView` ×4 (Installed/Available/Permissions/Host)
-> matching mockup IA; search over installed ids; real `config.plugins`
-> core/community; Install disabled “needs host · P4”; Available offline
-> empty (P5); Permissions list + “not enforced” policy line; Host banner
-> (no wasmtime) + `NavigateToSettings`. Icons from our pack; database.svg
-> for Permissions noted as weak fit — OK. Architect re-ran extensions
-> tests **3/3**.
->
-> ### Documented trims — **accepted**
-> No detail pane (no metadata), Available always empty (no marketplace),
-> no grant toggles (no grants model) — correct Phase V.
->
-> ### Live vision — **UNVERIFIED** residual (T046 class)
-> Same hypr focus blocker as T038–T040. Shared residual: `--page=` or
-> working focus — see T046.
->
-> ### Epic T042
-> All Phase V page children now at least PARTIAL-ACCEPT on code. Visual
-> proof remains one residual class (T046), not four separate tickets.
-
+> Vision grim (T046): `t046_extensions.png` — 4-view IA + honest empty.
+> Phase F (host/marketplace/grants) separate.
+> Ticket → `done/T041-extensions-tab-mockup-parity.md`.
 
 **Status:** IMPLEMENTED, NOT ACCEPTED — not claimed done. Per session policy
 the executor does not accept its own work.
