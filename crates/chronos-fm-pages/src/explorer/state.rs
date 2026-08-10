@@ -105,6 +105,8 @@ pub struct ExplorerPane {
     pub last_click_info: Option<LastClickInfo>,
     /// Whether the listing is shown as a list or a grid.
     pub view_mode: ViewMode,
+    /// Whether this pane has an in-process file drop awaiting completion.
+    pub(crate) drop_pending: bool,
     /// The active empty-space selection drag, if one has begun.
     pub(crate) marquee: Option<MarqueeDrag>,
     /// Item bounds measured in the current listing layout token.
@@ -265,6 +267,7 @@ impl ExplorerPane {
             focus_requested: false,
             last_click_info: None,
             view_mode: ViewMode::List,
+            drop_pending: false,
             marquee: None,
             measured_items: BTreeMap::new(),
             listing_viewport: None,
