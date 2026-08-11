@@ -62,8 +62,9 @@ pub struct TransferReport {
 }
 
 /// How a name collision at the destination should be resolved when copying or
-/// moving. The resolution itself is applied by the caller; this module only
-/// provides the building blocks ([`would_conflict`], [`unique_name`]).
+/// moving. [`transfer_paths_resolved`] applies these decisions per source;
+/// this module also provides the building blocks ([`would_conflict`],
+/// [`unique_name`]) for callers that pre-flight conflicts themselves (T053).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ConflictResolution {
     /// Keep both items by writing to a non-colliding name (see [`unique_name`]).
@@ -161,17 +162,39 @@ pub fn unique_name(dir: &Path, name: &str) -> String {
 
 /// Copies or moves every source into `destination`, keeping both entries on a
 /// name collision and preserving successes alongside failures in one report.
+/// Equivalent to [`transfer_paths_resolved`] with no explicit resolutions.
 pub fn transfer_paths(
     sources: &[PathBuf],
     destination: &Path,
     mode: TransferMode,
+) -> TransferReport {
+    let resolutions = vec![None; sources.len()];
+    transfer_paths_resolved(sources, destination, mode, &resolutions)
+}
+
+/// Copies or moves every source into `destination`, honoring an explicit
+/// per-source conflict-resolution plan produced by a caller that pre-flighted
+/// the conflicts (T053). `resolutions` is parallel to `sources`:
+///
+/// - `Some(Rename)` — keep both via [`unique_name`], recomputed at transfer
+///   time (so a destination change between dialog and transfer stays safe).
+/// - `Some(Overwrite)` — write to the original destination name, replacing it.
+/// - `Some(Skip)` — leave the destination untouched; the source is omitted
+///   from both successes and failures.
+/// - `None` — no conflict seen by the caller (or no decision made): falls back
+///   to the historic [`unique_name`] auto-rename.
+pub fn transfer_paths_resolved(
+    sources: &[PathBuf],
+    destination: &Path,
+    mode: TransferMode,
+    resolutions: &[Option<ConflictResolution>],
 ) -> TransferReport {
     let mut report = TransferReport {
         successes: Vec::new(),
         failures: Vec::new(),
     };
 
-    for source in sources {
+    for (index, source) in sources.iter().enumerate() {
         let Some(name) = source.file_name().and_then(|name| name.to_str()) else {
             report.failures.push(TransferFailure {
                 source: source.clone(),
@@ -183,7 +206,19 @@ pub fn transfer_paths(
             continue;
         };
 
-        let resolved_name = unique_name(destination, name);
+        // T053: honor the caller's explicit decision for this source.
+        if matches!(resolutions.get(index), Some(Some(ConflictResolution::Skip))) {
+            continue;
+        }
+        let overwrite = matches!(
+            resolutions.get(index),
+            Some(Some(ConflictResolution::Overwrite))
+        );
+        let resolved_name = if overwrite {
+            name.to_string()
+        } else {
+            unique_name(destination, name)
+        };
         let renamed = resolved_name != name;
         let resolved_destination = destination.join(resolved_name);
         let result = match mode {
@@ -631,5 +666,81 @@ mod tests {
         let src = dir.path().join("a.txt");
         fs::write(&src, "x").unwrap();
         assert!(!is_cross_volume(&src, dir.path()).unwrap());
+    }
+
+    #[test]
+    fn transfer_paths_resolved_mixed_plan_skips_overwrites_and_renames() {
+        let src_dir = tempdir().unwrap();
+        let dst_dir = tempdir().unwrap();
+        fs::write(dst_dir.path().join("b.txt"), "old-b").unwrap();
+        fs::write(dst_dir.path().join("c.txt"), "old-c").unwrap();
+        fs::write(dst_dir.path().join("d.txt"), "old-d").unwrap();
+
+        let a = src_dir.path().join("a.txt"); // no conflict → None
+        let b = src_dir.path().join("b.txt"); // conflict → Overwrite
+        let c = src_dir.path().join("c.txt"); // conflict → Skip
+        let d = src_dir.path().join("d.txt"); // conflict → Rename
+        fs::write(&a, "new").unwrap();
+        fs::write(&b, "new").unwrap();
+        fs::write(&c, "new").unwrap();
+        fs::write(&d, "new").unwrap();
+
+        let sources = [a, b, c, d];
+        let resolutions = [
+            None,
+            Some(ConflictResolution::Overwrite),
+            Some(ConflictResolution::Skip),
+            Some(ConflictResolution::Rename),
+        ];
+        let report =
+            transfer_paths_resolved(&sources, dst_dir.path(), TransferMode::Copy, &resolutions);
+
+        assert_eq!(report.successes.len(), 3, "skipped source is not a success");
+        assert_eq!(report.failures.len(), 0);
+
+        // None → plain copy.
+        assert_eq!(fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(), "new");
+        // Overwrite → replaced the existing destination in place.
+        assert_eq!(fs::read_to_string(dst_dir.path().join("b.txt")).unwrap(), "new");
+        // Skip → destination untouched, source still present.
+        assert_eq!(fs::read_to_string(dst_dir.path().join("c.txt")).unwrap(), "old-c");
+        assert!(sources[2].exists(), "skipped source is not consumed");
+        // Rename → both kept under a unique name.
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("d (2).txt")).unwrap(),
+            "new"
+        );
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("d.txt")).unwrap(),
+            "old-d"
+        );
+    }
+
+    #[test]
+    fn transfer_paths_resolved_rename_recomputed_at_transfer_time() {
+        // The destination frees up between the plan and the transfer; a Rename
+        // decision must fall back to the plain name instead of ` (2)`.
+        let src_dir = tempdir().unwrap();
+        let dst_dir = tempdir().unwrap();
+        let src = src_dir.path().join("x.txt");
+        fs::write(&src, "new").unwrap();
+        fs::write(dst_dir.path().join("x.txt"), "old").unwrap();
+
+        fs::remove_file(dst_dir.path().join("x.txt")).unwrap(); // freed after the plan
+        let resolutions = [Some(ConflictResolution::Rename)];
+        let report = transfer_paths_resolved(
+            std::slice::from_ref(&src),
+            dst_dir.path(),
+            TransferMode::Copy,
+            &resolutions,
+        );
+
+        assert_eq!(report.successes.len(), 1);
+        assert_eq!(
+            report.successes[0].destination,
+            dst_dir.path().join("x.txt"),
+            "rename resolves to the now-free plain name",
+        );
+        assert_eq!(report.successes[0].renamed, false);
     }
 }

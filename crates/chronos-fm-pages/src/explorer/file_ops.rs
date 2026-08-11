@@ -38,9 +38,13 @@ impl ExplorerPane {
     }
 
     /// Copies (or moves, for Cut) every clipboard path into the current
-    /// directory, resolving name collisions via `ops::unique_name`. A Cut
-    /// clipboard is cleared after the paste completes (even partially).
+    /// directory. Destination collisions pause the paste behind the conflict
+    /// dialog (T053) instead of silently auto-renaming; a Cut clipboard is
+    /// cleared after the paste completes (even partially).
     pub(crate) fn paste_clipboard(&mut self, cx: &mut Context<Self>) {
+        if self.conflict_dialog.is_some() {
+            return;
+        }
         let clip = clipboard::current(cx);
         let Some(mode) = clip.mode else {
             return;
@@ -56,35 +60,47 @@ impl ExplorerPane {
             ClipboardMode::Copy => ops::TransferMode::Copy,
             ClipboardMode::Cut => ops::TransferMode::Move,
         };
-        let report = ops::transfer_paths(&sources, &dst_dir, transfer_mode);
-        if mode == ClipboardMode::Cut {
-            clipboard::clear(cx);
-        }
-        self.reload();
-        let success_count = report.successes.len();
-        let failure_count = report.failures.len();
-        if failure_count > 0 {
-            let errors = report
-                .failures
-                .into_iter()
-                .map(|failure| {
-                    let source = failure
-                        .source
-                        .file_name()
-                        .and_then(|name| name.to_str())
-                        .map(str::to_owned)
-                        .unwrap_or_else(|| failure.source.display().to_string());
-                    format!("{source}: {}", failure.error)
-                })
-                .collect::<Vec<_>>();
-            self.set_status(
-                StatusLevel::Error,
-                format!(
-                    "Paste failed: {success_count} succeeded, {failure_count} failed; {}",
-                    errors.join(", ")
-                ),
-            );
-        }
+        let is_cut = mode == ClipboardMode::Cut;
+        let arg_sources = sources.clone();
+        let arg_destination = dst_dir.clone();
+        self.transfer_with_conflict_dialog(
+            arg_sources,
+            arg_destination,
+            cx,
+            move |pane, pane_cx, resolutions| {
+                let report =
+                    ops::transfer_paths_resolved(&sources, &dst_dir, transfer_mode, &resolutions);
+                if is_cut {
+                    clipboard::clear(pane_cx);
+                }
+                pane.reload();
+                let success_count = report.successes.len();
+                let failure_count = report.failures.len();
+                if failure_count > 0 {
+                    let errors = report
+                        .failures
+                        .iter()
+                        .map(|failure| {
+                            let source = failure
+                                .source
+                                .file_name()
+                                .and_then(|name| name.to_str())
+                                .map(str::to_owned)
+                                .unwrap_or_else(|| failure.source.display().to_string());
+                            format!("{source}: {}", failure.error)
+                        })
+                        .collect::<Vec<_>>();
+                    pane.set_status(
+                        StatusLevel::Error,
+                        format!(
+                            "Paste failed: {success_count} succeeded, {failure_count} failed; {}",
+                            errors.join(", ")
+                        ),
+                    );
+                }
+                pane_cx.notify();
+            },
+        );
         cx.notify();
     }
 
@@ -232,7 +248,7 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn paste_collision_uses_the_service_unique_name(cx: &mut TestAppContext) {
+    async fn paste_collision_opens_conflict_dialog_and_rename_keeps_both(cx: &mut TestAppContext) {
         let src_dir = tempdir().unwrap();
         let dst_dir = tempdir().unwrap();
         let src = src_dir.path().join("file.txt");
@@ -249,6 +265,25 @@ mod tests {
             .update(cx, |page, _window, cx| page.paste_clipboard(cx))
             .unwrap();
 
+        // The collision pauses the paste behind the conflict dialog (T053)
+        // instead of silently auto-renaming — nothing has transferred yet.
+        assert!(
+            window
+                .update(cx, |page, _window, _cx| page.conflict_dialog.is_some())
+                .unwrap(),
+            "a colliding paste opens the conflict dialog"
+        );
+        assert!(src.exists(), "copy preserves source");
+        assert!(!dst_dir.path().join("file (2).txt").exists());
+
+        // The default decision (Rename) keeps both — the old auto-rename
+        // outcome, now explicit.
+        window
+            .update(cx, |page, _window, cx| {
+                page.conflict_decide(crate::explorer::conflict::ConflictChoice::Rename, cx);
+            })
+            .unwrap();
+
         assert!(src.exists(), "copy preserves source");
         assert_eq!(
             fs::read_to_string(dst_dir.path().join("file.txt")).unwrap(),
@@ -257,6 +292,162 @@ mod tests {
         assert_eq!(
             fs::read_to_string(dst_dir.path().join("file (2).txt")).unwrap(),
             "new"
+        );
+    }
+
+    #[gpui::test]
+    async fn paste_collision_overwrite_replaces_the_destination(cx: &mut TestAppContext) {
+        let src_dir = tempdir().unwrap();
+        let dst_dir = tempdir().unwrap();
+        let src = src_dir.path().join("file.txt");
+        fs::write(&src, "new").unwrap();
+        fs::write(dst_dir.path().join("file.txt"), "existing").unwrap();
+
+        let window = new_explorer_for_tests(cx, dst_dir.path());
+        window
+            .update(cx, |_page, _window, cx| {
+                clipboard::set_copy(vec![src.to_string_lossy().to_string()], cx);
+            })
+            .unwrap();
+        window
+            .update(cx, |page, _window, cx| page.paste_clipboard(cx))
+            .unwrap();
+        assert!(
+            window
+                .update(cx, |page, _window, _cx| page.conflict_dialog.is_some())
+                .unwrap(),
+            "a colliding paste opens the conflict dialog"
+        );
+
+        window
+            .update(cx, |page, _window, cx| {
+                page.conflict_decide(crate::explorer::conflict::ConflictChoice::Overwrite, cx);
+            })
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("file.txt")).unwrap(),
+            "new",
+            "Overwrite replaces the existing destination in place"
+        );
+        assert!(
+            !dst_dir.path().join("file (2).txt").exists(),
+            "Overwrite does not create a unique-name duplicate"
+        );
+    }
+
+    #[gpui::test]
+    async fn paste_collision_cancel_aborts_without_transferring(cx: &mut TestAppContext) {
+        let src_dir = tempdir().unwrap();
+        let dst_dir = tempdir().unwrap();
+        let src = src_dir.path().join("file.txt");
+        fs::write(&src, "new").unwrap();
+        fs::write(dst_dir.path().join("file.txt"), "existing").unwrap();
+
+        let window = new_explorer_for_tests(cx, dst_dir.path());
+        window
+            .update(cx, |_page, _window, cx| {
+                clipboard::set_copy(vec![src.to_string_lossy().to_string()], cx);
+            })
+            .unwrap();
+        window
+            .update(cx, |page, _window, cx| page.paste_clipboard(cx))
+            .unwrap();
+        assert!(
+            window
+                .update(cx, |page, _window, _cx| page.conflict_dialog.is_some())
+                .unwrap(),
+            "a colliding paste opens the conflict dialog"
+        );
+
+        window
+            .update(cx, |page, _window, cx| {
+                page.conflict_decide(crate::explorer::conflict::ConflictChoice::Cancel, cx);
+            })
+            .unwrap();
+
+        assert!(
+            window
+                .update(cx, |page, _window, _cx| page.conflict_dialog.is_none())
+                .unwrap()
+        );
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("file.txt")).unwrap(),
+            "existing",
+            "Cancel leaves the destination untouched"
+        );
+        assert!(!dst_dir.path().join("file (2).txt").exists());
+        window
+            .update(cx, |page, _window, _cx| {
+                let (status, is_error) = page
+                    .status_for_footer()
+                    .expect("cancel reports a footer status");
+                assert!(!is_error);
+                assert!(status.contains("cancelled"), "{status}");
+            })
+            .unwrap();
+    }
+
+    #[gpui::test]
+    async fn paste_collision_apply_to_all_skips_every_remaining_conflict(cx: &mut TestAppContext) {
+        let src_dir = tempdir().unwrap();
+        let dst_dir = tempdir().unwrap();
+        let a = src_dir.path().join("a.txt");
+        let b = src_dir.path().join("b.txt");
+        fs::write(&a, "a-new").unwrap();
+        fs::write(&b, "b-new").unwrap();
+        fs::write(dst_dir.path().join("a.txt"), "a-old").unwrap();
+        fs::write(dst_dir.path().join("b.txt"), "b-old").unwrap();
+
+        let window = new_explorer_for_tests(cx, dst_dir.path());
+        window
+            .update(cx, |_page, _window, cx| {
+                clipboard::set_copy(
+                    vec![
+                        a.to_string_lossy().to_string(),
+                        b.to_string_lossy().to_string(),
+                    ],
+                    cx,
+                );
+            })
+            .unwrap();
+        window
+            .update(cx, |page, _window, cx| page.paste_clipboard(cx))
+            .unwrap();
+        assert!(
+            window
+                .update(cx, |page, _window, _cx| page.conflict_dialog.is_some())
+                .unwrap(),
+            "two colliding pastes open the conflict dialog"
+        );
+
+        // Apply-to-all on the first conflict (Skip) decides every remaining
+        // conflict of the same operation silently (mockup §1.2).
+        window
+            .update(cx, |page, _window, cx| {
+                page.toggle_conflict_apply_all(cx);
+                page.conflict_decide(crate::explorer::conflict::ConflictChoice::Skip, cx);
+            })
+            .unwrap();
+
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("a.txt")).unwrap(),
+            "a-old",
+            "Skip leaves the first destination untouched"
+        );
+        assert_eq!(
+            fs::read_to_string(dst_dir.path().join("b.txt")).unwrap(),
+            "b-old",
+            "apply-to-all skips the remaining conflict too"
+        );
+        assert!(!dst_dir.path().join("a (2).txt").exists());
+        assert!(!dst_dir.path().join("b (2).txt").exists());
+        assert!(a.exists() && b.exists(), "skipped sources are not consumed");
+        assert!(
+            window
+                .update(cx, |page, _window, _cx| page.conflict_dialog.is_none())
+                .unwrap(),
+            "apply-to-all closes the dialog after the last conflict"
         );
     }
 

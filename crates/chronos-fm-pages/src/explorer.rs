@@ -6,6 +6,8 @@ pub mod clipboard;
 /// Delete) + "Open With" (T007) on rows, New Folder/Paste/Refresh on empty
 /// space (b3/b4).
 pub mod context_menu;
+mod conflict;
+pub(crate) mod conflict_dialog;
 pub(crate) mod dnd;
 mod entries;
 mod file_ops;

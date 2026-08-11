@@ -42,10 +42,18 @@ pub fn render(
                 cx.stop_propagation();
                 return;
             }
-            // Escape closes the batch-rename dialog before doing anything else
-            // (the properties dialog has no Escape handler of its own).
-            if key_lc == "escape" && this.batch_rename.is_some() {
-                this.close_batch_rename(cx);
+            // Escape closes the batch-rename dialog or cancels the conflict
+            // dialog before doing anything else (the properties dialog has no
+            // Escape handler of its own).
+            if key_lc == "escape"
+                && (this.batch_rename.is_some() || this.conflict_dialog.is_some())
+            {
+                if this.batch_rename.is_some() {
+                    this.close_batch_rename(cx);
+                }
+                if this.conflict_dialog.is_some() {
+                    this.cancel_conflict_transfer(cx);
+                }
                 cx.stop_propagation();
                 return;
             }
@@ -85,9 +93,23 @@ pub fn render(
                     cx.stop_propagation();
                 }
                 "enter" if pane_focused => {
+                    // With the conflict dialog open, Enter is the default
+                    // (Rename) decision per mockup §1.2. `conflict_decide`
+                    // drives the pane's own pending-transfer queue directly
+                    // (never re-entering the pane's entity), so it is safe to
+                    // call from inside this pane update.
+                    if this.conflict_dialog.is_some() {
+                        this.conflict_decide(
+                            crate::explorer::conflict::ConflictChoice::Rename,
+                            cx,
+                        );
+                        cx.stop_propagation();
+                        return;
+                    }
                     let overlay_open = this.batch_rename.is_some()
                         || this.properties_dialog.is_some()
-                        || this.context_menu.is_some();
+                        || this.context_menu.is_some()
+                        || this.conflict_dialog.is_some();
                     if !overlay_open && !this.search_visible {
                         if let Some(ix) = this.active_index {
                             if let Some(item) = this.filtered_entries.get(ix).cloned() {
@@ -205,6 +227,7 @@ pub fn render(
         )
         .child(render_properties_dialog(page, cx))
         .child(render_batch_rename_dialog(page, cx))
+        .child(render_conflict_dialog(page, cx))
         .child(render_context_menu(page, window, cx))
 }
 
@@ -228,6 +251,40 @@ fn render_batch_rename_dialog(
                 gpui::MouseButton::Left,
                 cx.listener(|this, _event, _window, cx| {
                     this.close_batch_rename(cx);
+                }),
+            )
+            .child(
+                div().on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(|_this, _event, _window, cx| {
+                        cx.stop_propagation();
+                    }),
+                )
+                .child(dialog.clone()),
+            )
+            .into_any_element();
+    }
+    div().into_any_element()
+}
+
+fn render_conflict_dialog(
+    page: &mut ExplorerPane,
+    cx: &mut Context<ExplorerPane>,
+) -> impl IntoElement {
+    if let Some(dialog) = &page.conflict_dialog {
+        return div()
+            .absolute()
+            .inset_0()
+            .bg(gpui::hsla(0.0, 0.0, 0.0, 0.4))
+            .flex()
+            .items_center()
+            .justify_center()
+            // Click-outside cancels the whole operation. The card stops
+            // propagation so clicking a button never reaches this scrim.
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _event, _window, cx| {
+                    this.cancel_conflict_transfer(cx);
                 }),
             )
             .child(

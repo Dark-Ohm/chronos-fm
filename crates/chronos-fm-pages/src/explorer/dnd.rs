@@ -2,7 +2,7 @@ use super::ExplorerPane;
 use super::types::StatusLevel;
 use super::view::listing::{row::icon_path_for, truncate_middle};
 use chronos_fm_services::fs::listing::FileEntryDto;
-use chronos_fm_services::fs::ops::{TransferReport, transfer_paths};
+use chronos_fm_services::fs::ops::{TransferReport, transfer_paths_resolved};
 use chronos_fm_ui::theme::theme;
 use gpui::prelude::*;
 use gpui::{
@@ -294,7 +294,9 @@ impl ExplorerPane {
             && self.can_accept_file_drop(target_id, drag, target, window.modifiers(), cx)
     }
 
-    /// Starts one validated local transfer and returns whether it was accepted.
+    /// Starts one validated local transfer and returns whether it was
+    /// accepted. Destination collisions pause the drop behind the conflict
+    /// dialog (T053) instead of silently auto-renaming.
     pub(crate) fn begin_file_drop(
         &mut self,
         drag: FileDrag,
@@ -302,7 +304,7 @@ impl ExplorerPane {
         modifiers: Modifiers,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.provider.is_some() || self.drop_pending {
+        if self.provider.is_some() || self.drop_pending || self.conflict_dialog.is_some() {
             return false;
         }
 
@@ -326,13 +328,23 @@ impl ExplorerPane {
         self.cancel_marquee();
         cx.notify();
 
-        let background =
-            cx.background_spawn(async move { transfer_paths(&paths, &destination, mode.into()) });
-        cx.spawn(async move |target, cx| {
-            let report = background.await;
-            complete_file_drop(target, source, target_id, source_id, mode, report, cx);
-        })
-        .detach();
+        let arg_paths = paths.clone();
+        let arg_destination = destination.clone();
+        self.transfer_with_conflict_dialog(
+            arg_paths,
+            arg_destination,
+            cx,
+            move |_pane, cx, resolutions| {
+                let background = cx.background_spawn(async move {
+                    transfer_paths_resolved(&paths, &destination, mode.into(), &resolutions)
+                });
+                cx.spawn(async move |target, cx| {
+                    let report = background.await;
+                    complete_file_drop(target, source, target_id, source_id, mode, report, cx);
+                })
+                .detach();
+            },
+        );
         true
     }
 
@@ -373,6 +385,8 @@ impl ExplorerPane {
     /// Starts one validated local transfer for an OS-originated drop. The
     /// payload has no source pane, so completion only refreshes the
     /// destination pane — there is no cross-pane source reload (T052).
+    /// Destination collisions pause the drop behind the conflict dialog (T053)
+    /// instead of silently auto-renaming.
     pub(crate) fn begin_external_drop(
         &mut self,
         paths: Vec<PathBuf>,
@@ -380,7 +394,7 @@ impl ExplorerPane {
         modifiers: Modifiers,
         cx: &mut Context<Self>,
     ) -> bool {
-        if self.provider.is_some() || self.drop_pending {
+        if self.provider.is_some() || self.drop_pending || self.conflict_dialog.is_some() {
             return false;
         }
 
@@ -395,13 +409,23 @@ impl ExplorerPane {
         self.cancel_marquee();
         cx.notify();
 
-        let background =
-            cx.background_spawn(async move { transfer_paths(&paths, &destination, mode.into()) });
-        cx.spawn(async move |target, cx| {
-            let report = background.await;
-            complete_external_drop(target, mode, report, cx);
-        })
-        .detach();
+        let arg_paths = paths.clone();
+        let arg_destination = destination.clone();
+        self.transfer_with_conflict_dialog(
+            arg_paths,
+            arg_destination,
+            cx,
+            move |_pane, cx, resolutions| {
+                let background = cx.background_spawn(async move {
+                    transfer_paths_resolved(&paths, &destination, mode.into(), &resolutions)
+                });
+                cx.spawn(async move |target, cx| {
+                    let report = background.await;
+                    complete_external_drop(target, mode, report, cx);
+                })
+                .detach();
+            },
+        );
         true
     }
 }
@@ -1355,6 +1379,14 @@ mod tests {
         assert_eq!(active_drag_cursor(&mut cx), Some(CursorStyle::DragCopy));
         dispatch_mouse_up(&mut cx, target, copy);
         assert!(pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        // The same-parent copy collides with the source itself, so the drop
+        // pauses behind the conflict dialog (T053); the default Rename
+        // decision produces the same unique-name result the old silent
+        // auto-rename did.
+        assert!(pane.read_with(&cx, |pane, _cx| pane.conflict_dialog.is_some()));
+        pane.update(&mut cx, |pane, cx| {
+            pane.conflict_decide(crate::explorer::conflict::ConflictChoice::Rename, cx);
+        });
         settle_drop(&mut cx).await;
         assert!(source_path.exists());
         assert!(copied_path.exists());
@@ -1385,6 +1417,14 @@ mod tests {
         assert_eq!(active_drag_cursor(&mut cx), Some(CursorStyle::DragCopy));
         dispatch_mouse_up(&mut cx, target, copy);
         assert!(pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        // The same-parent copy collides with the source itself, so the drop
+        // pauses behind the conflict dialog (T053); the default Rename
+        // decision produces the same unique-name result the old silent
+        // auto-rename did.
+        assert!(pane.read_with(&cx, |pane, _cx| pane.conflict_dialog.is_some()));
+        pane.update(&mut cx, |pane, cx| {
+            pane.conflict_decide(crate::explorer::conflict::ConflictChoice::Rename, cx);
+        });
         settle_drop(&mut cx).await;
         assert!(source_path.exists());
         assert!(copied_path.exists());
@@ -1641,6 +1681,13 @@ mod tests {
             },
             cx,
         ));
+        // The same-parent copy collides with the source itself, so the drop
+        // pauses behind the conflict dialog (T053) instead of silently
+        // auto-renaming.
+        assert!(pane.read_with(cx, |pane, _cx| pane.conflict_dialog.is_some()));
+        pane.update(cx, |pane, cx| {
+            pane.conflict_decide(crate::explorer::conflict::ConflictChoice::Rename, cx);
+        });
         settle_drop(cx).await;
 
         assert!(copy_path.exists());
@@ -2108,6 +2155,13 @@ mod tests {
         );
         dispatch_mouse_up(&mut cx, own_cwd, copy);
         assert!(left_pane.read_with(&cx, |pane, _cx| pane.drop_pending));
+        // The same-parent copy collides with the source itself, so the drop
+        // pauses behind the conflict dialog (T053); Rename keeps the old
+        // unique-name outcome.
+        assert!(left_pane.read_with(&cx, |pane, _cx| pane.conflict_dialog.is_some()));
+        left_pane.update(&mut cx, |pane, cx| {
+            pane.conflict_decide(crate::explorer::conflict::ConflictChoice::Rename, cx);
+        });
         cx.background_executor
             .timer(Duration::from_millis(50))
             .await;

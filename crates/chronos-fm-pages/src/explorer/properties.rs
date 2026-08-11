@@ -272,7 +272,7 @@ fn prop_row(cx: &App, label: &str, value: &str) -> impl IntoElement {
         .child(div().flex_1().text_color(theme::fg(cx)).text_sm().child(value))
 }
 
-fn human_size(bytes: u64) -> String {
+pub(crate) fn human_size(bytes: u64) -> String {
     const UNITS: &[&str] = &["B", "KB", "MB", "GB", "TB"];
     let mut size = bytes as f64;
     let mut unit_idx = 0;
