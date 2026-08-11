@@ -1,5 +1,16 @@
 # T039 — Phase V/F: S3 tab mockup parity
 
+> ## ⚖️ ARCHITECT (2026-08-11): **ACCEPT — full Phase V**
+>
+> Verified independently: services s3:: 15 passed (live byte proof ran),
+> pages s3:: 4 passed, workspace 450 passed / 0 failed; opened grims myself
+> (explorer `s3://rustfs@` 2 items, buckets documents/photos, transfers
+> honest empty); code-verified the env seam never writes the keyring
+> (`persist_credentials=false`) and the cancelled-picker path returns.
+> Residuals 1+2 closed by live MinIO run (§5 of the report).
+> Remaining (honest, non-blocking): cancel-mid-transfer unit-only, bucket
+> sizes 0 B by ListBuckets API design, manual click-through not exercised.
+
 > ## ⚖️ ARCHITECT (2026-08-10): **PARTIAL-ACCEPT**
 >
 > ### Code — ACCEPT

@@ -1,15 +1,32 @@
 # T039 — S3 tab mockup parity — Implementation report
 
+> ## ⚖️ ARCHITECT (2026-08-11): **ACCEPT — full Phase V**
+>
+> Independently re-verified, not from the report:
+> - `cargo test -p chronos-fm-services s3::` → **15 passed** (includes
+>   `live_minio_chunked_transfer_byte_proof` — actually ran, MinIO alive)
+> - `cargo test -p chronos-fm-pages s3::` → **4 passed**
+> - `cargo test --workspace` → **450 passed** (13+62+0+180+145+16+34), 0 failed
+> - Opened 3 of 4 grims myself: explorer `s3://rustfs@` 2 items; buckets
+>   `documents`/`photos`; transfers honest "No transfers yet." — matches the
+>   OCR table below
+> - Code-verified: `maybe_auto_connect_from_env` gated on both env vars;
+>   `start_connect(..., persist_credentials)` writes keyring only when true;
+>   env seam `Ok(None)` → return (no default-path substitution on cancelled
+>   picker)
+>
+> Report is honest about what remains (cancel-mid-transfer unit-only, bucket
+> sizes 0 B by API design, manual click-through not exercised) — no hidden
+> gaps. Residuals 1+2 from the 2026-08-10 PARTIAL stamp are closed.
+
 > ## ⚖️ ARCHITECT UPDATE (2026-08-10): **PARTIAL** — sub-view grims inconclusive
 >
 > `T039-shots/t039_s3_{buckets,transfers,properties,explorer}.png` all show
 > the same NoProfiles empty gate (no sub-nav chrome). Residual: profile path
 > or product decision to always show 4-view chrome when disconnected.
 
-**Status:** IMPLEMENTED, NOT ACCEPTED — not claimed done. Per session policy
-the executor does not accept its own work; every claim below is either a
-command + its output or explicitly marked UNVERIFIED.
-**Date:** 2026-08-10
+**Status:** ACCEPTED (2026-08-11) — full Phase V; residuals 1+2 closed by live MinIO verification (§5).
+**Date:** 2026-08-10 (updated 2026-08-11)
 **Executor:** Claude (Sonnet 5)
 **Follows:** architect verdict "T039 — GATES 1+2 ACCEPT → IMPLEMENT GO"
 (2026-08-10), which asked for: 1. TDD chunk split + state machine, 2.
@@ -127,6 +144,66 @@ UNVERIFIED rather than infer it"), the four views' actual on-screen
 appearance against `Chronos-S3-Tab.dc.html` is **UNVERIFIED** this
 session — same gap class as T046, not a new kind of gap.
 
+## 5 — Live verification against a real S3 stand (residuals 1+2 closed)
+
+Follow-up session: ran the full 4-view shell against a **live local MinIO**
+(quay.io/minio on 127.0.0.1:9000, path-style, profile `rustfs`) with a
+real profile in `~/.config/chronos-fm/config.toml`. Environment:
+
+- MinIO seeded with 2 buckets (`photos`: `wallpaper.png`, `notes.txt`,
+  `holiday/…`, `family/…`; `documents`: `readme.md`, `archive.tar.gz`) via
+  `script/dev/t039_seed_minio.py` (boto3).
+- Credentials come from `CHRONOS_FM_S3_ACCESS_KEY`/`_SECRET_KEY` through a
+  **verification-only seam** (`S3Page::maybe_auto_connect_from_env`, env-gated,
+  no-op without both vars). The seam passes `persist_credentials=false` to
+  `start_connect`, so it **never writes the keyring** (verified: `secret-tool
+  lookup` stays empty after a seam run); only the interactive Connect button
+  persists. Keyring itself verified fast (3.3 ms `connect()`) — not a blocker.
+  Secrets never land in config or this report.
+- Sub-views reached with the existing `--page=s3:<sub>` debug flag (T046).
+
+### Bug found & fixed on the live path
+
+`--page=s3:buckets` runs `select_view(Buckets) → load_buckets()` **before**
+the async connect completes, so `client` is `None` and the load is
+skipped; nothing retried it after the client arrived → the Buckets view
+stayed empty forever. Fixed in `wire_pane`: when the view is Buckets and
+buckets are still empty, retry `load_buckets()` right after wiring the
+client. (Same class of gap as the earlier pane-listing regression, commit
+`32cb1ac`; the pane *does* receive its listing — probe log
+`pane reload cwd=s3://rustfs@ entries=Ok(["documents", "photos"])`.)
+
+### Byte proof
+
+`live_minio_chunked_transfer_byte_proof` (services crate, MinIO-gated,
+skips when no server): whole-object put/get roundtrip **and** chunked
+multipart upload + download are byte-identical. This exposed a real
+latent bug: the transfer thread created its **own** tokio runtime while
+reusing the shared `aws_sdk_s3::Client`, whose hyper connection pool was
+bound to the caller's runtime → requests never dispatched (silent hang).
+Fixed by passing the client's `Arc<Runtime>` into the transfer thread so
+upload/download run on the same runtime as every other S3 op. The test
+now passes in ~0.3 s.
+
+### Grims — all 4 sub-views, `class=chronos-fm`, real data
+
+`docs/orchestration/tasks/report-log/T039-shots/t039_s3_live_{explorer,buckets,transfers,properties}.png`
+
+OCR (tesseract; the sandbox was missing `eng.traineddata`, installed to
+/tmp/tessdata) reads, per view:
+
+| View | OCR-verified content |
+|---|---|
+| **explorer** | header `☁️ S3`; sub-nav Explorer\|Buckets\|Transfers\|Properties; path `s3://rustfs@`, **2 items**, List/Grid toggle; listing columns NAME/TYPE/SIZE/Preview; first row `documents` (Folder); Places sidebar |
+| **buckets** | sub-nav; bucket rows **`documents`**, **`photos`** (the seeded MinIO buckets) |
+| **transfers** | sub-nav; honest empty state `No transfers yet.` |
+| **properties** | sub-nav; honest empty state `Select an object in Explorer to see its properties.` |
+
+Old NoProfiles-gate grims (`t039_s3_*.png`) had stdev 3.8–4.8 (empty
+gate); live grims are 11.5–19.7 with real content. Bucket sizes show `0 B`
+(honest: `ListBuckets` doesn't return sizes; per-bucket HEAD is Phase-F
+material).
+
 ## What is verified vs. not
 
 | Claim | Evidence |
@@ -134,24 +211,29 @@ session — same gap class as T046, not a new kind of gap.
 | Chunk-split math is correct at boundaries (exact multiple, remainder, zero, sub-chunk) | 5 unit tests, green |
 | State machine allows exactly the documented transitions, rejects the rest | 2 unit tests, green |
 | Engine compiles against the real `aws-sdk-s3` API surface | `cargo build -p chronos-fm-services` clean |
-| Engine's actual network behavior (upload/download/retry/abort) | **NOT VERIFIED** — no RustFS run this session |
+| Engine's actual network behavior (upload/download/retry/abort) | live MinIO byte proof: whole-object + chunked upload/download byte-identical, ~0.3 s |
+| Transfer thread shares the client's tokio runtime (latent hang fixed) | `live_minio_chunked_transfer_byte_proof` green; before fix it hung with zero events |
 | 4-view UI compiles, existing T021 regression test still passes | `cargo build`/`cargo test -p chronos-fm-pages` clean |
 | `format_bytes` display helper | 3 unit tests, green |
-| No workspace regression | `cargo test --workspace --no-fail-fast`: 0 failed |
+| No workspace regression | `cargo test --workspace`: 0 failed (450 passed) |
 | Release build stable, app launches, no panics | live grim, `GRIM_OK`, log has zero error/panic lines |
-| The 4 views visually match the mockup | **UNVERIFIED** — same hypr click-focus blocker as T046 |
+| Connect flow against a real profile (keyring + client + wire) | log: seam → keyring → client built → `wire_pane done`, whole flow 64 ms |
+| Buckets view loads after async connect (init race fixed) | `--page=s3:buckets` log: `S3 buckets: loaded 2 buckets` |
+| The 4 views render with real S3 data | 4 live grims, OCR-verified (`t039_s3_live_*.png`) |
 
 ## Recommendation
 
-Two real residuals, not blocking on each other:
+**Residuals 1+2 (RustFS/live engine + 4-view visual) are closed** by the
+live MinIO run above. What remains is honest, smaller-scope follow-up:
 
-1. **RustFS integration pass** (design spec verification item 2) — actually
-   upload and download a file against the local RustFS stand, byte-for-
-   byte check, and exercise the cancel-mid-transfer path for real. This is
-   the only way to know the engine works, not just compiles.
-2. **Visual verification** — needs either working interactive input in
-   this sandbox (T046's open question) or a config with a pre-selected S3
-   profile + some way to force the initial view to Buckets/Transfers/
-   Properties for a scripted grim sequence without relying on clicks.
+1. **Cancel-mid-transfer path** — the live proof exercises upload/download
+   completion; the cancel/abort path is still unit-tested only.
+2. **Bucket sizes / object counts** — `ListBuckets` returns no sizes, so
+   the Buckets view shows `0 B`; per-bucket HEAD/listing for sizes is a
+   small Phase-F enhancement.
+3. **Interactive path** — the env-credential seam is verification-only;
+   the form→keyring→connect flow still deserves one manual click-through
+   on a real desktop (keyring verified fast here, so no blocker).
 
-Both are honest gaps, not implementation debt hidden as "done."
+No honest gaps are hidden as "done" — the earlier UNVERIFIED rows now
+carry live evidence.
