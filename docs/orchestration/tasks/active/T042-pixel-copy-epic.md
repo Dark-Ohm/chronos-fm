@@ -1,5 +1,10 @@
 # T042 — Epic: smart pixel-copy of product mockups (Phase V)
 
+> ## ⚖️ ARCHITECT (2026-08-11): **EPIC COMPLETE** — all five Phase V page
+> children full ACCEPT (T039 closed today via live MinIO run; previously
+> PARTIAL for the NoProfiles gate). Done-when met. Index only — Phase F
+> backend work lives in its own tickets.
+
 **Priority:** P0 program. **Role:** index only — work lives in children.
 
 ## Strategy
@@ -20,7 +25,7 @@ Source: `/home/neo/projects/chronos-ecosystem/Source`.
 |--------|---------|--------|
 | **T037** | Explorer shell | **done ACCEPT** |
 | **T038** | Git | **done ACCEPT** (all 5 sub-views grimed on real repo) |
-| **T039** | S3 | **PARTIAL-ACCEPT** — NoProfiles gate hides 4-view chrome; need profile path |
+| **T039** | S3 | **done ACCEPT** (live MinIO: 4 sub-views grimed on real profile, residuals 1+2 closed) |
 | **T040** | Settings | **done ACCEPT** |
 | **T041** | Extensions | **done ACCEPT** |
 
@@ -34,10 +39,9 @@ Source: `/home/neo/projects/chronos-ecosystem/Source`.
 
 ## Order
 
-1. ~~T037–T038, T040–T041, T043–T047~~ **done**
-2. **T039** finish Phase V vision (profile + sub-views) → full V ACCEPT
-3. Phase F backends
-4. Tooling: `script/dev/t046_page_smoke.sh` (for Git populated: clean `state.redb` or repo path)
+1. ~~T037–T041, T043–T047~~ **done** — all five Phase V children full ACCEPT
+2. Phase F backends
+3. Tooling: `script/dev/t046_page_smoke.sh` (for Git populated: clean `state.redb` or repo path)
 
 ## Non-negotiables
 
@@ -47,10 +51,11 @@ Source: `/home/neo/projects/chronos-ecosystem/Source`.
 
 ## Done when (epic)
 
-All five page children full Phase V ACCEPT. T039 last open page child.
+All five page children full Phase V ACCEPT. ✅ **MET 2026-08-11** (T039
+last closed).
 
 ## Parallel program
 
 **T048 Explorer essentials** (T049–T056) is a separate P0 track — daily FM
-parity (keys, marquee select, DnD). Does not replace finishing T039 V.
+parity (keys, marquee select, DnD). **Current:** T052 external DnD (next).
 
