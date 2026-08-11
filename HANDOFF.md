@@ -1,8 +1,8 @@
 # HANDOFF — контекст для новой сессии Архитектора (Chronos-FM)
 
-**Обновлено: 2026-08-11 (чекпоинт #8), HEAD (see tip)**  
+**Обновлено: 2026-08-11 — чекпоинт #8.**  
+Tip: `git rev-parse --short HEAD` · body of checkpoint is authoritative.  
 Читать **этот блок первым**. Ниже — #7…#1 (история).
-
 ## Чекпоинт #8, 2026-08-11 — Explorer essentials spine landed (T049–T051)
 
 ### Цель продукта (без изменений)
@@ -92,7 +92,7 @@ Shots: `report-log/T049-*`, `T050-marquee-*`, `T051-dnd-*`
 - Executor: code + release grim; **no self-ACCEPT**.
 
 ### Git / worktrees
-- Branch **`main`**, HEAD `a3ccb3b`, **ahead origin ~212** — do not push unless asked.
+- Branch **`main`**, tip of checkpoint series, **ahead origin ~212** — do not push unless asked.
 - Worktree `.worktrees/t051-dnd` may still exist after FF merge — optional cleanup.
 - Rebuild: `cargo build --release -p chronos-fm` after Source changes.
 
