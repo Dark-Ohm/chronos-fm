@@ -1,7 +1,124 @@
 # HANDOFF — контекст для новой сессии Архитектора (Chronos-FM)
 
-**Обновлено: 2026-08-10 (чекпоинт #7), HEAD `ed79ecc`.**  
-Читать **этот блок первым**. Ниже — чекпоинты #6…#1 и §0–§5 (история).
+**Обновлено: 2026-08-11 (чекпоинт #8), HEAD `47c3caa`.**  
+Читать **этот блок первым**. Ниже — #7…#1 (история).
+
+## Чекпоинт #8, 2026-08-11 — Explorer essentials spine landed (T049–T051)
+
+### Цель продукта (без изменений)
+Перекрасить Chronos-FM в Chronos + паттерны + довести до замены Thunar/Dolphin.
+**Mockup = видение продукта** (live догоняет; не резать эталон под live).
+
+### Две параллельные программы
+
+| Epic | Theme | Status |
+|------|--------|--------|
+| **T042** | Phase V pixel-copy tabs | Mostly done; **T039** S3 residual (NoProfiles / 4-view) |
+| **T048** | Explorer essentials (Thunar muscle memory) | **T049–T051 done ACCEPT**; T052–T056 open |
+
+### Стратегия UI
+1. **Phase V** — layout/IA = mockup; real data only; empty/disabled honestly.
+2. **Phase F / essentials** — function after V (or parallel explorer spine).
+3. Icons: `crates/chronos-fm-ui/assets/icons/` only.
+4. Source truth: `/home/neo/projects/chronos-ecosystem/Source` (path-deps).
+
+### Состояние тикетов (чекпоинт #8)
+
+| ID | State | Note |
+|----|--------|------|
+| **T037** | done ACCEPT | Explorer shell Phase V |
+| **T038** | done ACCEPT | Git all 5 sub-views |
+| **T039** | PARTIAL-ACCEPT | S3 code; residual: profile / always-show 4-view chrome |
+| **T040–T041** | done ACCEPT | Settings / Extensions Phase V |
+| **T042** | epic active | Pixel-copy index |
+| **T043–T047** | done | Places / listing / snapshot_memo / `--page=` / History 256KB |
+| **T048** | epic active | Explorer essentials index |
+| **T049** | **done ACCEPT** | File-ops keys (`04b26bb` + stamp) |
+| **T050** | **done ACCEPT** | Marquee multi-select list+grid (`f6c8f99`) |
+| **T051** | **done ACCEPT** | In-app DnD (`47c3caa`); unique_name collisions |
+| **T052** | active | External DnD (next P1 after T051) |
+| **T053** | active | Conflict dialog (paste+drop) — will replace unique_name policy |
+| **T054** | active | Undo stack |
+| **T055** | active | Open terminal here |
+| **T056** | active | New file + bulk progress |
+| **T057** | active | Preview image+HTML (code landed earlier; ticket hygiene) |
+
+Active files: `T039`, `T042`, `T048`, `T052`–`T057`.
+
+### Locked product policies (essentials)
+
+| Topic | Policy | Where |
+|-------|--------|--------|
+| File-op keys | Ctrl+C/X/V, F2, Del, Ctrl+A, Enter, Ctrl+Shift+N; pane `on_key_down`; input isolation | T049 design |
+| Marquee | Measured `on_prepaint` bounds + geometry token; empty-space only; Ctrl additive; 4px threshold | T050 design |
+| In-app DnD | Typed `FileDrag`; Move default; **Ctrl at drop** = Copy; **unique_name** never overwrite until T053 | T051 design |
+| Paste/Drop | Shared `transfer_paths` in `services/fs/ops` | T051 Task 1 |
+| Evidence | Claim→Evidence→Truth base; release + `class=chronos-fm` grim; no self-ACCEPT | AGENTS.md |
+
+### Ключевые code paths
+
+| Area | Path |
+|------|------|
+| Keys | `explorer/view.rs` `on_key_down`; `keybindings.rs` tests |
+| Marquee | `explorer/marquee.rs` + listing surface |
+| DnD | `explorer/dnd.rs`; row/grid/listing/header drop targets |
+| FS batch | `chronos-fm-services/src/fs/ops.rs` `transfer_paths` / `unique_name` |
+| Preview | `explorer/preview.rs` (PathBuf images; HTML→webview/gpui-wry) |
+| CLI smoke | `--page=` / `page:sub`; `script/dev/t046_page_smoke.sh` |
+
+### Specs & plans (canon for essentials)
+
+| Ticket | Spec | Plan |
+|--------|------|------|
+| T049 | `docs/superpowers/specs/2026-08-10-file-ops-keybindings-design.md` | `…/plans/2026-08-10-file-ops-keybindings.md` |
+| T050 | `docs/superpowers/specs/2026-08-10-marquee-multi-select-design.md` | `…/plans/2026-08-10-marquee-multi-select.md` |
+| T051 | `docs/superpowers/specs/2026-08-10-dnd-in-app-design.md` | `…/plans/2026-08-10-dnd-in-app.md` |
+
+Reports: `docs/orchestration/tasks/report/T049|T050|T051-*.md`  
+Shots: `report-log/T049-*`, `T050-marquee-*`, `T051-dnd-*`
+
+### Очередь (сейчас)
+
+1. **T052** external DnD (design → plan → implement) — depends T051 done.
+2. **T053** conflict UI for paste+drop (replaces auto unique_name).
+3. **T054** undo · **T055** terminal · **T056** progress.
+4. **T039** S3 Phase V residual (parallel).
+5. **T057** preview ticket hygiene / residual webview Wayland notes.
+6. `git push` — **only on user request** (`main` far ahead of origin).
+
+### Роли
+- Client: mockups, priority.
+- Architect: decide, stamp, hygiene; not default implementer.
+- Executor: code + release grim; **no self-ACCEPT**.
+
+### Git / worktrees
+- Branch **`main`**, HEAD `47c3caa`, **ahead origin ~212** — do not push unless asked.
+- Worktree `.worktrees/t051-dnd` may still exist after FF merge — optional cleanup.
+- Rebuild: `cargo build --release -p chronos-fm` after Source changes.
+
+### Build / evidence cheatsheet
+```bash
+cargo build --release -p chronos-fm
+./target/release/chronos-fm --page=explorer   # class=chronos-fm
+cargo test -p chronos-fm-pages --lib keybindings   # T049
+cargo test -p chronos-fm-pages --lib marquee       # T050
+cargo test -p chronos-fm-pages --lib dnd           # T051
+script/dev/t046_page_smoke.sh git:history /tmp/x.png
+```
+
+### Где что лежит
+| Что | Путь |
+|-----|------|
+| Agent entry | `AGENTS.md` |
+| Session memory | **this file** (top checkpoint) |
+| Decisions | `docs/DECISIONS.log` |
+| Queue | `docs/orchestration/tasks/active/` |
+| Mockups | `docs/design/mockups/` |
+| Architecture | `docs/architecture.md` |
+| Explorer essentials doc | `docs/explorer-essentials.md` |
+| Agent cheatsheet | `docs/orchestration/CHEATSHEET.md` |
+
+---
 
 ## Чекпоинт #7, 2026-08-10 — Phase V nearly closed; T038 ACCEPT; T039 residual
 

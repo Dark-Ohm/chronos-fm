@@ -6,6 +6,27 @@ point at these entries when both are useful.
 
 ---
 
+## 2026-08-11 — T048 essentials spine (T049–T051) and collision policy
+
+**Context.** Daily-driver FM gap was keys, marquee multi-select, and in-app DnD
+after Phase V tab shells. T053 conflict UI not yet built.
+
+**Decisions (ratified by architect stamps ACCEPT):**
+
+1. **T049** — File-ops keybindings on focused pane via `on_key_down`; shared
+   paths with context menu; input isolation; no user keymap UI in v1.
+2. **T050** — Marquee uses measured `on_prepaint` bounds + geometry token
+   (not pure index geometry); empty-space start only; Ctrl additive.
+3. **T051** — Typed in-process `FileDrag`; Move default; Ctrl evaluated **at
+   drop**; Paste and Drop share `transfer_paths`; name collisions use
+   **`unique_name`** (never overwrite) until T053.
+4. Windows is not a tier-1 target; Linux (Hyprland) is product dogfood.
+
+**Consequences.** T052 may proceed; T053 will replace fixed unique_name for
+both paste and drop. Executors must keep Claim→Evidence discipline.
+
+---
+
 ## 2026-08-10 — T048 Explorer essentials epic (Thunar parity track)
 
 **Context.** Phase V pixel-copy (T042) closed most tab shells; daily-driver
