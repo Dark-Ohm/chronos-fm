@@ -1735,7 +1735,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn e2e_folder_dragged_onto_own_descendant_does_not_fall_through_to_cwd(
+    fn e2e_folder_dragged_onto_self_does_not_fall_through_to_cwd(
         cx: &mut TestAppContext,
     ) {
         let fixture = tempfile::tempdir().unwrap();
@@ -1781,7 +1781,7 @@ mod tests {
     }
 
     #[gpui::test]
-    fn e2e_same_parent_move_via_breadcrumb_performs_no_filesystem_operation(
+    fn e2e_same_parent_move_via_cwd_surface_performs_no_filesystem_operation(
         cx: &mut TestAppContext,
     ) {
         let fixture = tempfile::tempdir().unwrap();
@@ -1823,7 +1823,7 @@ mod tests {
     }
 
     #[gpui::test]
-    async fn e2e_same_parent_ctrl_copy_via_breadcrumb_creates_unique_duplicate(
+    async fn e2e_same_parent_ctrl_copy_via_cwd_surface_creates_unique_duplicate(
         cx: &mut TestAppContext,
     ) {
         let fixture = tempfile::tempdir().unwrap();

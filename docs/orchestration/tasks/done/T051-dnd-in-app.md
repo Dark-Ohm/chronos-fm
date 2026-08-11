@@ -1,17 +1,18 @@
 # T051 — Drag-and-drop in-app (listing → folder, cross-pane)
 
-> ## ⚖️ ARCHITECT (2026-08-11): **IN PROGRESS — Tasks 4–5 GO**
+> ## ✅ ARCHITECT VERDICT: **ACCEPT / CLOSED** (2026-08-11)
 >
-> | Phase | Status |
-> |-------|--------|
-> | Design | APPROVE (`6d1cc69` / stamp) |
-> | Plan | `84832f0` — 5 tasks |
-> | Tasks 1–3 | **done** on `feat/t051-dnd` @ `d6bfc54` |
-> | Task 3 review | **PASS** (`report-log/T051-task3-review.md`) |
-> | **Tasks 4–5** | **← new agent** — brief: `active/T051-task4-5-executor-brief.md` |
+> Branch `feat/t051-dnd` through Tasks 1–5. Independent review: Approved (no
+> Critical). Architect closed Important (report Claim→Evidence for unselected
+> normalize + background completion) and renamed misleading e2e tests; dnd
+> **31/31** re-green.
 >
-> Worktree: `.worktrees/t051-dnd` · branch `feat/t051-dnd`.  
-> Collision policy: `unique_name`. No self-ACCEPT. No push.
+> Report: `report/T051-dnd-in-app-report.md`  
+> Shots: `report-log/T051-dnd-{before,held,move-after,copy-after}.png`  
+> Task 3 review: `report-log/T051-task3-review.md`
+>
+> Sign-off: pending second-drop direct-method test OK; DragCopy live grim optional.
+> Residual: T052 external, T053 conflict UI, T054 undo, T056 progress.
 
 
 **Epic:** T048. **Priority:** P0.  

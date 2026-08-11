@@ -1,5 +1,33 @@
 # T051 - In-app drag and drop report (Tasks 4-5)
 
+
+## Architect review (2026-08-11)
+
+> ## ✅ ARCHITECT VERDICT: **ACCEPT / CLOSED**
+>
+> Independent review: Approved (no Critical). Architect closed the sole
+> Important (docs) by adding first-class Claim→Evidence for unselected
+> normalization and background completion, and renaming two misleading tests.
+>
+> ### Explicit sign-off on executor caveats
+> 1. **Pending second-drop test** calling `can_accept_listing_cwd_drop` /
+>    `begin_file_drop` after a real first gesture is **accepted** for v1:
+>    those are the exact production methods the second `on_drop` would invoke;
+>    chaining two full GPUI drag gestures is harness-fragile and not required
+>    for the concurrency contract.
+> 2. **No dedicated live grim of cursor `DragCopy`** is **accepted**: live
+>    Ctrl-copy FS evidence + post-state grim (`T051-dnd-copy-after.png`) and
+>    unit/e2e cursor assertions at drop-time modifier change are sufficient;
+>    optional residual only.
+>
+> ### Minor notes (non-blocking, addressed or waived)
+> - Test names `*_via_breadcrumb` / `*_own_descendant` renamed to match actual
+>   targets (`cwd_surface` / `onto_self`).
+> - `cargo fmt -p chronos-fm-services` not re-proven in Task 5; no Task 4–5
+>   services code change beyond Task 1 — waive for this close.
+
+
+
 **Status:** IMPLEMENTED - awaiting Architect review. Executor does not self-ACCEPT.
 
 Scope of this report: Task 4 (split-pane end-to-end routing and failure
@@ -109,7 +137,7 @@ Evidence: pure `unique_name` behavior is proven at
 (`cargo test -p chronos-fm-services --lib transfer_paths` exited 0, 6
 passed). At the DnD layer,
 `same_pane_cwd_copy_selects_unique_name` (`dnd.rs:1375`) and the new
-`e2e_same_parent_ctrl_copy_via_breadcrumb_creates_unique_duplicate`
+`e2e_same_parent_ctrl_copy_via_cwd_surface_creates_unique_duplicate`
 (`dnd.rs:1826`) exercise the same path through `begin_file_drop` ->
 `transfer_paths`. Live: source `fixture/source/dup.txt` (content `dup
 source version`, 19 bytes) was dragged onto the destination pane, which
@@ -141,11 +169,11 @@ the pointer to be inside the listing viewport **and** outside every
 invalid item target under the pointer can never be reinterpreted as a valid
 cwd drop. Task 4 adds two production-tree proofs of this exact contract in
 the split-pane tree:
-`e2e_folder_dragged_onto_own_descendant_does_not_fall_through_to_cwd`
+`e2e_folder_dragged_onto_self_does_not_fall_through_to_cwd`
 (`dnd.rs:1738`) drops a directory on itself and asserts
 `CursorStyle::OperationNotAllowed`, no active drag survives mouse-up, and no
 `container (2)` appears at the pane cwd; and
-`e2e_same_parent_move_via_breadcrumb_performs_no_filesystem_operation`
+`e2e_same_parent_move_via_cwd_surface_performs_no_filesystem_operation`
 (`dnd.rs:1784`) drops a selected file onto its own pane's cwd surface
 (same-parent Move, a no-op per spec §5) and asserts no `stay (2).txt` is
 created. `dnd_routing_items_rename_header_and_provider_reject`
@@ -466,7 +494,7 @@ clipped pane, and file/folder names are legible.
 - Local filesystem panes only; provider panes reject, proven by
   `dnd_routing_items_rename_header_and_provider_reject`. Yes.
 - No fall-through: proven by
-  `e2e_folder_dragged_onto_own_descendant_does_not_fall_through_to_cwd` and
+  `e2e_folder_dragged_onto_self_does_not_fall_through_to_cwd` and
   the pre-existing item-covered-cwd case. Yes.
 - Paste and Drop share one transfer helper: proven by both call sites using
   `transfer_paths`/`unique_name` exclusively. Yes.
@@ -485,6 +513,38 @@ clipped pane, and file/folder names are legible.
   `crates/chronos-fm-pages/src/explorer/dnd.rs` only)
 - This report + evidence commit (Task 5, committed immediately after this
   file is written)
+
+
+Claim: Dragging an unselected list/grid item makes that item the sole selection
+before the payload is finalized, and cancels any active T050 marquee (spec §1 /
+§7 event order).
+
+Evidence: `FileDrag::activate` (`dnd.rs:73`) sole-selects the initiating path
+when it was not selected and calls `cancel_marquee`. Production tree proof:
+`dnd_routing_unselected_list_row_normalizes_and_cancels_marquee` (`dnd.rs:1023`)
+begins a marquee, starts a real file drag from an unselected row, and asserts
+`pane.marquee` is `None` with the initiating row selected. Covered in the
+31/31 `dnd` suite (22 baseline + 9 Task 4). This claim is a first-class
+normalization requirement of the design, not only an incidental marquee note.
+
+Truth base: Chronos-FM.
+
+Claim: Filesystem transfer runs off the UI thread; completion reloads panes and
+updates selection after the background job finishes (spec §3 step 5–6, §8).
+
+Evidence: `begin_file_drop` (`dnd.rs:298`) sets `drop_pending` synchronously,
+then `cx.background_spawn(async move { transfer_paths(...) })` and
+`cx.spawn` → `complete_file_drop` for UI updates. Task 4 production proofs
+that observe completion *after* `settle_drop` / background park include
+`e2e_cross_pane_move_reloads_both_panes_and_selects_destination`,
+`e2e_ctrl_evaluated_at_drop_time_copies_across_panes`,
+`e2e_cross_pane_partial_failure_reports_visible_error`, and
+`e2e_closing_source_pane_before_completion_still_reloads_destination` (destination
+still completes when the source entity is released mid-flight). Live release log
+line `file drop filesystem work completed success_count=… mode=Move|Copy`
+matches background completion, not a UI-thread inline transfer.
+
+Truth base: Chronos-FM | runtime log.
 
 ## Residual / handed off
 

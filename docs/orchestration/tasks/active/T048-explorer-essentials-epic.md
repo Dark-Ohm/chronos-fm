@@ -31,7 +31,7 @@ Source edits only if gpui DnD/input APIs are missing — **what / why / заче
 |----|-------|-----|---------|
 | **T049** | File-ops keybindings (Ctrl+C/X/V, F2, Del, Ctrl+A, …) | P0 | **done ACCEPT** |
 | **T050** | Multi-select: Shift/Ctrl-click + **marquee (rubber-band) mouse** list+grid | P0 | — |
-| **T051** | **DnD in-app** (listing → folder, cross-pane move/copy) | P0 | T050 preferred |
+| **T051** | DnD in-app | P0 | **done ACCEPT** |
 | **T052** | **DnD external** (into/out of Chronos-FM ↔ other apps) | P1 | T051 |
 | **T053** | Paste/drop conflict dialog (Rename/Overwrite/Skip/Apply all) | P1 | T049 or T051 |
 | **T054** | Undo stack (rename/copy/move/trash/new folder) | P1 | T049 |
