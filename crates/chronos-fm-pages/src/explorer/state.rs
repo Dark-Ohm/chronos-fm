@@ -93,7 +93,7 @@ pub struct ExplorerPane {
     /// Batch-rename dialog, if open (T006).
     pub batch_rename: Option<gpui::Entity<crate::explorer::batch_rename::BatchRenameDialog>>,
     /// Paste/drop conflict dialog, when a transfer needs a decision (T053).
-    pub conflict_dialog:
+    pub(crate) conflict_dialog:
         Option<gpui::Entity<crate::explorer::conflict_dialog::ConflictDialog>>,
     /// The paused paste/drop operation awaiting conflict decisions (T053).
     pub(crate) pending_transfer:
