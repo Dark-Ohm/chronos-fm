@@ -92,7 +92,7 @@ Shots: `report-log/T049-*`, `T050-marquee-*`, `T051-dnd-*`
 - Executor: code + release grim; **no self-ACCEPT**.
 
 ### Git / worktrees
-- Branch **`main`**, HEAD `47c3caa`, **ahead origin ~212** — do not push unless asked.
+- Branch **`main`**, HEAD `09ea4cc`, **ahead origin ~212** — do not push unless asked.
 - Worktree `.worktrees/t051-dnd` may still exist after FF merge — optional cleanup.
 - Rebuild: `cargo build --release -p chronos-fm` after Source changes.
 
