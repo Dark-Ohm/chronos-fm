@@ -59,6 +59,15 @@ pub fn render(
     let pane_for_style = entity.clone();
     let style_target = cwd_target.clone();
     let drop_target = cwd_target.clone();
+    // T052 drop-in: fresh captures for the `ExternalPaths` handlers below; the
+    // `FileDrag` handlers above move their own copies into move-closures.
+    let external_pane_for_move = entity.clone();
+    let external_move_target = cwd_target.clone();
+    let external_pane_for_can_drop = entity.clone();
+    let external_can_drop_target = cwd_target.clone();
+    let external_pane_for_style = entity.clone();
+    let external_style_target = cwd_target.clone();
+    let external_drop_target = cwd_target.clone();
     let scroll_handle = page.virtual_scroll_handle.clone();
     let event_scroll_handle = scroll_handle.clone();
     let mut listing_viewport = div()
@@ -143,17 +152,6 @@ pub fn render(
             };
             set_file_drag_cursor(cursor, window, cx);
         })
-        .can_drop(move |value, window, cx| {
-            value.downcast_ref::<FileDrag>().is_some_and(|drag| {
-                pane_for_can_drop.read(cx).can_accept_listing_cwd_drop(
-                    target_id,
-                    drag,
-                    &can_drop_target,
-                    window,
-                    cx,
-                )
-            })
-        })
         .drag_over::<FileDrag>(move |style, drag, window, cx| {
             if pane_for_style.read(cx).can_accept_listing_cwd_drop(
                 target_id,
@@ -174,6 +172,83 @@ pub fn render(
             let target_id = cx.entity().entity_id();
             if pane.can_accept_listing_cwd_drop(target_id, drag, &drop_target, window, cx) {
                 pane.begin_file_drop(drag.clone(), drop_target.clone(), window.modifiers(), cx);
+            }
+        }))
+        // T052 drop-in: accept OS-originated file drags (e.g. Thunar/nautilus)
+        // on the listing background. The platform payload is `ExternalPaths`;
+        // window.rs translates it into the same internal drag pipeline as
+        // `FileDrag`, so these handlers mirror the T051 block above.
+        .on_drag_move::<ExternalPaths>(move |event, window, cx| {
+            if !event.bounds.contains(&event.event.position) {
+                return;
+            }
+            let cursor = if external_pane_for_move.read(cx).can_accept_listing_cwd_external_drop(
+                event.drag(cx).paths(),
+                &external_move_target,
+                window,
+            ) {
+                if drop_mode(event.event.modifiers) == DropMode::Copy {
+                    CursorStyle::DragCopy
+                } else {
+                    CursorStyle::ClosedHand
+                }
+            } else {
+                CursorStyle::OperationNotAllowed
+            };
+            set_file_drag_cursor(cursor, window, cx);
+        })
+        // The drop gate is a single predicate per element, so it must accept
+        // both payload types.
+        .can_drop(move |value, window, cx| {
+            if let Some(drag) = value.downcast_ref::<FileDrag>() {
+                pane_for_can_drop.read(cx).can_accept_listing_cwd_drop(
+                    target_id,
+                    drag,
+                    &can_drop_target,
+                    window,
+                    cx,
+                )
+            } else if let Some(paths) = value.downcast_ref::<ExternalPaths>() {
+                external_pane_for_can_drop
+                    .read(cx)
+                    .can_accept_listing_cwd_external_drop(
+                        paths.paths(),
+                        &external_can_drop_target,
+                        window,
+                    )
+            } else {
+                false
+            }
+        })
+        .drag_over::<ExternalPaths>(move |style, paths, window, cx| {
+            if external_pane_for_style
+                .read(cx)
+                .can_accept_listing_cwd_external_drop(
+                    paths.paths(),
+                    &external_style_target,
+                    window,
+                )
+            {
+                style
+                    .border_1()
+                    .border_color(theme::accent(cx))
+                    .bg(theme::accent_light(cx).opacity(0.08))
+            } else {
+                style
+            }
+        })
+        .on_drop(cx.listener(move |pane, paths: &ExternalPaths, window, cx| {
+            if pane.can_accept_listing_cwd_external_drop(
+                paths.paths(),
+                &external_drop_target,
+                window,
+            ) {
+                pane.begin_external_drop(
+                    paths.paths().to_vec(),
+                    external_drop_target.clone(),
+                    window.modifiers(),
+                    cx,
+                );
             }
         }))
         .child(file_list);

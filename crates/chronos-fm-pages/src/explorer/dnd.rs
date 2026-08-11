@@ -335,6 +335,110 @@ impl ExplorerPane {
         .detach();
         true
     }
+
+    /// Whether an OS-originated (external) drop payload can land on `target`.
+    /// External payloads carry no source pane, so the source-pane checks in
+    /// [`Self::can_accept_file_drop`] do not apply — validation is purely
+    /// against local paths, destination and drop-time modifiers (T052).
+    pub(crate) fn can_accept_external_drop(
+        &self,
+        paths: &[PathBuf],
+        target: &DropTarget,
+        modifiers: Modifiers,
+    ) -> bool {
+        if self.provider.is_some() || self.drop_pending {
+            return false;
+        }
+        validate_drop(paths, target, drop_mode(modifiers)).is_ok()
+    }
+
+    /// Applies the cwd target's measured-item exclusion to an external
+    /// payload, mirroring [`Self::can_accept_listing_cwd_drop`] from T051.
+    pub(crate) fn can_accept_listing_cwd_external_drop(
+        &self,
+        paths: &[PathBuf],
+        target: &DropTarget,
+        window: &Window,
+    ) -> bool {
+        let position = window.mouse_position();
+        self.listing_viewport
+            .is_some_and(|viewport| viewport.contains(&position))
+            && self
+                .measured_items
+                .values()
+                .all(|bounds| !bounds.contains(&position))
+            && self.can_accept_external_drop(paths, target, window.modifiers())
+    }
+
+    /// Starts one validated local transfer for an OS-originated drop. The
+    /// payload has no source pane, so completion only refreshes the
+    /// destination pane — there is no cross-pane source reload (T052).
+    pub(crate) fn begin_external_drop(
+        &mut self,
+        paths: Vec<PathBuf>,
+        target: DropTarget,
+        modifiers: Modifiers,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.provider.is_some() || self.drop_pending {
+            return false;
+        }
+
+        let mode = drop_mode(modifiers);
+        if let Err(error) = validate_drop(&paths, &target, mode) {
+            tracing::debug!(?target.kind, %error, "rejected external file drop");
+            return false;
+        }
+
+        let destination = target.directory;
+        self.drop_pending = true;
+        self.cancel_marquee();
+        cx.notify();
+
+        let background =
+            cx.background_spawn(async move { transfer_paths(&paths, &destination, mode.into()) });
+        cx.spawn(async move |target, cx| {
+            let report = background.await;
+            complete_external_drop(target, mode, report, cx);
+        })
+        .detach();
+        true
+    }
+}
+
+/// Human-readable status text for a transfer that had failures, or `None`
+/// when everything succeeded. Shared by internal (T051) and external (T052)
+/// drop completion so both surfaces report identically.
+fn drop_failure_status(report: &TransferReport) -> Option<String> {
+    let success_count = report.successes.len();
+    let failure_count = report.failures.len();
+    if failure_count == 0 {
+        return None;
+    }
+    let failures = report
+        .failures
+        .iter()
+        .map(|failure| {
+            let name = failure
+                .source
+                .file_name()
+                .and_then(|name| name.to_str())
+                .map(str::to_owned)
+                .unwrap_or_else(|| failure.source.display().to_string());
+            format!("{name}: {}", failure.error)
+        })
+        .collect::<Vec<_>>();
+    if success_count == 0 {
+        Some(format!(
+            "Drop failed: {failure_count} failed; {}",
+            failures.join(", ")
+        ))
+    } else {
+        Some(format!(
+            "Drop partially completed: {success_count} succeeded, {failure_count} failed; {}",
+            failures.join(", ")
+        ))
+    }
 }
 
 fn complete_file_drop<C: AppContext>(
@@ -353,32 +457,7 @@ fn complete_file_drop<C: AppContext>(
         .iter()
         .map(|success| success.destination.clone())
         .collect::<Vec<_>>();
-    let failures = report
-        .failures
-        .iter()
-        .map(|failure| {
-            let name = failure
-                .source
-                .file_name()
-                .and_then(|name| name.to_str())
-                .map(str::to_owned)
-                .unwrap_or_else(|| failure.source.display().to_string());
-            format!("{name}: {}", failure.error)
-        })
-        .collect::<Vec<_>>();
-    let failure_status = if failure_count == 0 {
-        None
-    } else if success_count == 0 {
-        Some(format!(
-            "Drop failed: {failure_count} failed; {}",
-            failures.join(", ")
-        ))
-    } else {
-        Some(format!(
-            "Drop partially completed: {success_count} succeeded, {failure_count} failed; {}",
-            failures.join(", ")
-        ))
-    };
+    let failure_status = drop_failure_status(&report);
 
     tracing::info!(
         success_count,
@@ -431,6 +510,45 @@ fn complete_file_drop<C: AppContext>(
                 "file drop source disappeared before completion"
             );
         }
+    }
+}
+
+/// Finishes an OS-originated drop: refreshes the destination pane and reports
+/// any failures. There is no source pane to reload, unlike
+/// [`complete_file_drop`] (T052).
+fn complete_external_drop<C: AppContext>(
+    target: WeakEntity<ExplorerPane>,
+    mode: DropMode,
+    report: TransferReport,
+    cx: &mut C,
+) {
+    let success_count = report.successes.len();
+    let failure_count = report.failures.len();
+    let destinations = report
+        .successes
+        .iter()
+        .map(|success| success.destination.clone())
+        .collect::<Vec<_>>();
+    let failure_status = drop_failure_status(&report);
+
+    tracing::info!(
+        success_count,
+        failure_count,
+        ?mode,
+        "external file drop filesystem work completed"
+    );
+
+    if target
+        .update(cx, move |pane, cx| {
+            finish_target_drop(pane, &destinations, failure_status, cx);
+        })
+        .is_err()
+    {
+        tracing::info!(
+            success_count,
+            failure_count,
+            "external file drop target disappeared before completion"
+        );
     }
 }
 
@@ -969,11 +1087,140 @@ mod tests {
         })
     }
 
+    fn begin_external_drop(
+        target_pane: &Entity<ExplorerPane>,
+        paths: Vec<PathBuf>,
+        directory: &Path,
+        kind: DropTargetKind,
+        modifiers: Modifiers,
+        cx: &mut TestAppContext,
+    ) -> bool {
+        let target = DropTarget {
+            directory: directory.to_path_buf(),
+            kind,
+        };
+        target_pane.update(cx, |pane, cx| {
+            pane.begin_external_drop(paths, target, modifiers, cx)
+        })
+    }
+
     async fn settle_drop(cx: &mut TestAppContext) {
         cx.background_executor
             .timer(Duration::from_millis(50))
             .await;
         cx.run_until_parked();
+    }
+
+    #[gpui::test]
+    async fn external_can_accept_requires_local_payload_and_directory(
+        cx: &mut TestAppContext,
+    ) {
+        let fixture = tempfile::tempdir().unwrap();
+        let destination_file = fixture.path().join("file.txt");
+        std::fs::write(&destination_file, "x").unwrap();
+        let source_file = fixture.path().join("source.txt");
+        std::fs::write(&source_file, "x").unwrap();
+        let (_, pane) = unrooted_pane(cx, fixture.path());
+
+        let rejected = pane.update(cx, |pane, _cx| {
+            pane.can_accept_external_drop(&[], &target(fixture.path()), Modifiers::default())
+        });
+        assert!(!rejected, "an empty external payload is never accepted");
+
+        let rejected = pane.update(cx, |pane, _cx| {
+            pane.can_accept_external_drop(
+                std::slice::from_ref(&source_file),
+                &target(&destination_file),
+                Modifiers::default(),
+            )
+        });
+        assert!(
+            !rejected,
+            "a non-directory destination rejects external payloads",
+        );
+
+        let rejected = pane.update(cx, |pane, _cx| {
+            pane.can_accept_external_drop(
+                std::slice::from_ref(&source_file),
+                &target(fixture.path()),
+                Modifiers::default(),
+            )
+        });
+        assert!(!rejected, "a same-parent move rejects external payloads");
+
+        let accepted = pane.update(cx, |pane, _cx| {
+            pane.can_accept_external_drop(
+                std::slice::from_ref(&source_file),
+                &target(fixture.path()),
+                Modifiers {
+                    control: true,
+                    ..Modifiers::default()
+                },
+            )
+        });
+        assert!(
+            accepted,
+            "a ctrl-copy of a local file into its parent is allowed",
+        );
+    }
+
+    #[gpui::test]
+    async fn external_drop_moves_files_into_pane_cwd(cx: &mut TestAppContext) {
+        let destination = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("external.txt");
+        std::fs::write(&source, "external").unwrap();
+        let (_, pane) = unrooted_pane(cx, destination.path());
+
+        let accepted = begin_external_drop(
+            &pane,
+            vec![source.clone()],
+            destination.path(),
+            DropTargetKind::ListingCwd,
+            Modifiers::default(),
+            cx,
+        );
+        assert!(accepted, "a default external drop moves into the cwd");
+        settle_drop(cx).await;
+
+        assert!(
+            !source.exists(),
+            "move removes the external source after a successful transfer",
+        );
+        assert!(
+            destination.path().join("external.txt").exists(),
+            "the external payload lands in the pane cwd",
+        );
+    }
+
+    #[gpui::test]
+    async fn external_drop_ctrl_copies_preserving_source(cx: &mut TestAppContext) {
+        let destination = tempfile::tempdir().unwrap();
+        let source_dir = tempfile::tempdir().unwrap();
+        let source = source_dir.path().join("external.txt");
+        std::fs::write(&source, "external").unwrap();
+        let (_, pane) = unrooted_pane(cx, destination.path());
+
+        let modifiers = Modifiers {
+            control: true,
+            ..Modifiers::default()
+        };
+        let accepted = begin_external_drop(
+            &pane,
+            vec![source.clone()],
+            destination.path(),
+            DropTargetKind::ListingCwd,
+            modifiers,
+            cx,
+        );
+        assert!(accepted, "a ctrl external drop copies into the cwd");
+        settle_drop(cx).await;
+
+        assert!(source.exists(), "copy preserves the external source");
+        assert!(
+            destination.path().join("external.txt").exists(),
+            "the copied payload lands in the pane cwd",
+        );
     }
 
     #[gpui::test]

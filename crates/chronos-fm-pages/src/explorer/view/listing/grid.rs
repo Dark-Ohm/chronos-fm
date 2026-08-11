@@ -209,8 +209,12 @@ fn render_grid_item(
         });
 
     tile.when_some(file_drag, |tile, drag| {
-        tile.on_drag(drag, |drag, _offset, _window, cx| {
+        tile.on_drag(drag, |drag, _offset, window, cx| {
             drag.activate(cx);
+            // T052 drag-out: also start the OS-level drag so the payload can
+            // leave the app (Wayland data-device source). In-app drops still
+            // complete through the internal `FileDrag` path below.
+            window.start_external_drag(drag.paths().to_vec().into());
             cx.new(|_cx| drag.preview())
         })
     })
@@ -223,6 +227,16 @@ fn render_grid_item(
         let pane_for_style = entity.clone();
         let style_target = target.clone();
         let drop_target = target.clone();
+        // T052 drop-in: OS-originated payloads (`ExternalPaths`) can also land
+        // on a folder tile; move-closures need their own captures, so the
+        // external handlers use dedicated clones below.
+        let external_pane_for_move = entity.clone();
+        let external_move_target = target.clone();
+        let external_pane_for_can_drop = entity.clone();
+        let external_can_drop_target = target.clone();
+        let external_pane_for_style = entity.clone();
+        let external_style_target = target.clone();
+        let external_drop_target = target.clone();
 
         tile.on_drag_move::<FileDrag>(move |event, window, cx| {
             if event.bounds.contains(&event.event.position)
@@ -243,17 +257,6 @@ fn render_grid_item(
                 };
                 set_file_drag_cursor(cursor, window, cx);
             }
-        })
-        .can_drop(move |value, window, cx| {
-            value.downcast_ref::<FileDrag>().is_some_and(|drag| {
-                pane_for_can_drop.read(cx).can_accept_file_drop(
-                    target_id,
-                    drag,
-                    &can_drop_target,
-                    window.modifiers(),
-                    cx,
-                )
-            })
         })
         .drag_over::<FileDrag>(move |style, drag, window, cx| {
             if pane_for_style.read(cx).can_accept_file_drop(
@@ -276,6 +279,69 @@ fn render_grid_item(
                 pane.begin_file_drop(drag.clone(), drop_target.clone(), window.modifiers(), cx);
             }
         }))
+        .on_drag_move::<ExternalPaths>(move |event, window, cx| {
+            if event.bounds.contains(&event.event.position)
+                && external_pane_for_move.read(cx).can_accept_external_drop(
+                    event.drag(cx).paths(),
+                    &external_move_target,
+                    event.event.modifiers,
+                )
+            {
+                let cursor = if crate::explorer::dnd::drop_mode(event.event.modifiers)
+                    == crate::explorer::dnd::DropMode::Copy
+                {
+                    gpui::CursorStyle::DragCopy
+                } else {
+                    gpui::CursorStyle::ClosedHand
+                };
+                set_file_drag_cursor(cursor, window, cx);
+            }
+        })
+        .drag_over::<ExternalPaths>(move |style, paths, window, cx| {
+            if external_pane_for_style.read(cx).can_accept_external_drop(
+                paths.paths(),
+                &external_style_target,
+                window.modifiers(),
+            ) {
+                style
+                    .border_color(theme::accent(cx))
+                    .bg(theme::accent_light(cx))
+            } else {
+                style
+            }
+        })
+        .on_drop(cx.listener(move |pane, paths: &ExternalPaths, window, cx| {
+            if pane.can_accept_external_drop(paths.paths(), &external_drop_target, window.modifiers())
+            {
+                pane.begin_external_drop(
+                    paths.paths().to_vec(),
+                    external_drop_target.clone(),
+                    window.modifiers(),
+                    cx,
+                );
+            }
+        }))
+        // The drop gate is a single predicate per element, so it must accept
+        // both payload types.
+        .can_drop(move |value, window, cx| {
+            if let Some(drag) = value.downcast_ref::<FileDrag>() {
+                pane_for_can_drop.read(cx).can_accept_file_drop(
+                    target_id,
+                    drag,
+                    &can_drop_target,
+                    window.modifiers(),
+                    cx,
+                )
+            } else if let Some(paths) = value.downcast_ref::<ExternalPaths>() {
+                external_pane_for_can_drop.read(cx).can_accept_external_drop(
+                    paths.paths(),
+                    &external_can_drop_target,
+                    window.modifiers(),
+                )
+            } else {
+                false
+            }
+        })
     })
     .into_any_element()
 }
