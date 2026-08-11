@@ -57,5 +57,5 @@ Hyprland: window **class=`chronos-fm`** (`app_id` in UI window options).
 - Source edits: what / why / зачем only when better for Chronos-FM + fork.
 
 ## Resume one-liner for new agent
-> Read HANDOFF #8. main @ 09ea4cc. T049–T051 ACCEPT. Next product P1: **T052**.
+> Read HANDOFF #8. main @ 7c093af. T049–T051 ACCEPT. Next product P1: **T052**.
 > Queue in `docs/orchestration/tasks/active/`. Push only if user asks.
