@@ -130,6 +130,11 @@ pub struct ExplorerPane {
     // Search
     /// The full-text search service, when available.
     pub search_service: Option<Arc<SearchService>>,
+    /// Whether the search service is still being initialized in the background
+    /// (T058). `true` only while the window is open and the binary has not yet
+    /// reported back; the search bar renders an explicit "search starting"
+    /// banner during that window instead of a misleading "failed to load" one.
+    pub search_initializing: bool,
     /// The directory scope for full-text search.
     pub search_scope: SearchScope,
     /// The kind of items full-text search targets.
@@ -286,6 +291,11 @@ impl ExplorerPane {
 
             // Search
             search_service,
+            // Defaults to `false` ("failed/unavailable" banner) so auxiliary
+            // panes built without a service — S3 listings, drop targets — keep
+            // their pre-T058 wording; the explorer page factory flips this to
+            // `true` while background initialization is genuinely pending.
+            search_initializing: false,
             search_scope: SearchScope::Home,
             search_type: SearchType::All,
             match_case: false,

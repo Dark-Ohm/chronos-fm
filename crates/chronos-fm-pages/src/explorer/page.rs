@@ -7,6 +7,7 @@
 //! / focus / tab shortcuts (§3.2, §4, §6), and mirrors navigation across panes
 //! when `synced_panes` is enabled.
 
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::{Arc, Once};
@@ -37,6 +38,23 @@ const SESSION_KEY: &str = "session.explorer_tabs";
 // writing the session snapshot, so high-frequency changes don't hammer redb's
 // fsync-on-commit (`docs/persistence.md` §3).
 const SAVE_DEBOUNCE: Duration = Duration::from_millis(500);
+
+/// Deferred search-service state shared with the pane factory (T058).
+///
+/// The window opens *before* the search service exists: the binary
+/// initializes the service (index open + recursive `$HOME` watcher — on Linux
+/// the recursive watch synchronously walks the whole home tree, ~35 s on a
+/// real home) on a background thread and injects it afterwards via
+/// [`ExplorerPage::set_search_service`]. Panes consult this state so ones
+/// built *after* injection inherit the service, and the UI can honestly
+/// distinguish "search is still starting" from "search failed to come up"
+/// instead of presenting a working-looking search that silently finds nothing.
+struct SearchServiceState {
+    service: Option<Arc<SearchService>>,
+    /// Whether background initialization has reported back (success or
+    /// failure). `false` means the service may still be starting.
+    init_reported: bool,
+}
 
 /// A persisted snapshot of one pane: its tabs (each a directory) and which is
 /// active.
@@ -158,6 +176,8 @@ pub struct ExplorerPage {
     // mutation reschedules.
     save_task: Option<Task<()>>,
     focus_handle: FocusHandle,
+    // Shared deferred search-service state read by the pane factory (T058).
+    search_service_state: Rc<RefCell<SearchServiceState>>,
 }
 
 impl Focusable for ExplorerPage {
@@ -179,11 +199,26 @@ impl ExplorerPage {
         cx: &mut Context<Self>,
     ) -> Self {
         bind_pane_keys(cx);
-        let build_search_service = search_service.clone();
+        // T058: the search service may arrive *after* the window opens (the
+        // binary initializes it on a background thread). The pane factory reads
+        // from this shared slot instead of a construction-time snapshot so tabs
+        // opened later (split, new tab) inherit the finished service.
+        let search_service_state = Rc::new(RefCell::new(SearchServiceState {
+            service: search_service,
+            init_reported: false,
+        }));
+        let build_search_service = search_service_state.clone();
         let (group, first_tab) = PaneGroup::new(
             Box::new(move |window, cx| {
-                let search_service = build_search_service.clone();
-                cx.new(|cx| ExplorerPane::build(search_service, window, cx))
+                let state = build_search_service.borrow();
+                let search_service = state.service.clone();
+                let search_initializing = state.service.is_none() && !state.init_reported;
+                let pane = cx.new(|cx| ExplorerPane::build(search_service, window, cx));
+                pane.update(cx, |pane, cx| {
+                    pane.search_initializing = search_initializing;
+                    cx.notify();
+                });
+                pane
             }),
             pane_resizable,
             window,
@@ -197,6 +232,7 @@ impl ExplorerPage {
             store,
             save_task: None,
             focus_handle: cx.focus_handle(),
+            search_service_state,
         };
         page.subscribe_tab(&first_tab, cx);
         // The root pane's tab shows its sidebar; tabs opened later default to
@@ -504,6 +540,31 @@ impl ExplorerPage {
             // `navigate_to_synced` deliberately emits no `Navigated` event, so
             // nothing else schedules a save. Persist the new session here.
             self.schedule_save(cx);
+        }
+        cx.notify();
+    }
+
+    /// Injects the (deferred) search service once background initialization
+    /// finishes (T058). The window opens with `None`; this flips every live
+    /// pane from "search starting" to ready (or to the failed/unavailable
+    /// banner when `service` is `None`), and the shared slot makes the service
+    /// visible to tabs opened later.
+    pub(crate) fn set_search_service(
+        &mut self,
+        service: Option<Arc<SearchService>>,
+        cx: &mut Context<Self>,
+    ) {
+        {
+            let mut state = self.search_service_state.borrow_mut();
+            state.service = service.clone();
+            state.init_reported = true;
+        }
+        for tab in self.group.all_tabs() {
+            tab.update(cx, |pane, cx| {
+                pane.search_service = service.clone();
+                pane.search_initializing = false;
+                cx.notify();
+            });
         }
         cx.notify();
     }

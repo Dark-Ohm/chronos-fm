@@ -204,18 +204,31 @@ pub fn render(page: &mut ExplorerPane, cx: &mut Context<ExplorerPane>) -> impl I
                         ),
                 )
                 .child(
-                    // Search-availability indicator (T016): if the index service
-                    // failed to come up we say so loudly instead of failing
-                    // silently. The filename filter still works without it.
+                    // Search-availability indicator (T016 + T058): while the
+                    // search service is still being initialized in the
+                    // background we say so explicitly; once initialization has
+                    // reported back, a still-missing service means it failed to
+                    // come up. Either way the UI never presents a search that
+                    // silently finds nothing — the filename filter still works
+                    // without it.
                     div().when(page.search_service.is_none(), |this| {
+                        let starting = page.search_initializing;
                         this.flex()
                             .items_center()
                             .gap(px(4.0))
                             .px(px(12.0))
                             .pb(px(4.0))
                             .text_xs()
-                            .text_color(theme::danger(cx))
-                            .child("⚠ Full-text search unavailable — index failed to load")
+                            .text_color(if starting {
+                                theme::muted(cx)
+                            } else {
+                                theme::danger(cx)
+                            })
+                            .child(if starting {
+                                "⏳ Full-text search starting — indexing $HOME in the background"
+                            } else {
+                                "⚠ Full-text search unavailable — index failed to load"
+                            })
                     }),
                 ),
         )

@@ -74,6 +74,11 @@ impl RootView {
     /// the indexing-progress poll. `resizable` is created at the application
     /// level and the search service is initialized by the binary (it owns the
     /// async runtime), keeping `chronos-fm-pages` free of runtime concerns.
+    ///
+    /// T058: the search service is initialized on a *background* thread (its
+    /// recursive `$HOME` watcher would otherwise block first window paint for
+    /// tens of seconds), so the binary passes `None` here and injects the
+    /// finished service via [`RootView::set_search_service`].
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         resizable: Entity<ResizableState>,
@@ -313,6 +318,32 @@ impl RootView {
             },
         )
         .detach();
+    }
+
+    /// Injects the (deferred) search service once background initialization
+    /// finishes, whether it succeeded (`Some`) or failed (`None`) (T058: the
+    /// window opens immediately with `None` so the recursive `$HOME` watcher
+    /// never blocks first paint; the binary calls this from its background
+    /// task). Pushes the service down into the explorer page and (re)starts
+    /// the indexing-progress poll now that a service exists.
+    pub fn set_search_service(
+        &mut self,
+        service: Option<Arc<SearchService>>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let had_service = self.search_service.is_some();
+        self.search_service = service.clone();
+        self.explorer.update(cx, |page, cx| {
+            page.set_search_service(service, cx);
+        });
+        // The progress loop bails while there is no service; start it only on
+        // a None→Some transition so a second injection can never double the
+        // per-frame poll.
+        if !had_service && self.search_service.is_some() {
+            self.start_progress_loop(window, cx);
+        }
+        cx.notify();
     }
 
     /// Switches the active page, notifying for a redraw only if it changed.

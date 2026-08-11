@@ -8,7 +8,7 @@
 
 use crate::cli::Cli;
 use futures::StreamExt;
-use gpui::{App, AppContext, AsyncApp, Bounds, BorrowAppContext, px, size};
+use gpui::{App, AppContext, AsyncApp, Bounds, BorrowAppContext, Entity, px, size};
 use gpui_component::resizable::ResizableState;
 use gpui_component::{Root, Theme, ThemeRegistry};
 use chronos_fm_core::config::{self, ConfigOverride};
@@ -91,36 +91,28 @@ impl ChronosFmApp {
                 let initial_page = initial_page;
                 let initial_subview = initial_subview.clone();
                 move |window, cx| {
-                    // Initialize SearchService. Failure is non-fatal: the app starts
-                    // with full-text search disabled rather than crashing.
+                    // T058: the search service (index open + recursive watcher
+                    // over `$HOME`) is initialized on GPUI's background
+                    // executor, NOT on this window-building path — a recursive
+                    // inotify watch synchronously walks the whole home tree
+                    // (300k+ dirs on this machine ≈ 35 s) and used to block
+                    // first window paint. The window therefore opens
+                    // immediately with `search_service: None`;
+                    // `spawn_search_service` injects the finished service (or
+                    // `None` on failure — search degrades to filename
+                    // filtering) into `RootView` once background
+                    // initialization completes. Failure is non-fatal: the app
+                    // starts with full-text search disabled rather than
+                    // crashing.
                     let excludes = Excludes::from_config(
                         config.indexing.exclude.paths.clone(),
                         config.indexing.exclude.globs.clone(),
                     );
-                    let search_service: Option<Arc<SearchService>> = match SearchService::new(excludes) {
-                        Ok(service) => Some(Arc::new(service)),
-                        Err(e) => {
-                            tracing::error!(
-                                "Failed to initialize search service; starting with search disabled: {}",
-                                e
-                            );
-                            None
-                        }
-                    };
-
-                    // Kick off initial indexing on GPUI's background executor, which
-                    // is a thread pool (replacing tokio::task::spawn_blocking;
-                    // async-runtime.md §2).
-                    if let Some(service) = &search_service {
-                        if let Some(job) = service.take_initial_indexing_job() {
-                            cx.background_spawn(async move { job.run() }).detach();
-                        }
-                    }
 
                     let view = cx.new(|cx| {
                         RootView::new(
                             resizable.clone(),
-                            search_service,
+                            None, // arrives asynchronously via spawn_search_service (T058)
                             store,
                             config,
                             config_path,
@@ -132,6 +124,8 @@ impl ChronosFmApp {
                             cx,
                         )
                     });
+                    spawn_search_service(&view, excludes, cx);
+
                     cx.new(|cx| Root::new(view, window, cx))
                 }
             });
@@ -140,6 +134,71 @@ impl ChronosFmApp {
             }
         });
     }
+}
+
+/// Initializes `SearchService` on GPUI's background executor and injects the
+/// finished service into `RootView` once it is ready (T058).
+///
+/// `SearchService::new` opens the tantivy index and starts a recursive
+/// inotify watcher over `$HOME`; on Linux the recursive watch synchronously
+/// walks the entire tree (300k+ directories on a real home ≈ 35 s), so it
+/// must never run on the thread that builds the window. The window therefore
+/// opens immediately with `search_service: None` (the search UI honestly
+/// reports "search starting" until this task reports back) and the finished
+/// service — or `None` on failure — is handed to
+/// `RootView::set_search_service`. The one-shot initial-indexing job is
+/// taken here too and runs on its own background task (replacing the former
+/// `cx.background_spawn` next to the old synchronous constructor;
+/// async-runtime.md §2).
+fn spawn_search_service(view: &Entity<RootView>, excludes: Excludes, cx: &mut App) {
+    let view_weak = view.downgrade();
+    cx.spawn(async move |cx: &mut AsyncApp| {
+        // Build the service (index open + recursive watcher) on GPUI's
+        // background executor, and take the one-shot indexing job while we're
+        // here.
+        let (service, initial_indexing_job) = cx
+            .background_spawn(async move {
+                match SearchService::new(excludes) {
+                    Ok(service) => {
+                        let service = Arc::new(service);
+                        let job = service.take_initial_indexing_job();
+                        (Some(service), job)
+                    }
+                    Err(error) => {
+                        tracing::error!(
+                            "Failed to initialize search service; starting with search disabled: {error}"
+                        );
+                        (None, None)
+                    }
+                }
+            })
+            .await;
+
+        // Inject into the already-visible window. `update_in` errors if the
+        // window closed (or the view was released) before init finished — a
+        // clean shutdown, but still worth a debug line.
+        let injected = view_weak
+            .update_in(&mut *cx, |view, window, cx| {
+                view.set_search_service(service, window, cx);
+            })
+            .is_ok();
+        if !injected {
+            tracing::debug!(
+                "search service finished initializing but the window is gone; skipping indexing"
+            );
+        }
+
+        // Initial indexing is itself blocking and heavy; give it its own
+        // background task so it can never stall the injection. Only run it
+        // when the service actually reached the UI — otherwise the progress
+        // channel has no consumer and the work is wasted.
+        if injected {
+            if let Some(job) = initial_indexing_job {
+                cx.background_spawn(async move { job.run() }).detach();
+            }
+        }
+    })
+    .detach();
 }
 
 /// Connects to `udisks2` and keeps `DeviceStore` live: an initial listing

@@ -58,6 +58,16 @@ impl SearchService {
         Ok(Self { engine })
     }
 
+    /// Like [`SearchService::new`] but rooted at an explicit home directory.
+    ///
+    /// Tests use this with a small tempdir so construction — including the
+    /// recursive watcher setup — stays fast and never touches the real
+    /// `$HOME` (T058).
+    pub fn new_with_home(home_dir: PathBuf, excludes: Excludes) -> Result<Self> {
+        let engine = Arc::new(engine::SearchEngine::new_with_home(home_dir, excludes)?);
+        Ok(Self { engine })
+    }
+
     /// Search is synchronous; run it on GPUI's background executor
     /// (`cx.background_spawn`) so the UI thread is not blocked.
     pub fn search(&self, query: String, scope: SearchScope) -> Result<Vec<SearchResult>> {

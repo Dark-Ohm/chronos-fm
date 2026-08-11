@@ -3,6 +3,7 @@ use super::indexer::IndexManager;
 use super::watcher::FileWatcher;
 use super::{SearchBackend, SearchResult, SearchScope};
 use anyhow::{Context, Result};
+use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
@@ -98,9 +99,26 @@ pub struct SearchEngine {
 }
 
 impl SearchEngine {
-    /// Builds the engine, opening the index and starting the file watcher.
+    /// Builds the engine, opening the index and starting the file watcher over
+    /// the user's home directory.
     pub fn new(excludes: Excludes) -> Result<Self> {
-        let index_manager = Arc::new(IndexManager::new(excludes.clone())?);
+        let home_dir = dirs::home_dir().context("Home directory not found")?;
+        Self::new_with_home(home_dir, excludes)
+    }
+
+    /// Like [`SearchEngine::new`] but rooted at an explicit home directory.
+    ///
+    /// Tests use this with a small tempdir so the recursive watcher setup
+    /// (`FileWatcher::new`) walks a tiny tree instead of the real `$HOME` — on
+    /// Linux a recursive inotify watch synchronously walks every directory
+    /// under the root (300k+ on a real home ≈ 35 s; T058). The app itself must
+    /// therefore also run this off the window-building thread.
+    pub fn new_with_home(home_dir: PathBuf, excludes: Excludes) -> Result<Self> {
+        let index_manager = Arc::new(IndexManager::new_with_path(
+            home_dir.join(".chronos-fm").join("index"),
+            home_dir.join("Documents"),
+            excludes.clone(),
+        )?);
 
         #[cfg(target_os = "macos")]
         let root_backend: Arc<dyn SearchBackend> =
@@ -114,7 +132,6 @@ impl SearchEngine {
         // Bounded channel for watcher events (async-channel; runtime-agnostic).
         let (tx, rx) = async_channel::bounded(100);
 
-        let home_dir = dirs::home_dir().context("Home directory not found")?;
         let watcher = FileWatcher::new(home_dir, tx, WATCHER_DEBOUNCE, excludes)?;
 
         // The watcher consumer does blocking index updates, so it runs on a
@@ -180,5 +197,27 @@ impl SearchEngine {
             SearchScope::Home => self.index_manager.search(&query),
             SearchScope::Root => self.root_backend.search(&query),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    // T058: engine construction includes the recursive watcher setup, which on
+    // Linux synchronously walks the whole root tree. Building against an
+    // explicit small tempdir home must complete quickly and cleanly (the app
+    // used to do this against the real `$HOME` on the window-building thread —
+    // ~35 s on a real home), and the one-shot indexing job must still be
+    // handed to the caller afterwards.
+    #[test]
+    fn engine_builds_against_explicit_home() {
+        let tmp = tempfile::tempdir().unwrap();
+        let engine = SearchEngine::new_with_home(tmp.path().to_path_buf(), Excludes::default())
+            .expect("engine builds against a small tempdir home");
+        assert!(
+            engine.take_initial_indexing_job().is_some(),
+            "the deferred initial-indexing job is still available to the caller"
+        );
     }
 }

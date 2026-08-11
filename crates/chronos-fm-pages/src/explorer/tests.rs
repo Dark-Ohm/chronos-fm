@@ -22,6 +22,8 @@ use chronos_fm_core::errors::{Error, Result};
 use chronos_fm_services::devices::{Device, DeviceBackend};
 use chronos_fm_services::fs::listing::{FileEntryDto, ListResult};
 use chronos_fm_services::fs::provider::FileSystemProvider;
+use chronos_fm_services::search::exclusions::Excludes;
+use chronos_fm_services::search::SearchService;
 use chronos_fm_store::{KvStore, RedbKvStore, StoreLogConfig};
 
 use chronos_fm_core::config::SplitDirection;
@@ -1326,6 +1328,80 @@ async fn provider_listing_error_surfaces_in_status(cx: &mut TestAppContext) {
             assert!(is_error);
             assert!(text.contains("fake list_dir failed"));
             assert!(page.entries.is_empty());
+        })
+        .unwrap();
+}
+
+#[gpui::test]
+async fn search_service_arrives_after_window_opens(cx: &mut TestAppContext) {
+    // T058 structural check: the search service (index open + recursive
+    // `$HOME` watcher — ~35 s on a real home) must NOT be constructed on the
+    // window-building path. The page builds with no service at all, and the
+    // finished service is injected afterwards via `set_search_service`, which
+    // propagates it to every pane — existing ones and tabs opened later.
+    let window = new_explorer_page(cx);
+
+    // Window opened without a service: panes are honest about the pending
+    // background initialization instead of looking like a working search.
+    window
+        .read_with(cx, |page, cx| {
+            let pane = page.pane(0);
+            assert!(pane.read(cx).search_service.is_none());
+            assert!(pane.read(cx).search_initializing);
+        })
+        .unwrap();
+
+    // Background initialization "completes": a real service rooted at a small
+    // tempdir home, never the real `$HOME` (that is the 35 s tree).
+    let tmp = tempfile::tempdir().unwrap();
+    let service =
+        SearchService::new_with_home(tmp.path().to_path_buf(), Excludes::default())
+            .expect("search service builds against a tempdir home");
+
+    window
+        .update(cx, |page, _window, cx| {
+            page.set_search_service(Some(Arc::new(service)), cx);
+        })
+        .unwrap();
+
+    // Existing pane now has the service and is no longer "initializing".
+    window
+        .read_with(cx, |page, cx| {
+            let pane = page.pane(0);
+            assert!(pane.read(cx).search_service.is_some());
+            assert!(!pane.read(cx).search_initializing);
+        })
+        .unwrap();
+
+    // A tab opened after injection inherits the service through the shared
+    // slot — the pane factory must not snapshot `None` at page construction.
+    window
+        .update(cx, |page, window, cx| {
+            page.test_new_tab(0, window, cx);
+        })
+        .unwrap();
+    window
+        .read_with(cx, |page, cx| {
+            assert_eq!(page.tab_count(0), 2);
+            let new_tab = page.pane(0); // the freshly added tab is active
+            assert!(new_tab.read(cx).search_service.is_some());
+            assert!(!new_tab.read(cx).search_initializing);
+        })
+        .unwrap();
+
+    // Failure path: initialization reporting `None` flips panes out of
+    // "initializing" so the UI shows "unavailable" rather than "starting"
+    // forever.
+    window
+        .update(cx, |page, _window, cx| {
+            page.set_search_service(None, cx);
+        })
+        .unwrap();
+    window
+        .read_with(cx, |page, cx| {
+            let pane = page.pane(0);
+            assert!(pane.read(cx).search_service.is_none());
+            assert!(!pane.read(cx).search_initializing);
         })
         .unwrap();
 }
