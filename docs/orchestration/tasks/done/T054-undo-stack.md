@@ -1,7 +1,17 @@
 # T054 — Undo stack for file ops
 
+> ## ⚖️ ARCHITECT (2026-08-11): **ACCEPT**
+>
+> Workspace 483 passed / 0 failed (re-ran independently); live grims of
+> rename→undo and trash→undo verified with footer status; the two bugs the
+> internal review caught (trash redo stale `TrashItem`, `delete_permanent`
+> on populated folder) are real and properly fixed with tests.
+
 **Epic:** T048. **Priority:** P1.  
 **Spec:** `docs/explorer-essentials.md` §1.3
+
+**Status:** ACCEPT — report in
+`docs/orchestration/tasks/report/T054-undo-stack-report.md`.
 
 ## Problem
 
