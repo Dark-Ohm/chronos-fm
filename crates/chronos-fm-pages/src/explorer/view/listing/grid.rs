@@ -184,11 +184,11 @@ fn render_grid_item(
                 div()
                     .w_full()
                     .on_key_down(cx.listener(
-                        move |this, event: &gpui::KeyDownEvent, _window, cx| {
+                        move |this, event: &gpui::KeyDownEvent, window, cx| {
                             if event.keystroke.key == "enter" {
-                                this.commit_rename(cx);
+                                this.commit_rename(window, cx);
                             } else if event.keystroke.key == "escape" {
-                                this.cancel_rename(cx);
+                                this.cancel_rename(window, cx);
                             }
                         },
                     ))

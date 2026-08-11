@@ -22,6 +22,8 @@ mod rename;
 mod search;
 mod state;
 mod types;
+/// Window-level undo/redo stack for file operations (T054, §1.3).
+mod undo;
 /// Rendering of a single explorer pane: header, sidebar, listing, and preview.
 pub mod view;
 

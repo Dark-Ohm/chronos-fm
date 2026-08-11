@@ -1,5 +1,6 @@
 use super::ExplorerPane;
-use super::types::StatusLevel;
+use super::types::{PaneEvent, StatusLevel};
+use super::undo::{UndoEntry, transfer_entry};
 use super::view::listing::{row::icon_path_for, truncate_middle};
 use chronos_fm_services::fs::listing::FileEntryDto;
 use chronos_fm_services::fs::ops::{TransferReport, transfer_paths_resolved};
@@ -482,6 +483,8 @@ fn complete_file_drop<C: AppContext>(
         .map(|success| success.destination.clone())
         .collect::<Vec<_>>();
     let failure_status = drop_failure_status(&report);
+    // T054: one window-level undo entry for the whole drop gesture.
+    let undo_entry = transfer_entry(&report, mode.into());
 
     tracing::info!(
         success_count,
@@ -493,7 +496,7 @@ fn complete_file_drop<C: AppContext>(
     if target_id == source_id {
         if target
             .update(cx, move |pane, cx| {
-                finish_target_drop(pane, &destinations, failure_status, cx);
+                finish_target_drop(pane, &destinations, failure_status, undo_entry, cx);
             })
             .is_err()
         {
@@ -508,7 +511,7 @@ fn complete_file_drop<C: AppContext>(
 
     if target
         .update(cx, move |pane, cx| {
-            finish_target_drop(pane, &destinations, failure_status, cx);
+            finish_target_drop(pane, &destinations, failure_status, undo_entry, cx);
         })
         .is_err()
     {
@@ -554,6 +557,8 @@ fn complete_external_drop<C: AppContext>(
         .map(|success| success.destination.clone())
         .collect::<Vec<_>>();
     let failure_status = drop_failure_status(&report);
+    // T054: one window-level undo entry for the whole external drop gesture.
+    let undo_entry = transfer_entry(&report, mode.into());
 
     tracing::info!(
         success_count,
@@ -564,7 +569,7 @@ fn complete_external_drop<C: AppContext>(
 
     if target
         .update(cx, move |pane, cx| {
-            finish_target_drop(pane, &destinations, failure_status, cx);
+            finish_target_drop(pane, &destinations, failure_status, undo_entry, cx);
         })
         .is_err()
     {
@@ -580,8 +585,14 @@ fn finish_target_drop(
     pane: &mut ExplorerPane,
     destinations: &[PathBuf],
     failure_status: Option<String>,
+    undo_entry: Option<UndoEntry>,
     cx: &mut Context<ExplorerPane>,
 ) {
+    if let Some(entry) = undo_entry {
+        // T054: window-level undo for the drop gesture (the page subscribed to
+        // this pane's `PaneEvent`s pushes it onto the stack).
+        cx.emit(PaneEvent::Undoable(entry));
+    }
     if !destinations.is_empty() {
         pane.reload();
         select_visible_destinations(pane, destinations);
@@ -1471,7 +1482,9 @@ mod tests {
             "inline rename cannot originate a file drag"
         );
         cx.simulate_mouse_up(rename_input, MouseButton::Left, Modifiers::default());
-        pane.update(&mut cx, |pane, cx| pane.cancel_rename(cx));
+        cx.update(|window, app| {
+            pane.update(app, |pane, cx| pane.cancel_rename(window, cx))
+        });
         draw_window(&mut cx);
 
         let resize_control = center(

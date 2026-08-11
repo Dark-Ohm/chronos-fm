@@ -2,11 +2,14 @@
 //! committing the new name via `chronos_fm_services::fs::ops::rename_in_place`,
 //! or canceling without changing anything.
 
+use std::path::PathBuf;
+
 use gpui::{AppContext, Context, Window};
 use gpui_component::input::InputState;
 
 use super::ExplorerPane;
-use super::types::StatusLevel;
+use super::types::{PaneEvent, StatusLevel};
+use super::undo::UndoEntry;
 
 impl ExplorerPane {
     /// Starts renaming the row at `ix`, pre-filling an input with its current
@@ -50,19 +53,27 @@ impl ExplorerPane {
         }
     }
 
-    /// Cancels an in-progress rename without changing anything on disk.
-    pub(crate) fn cancel_rename(&mut self, cx: &mut Context<Self>) {
+    /// Cancels an in-progress rename without changing anything on disk. The
+    /// rename input was focused while editing, so its drop hands focus to the
+    /// window root — this returns it to the pane (otherwise pane/page
+    /// shortcuts like Ctrl+Z stop dispatching after the interaction).
+    pub(crate) fn cancel_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.renaming = None;
+        self.focus_handle.focus(window, cx);
         cx.notify();
     }
 
     /// Commits an in-progress rename: reads the input's text and renames the
     /// file on disk. A blank or unchanged name is treated as a no-op cancel,
     /// not an error.
-    pub(crate) fn commit_rename(&mut self, cx: &mut Context<Self>) {
+    pub(crate) fn commit_rename(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let Some((ix, input)) = self.renaming.take() else {
             return;
         };
+        // Return focus to the pane now that the input is dropped (see
+        // [`Self::cancel_rename`]): the pane must stay focused for the
+        // window-level undo shortcut to dispatch afterwards (T054).
+        self.focus_handle.focus(window, cx);
         let Some(entry) = self.filtered_entries.get(ix).cloned() else {
             cx.notify();
             return;
@@ -73,11 +84,19 @@ impl ExplorerPane {
             return;
         }
         let src = std::path::Path::new(&entry.path);
-        let result = chronos_fm_services::fs::ops::rename_in_place(src, &new_name);
-        self.reload();
-        if let Err(error) = result {
-            self.set_status(StatusLevel::Error, format!("Rename failed: {error}"));
+        match chronos_fm_services::fs::ops::rename_in_place(src, &new_name) {
+            Ok(dst) => {
+                // T054: window-level undo — reversing renames the entry back.
+                cx.emit(PaneEvent::Undoable(UndoEntry::Rename {
+                    old: PathBuf::from(&entry.path),
+                    new: dst,
+                }));
+            }
+            Err(error) => {
+                self.set_status(StatusLevel::Error, format!("Rename failed: {error}"));
+            }
         }
+        self.reload();
         cx.notify();
     }
 }
@@ -107,7 +126,7 @@ mod tests {
                 input.update(cx, |state, cx| {
                     state.set_value("new.txt".to_string(), window, cx)
                 });
-                page.commit_rename(cx);
+                page.commit_rename(window, cx);
             })
             .unwrap();
 
@@ -131,7 +150,7 @@ mod tests {
                 page.rename_selection(0, window, cx);
                 assert!(page.renaming.is_some());
                 assert!(page.batch_rename.is_none());
-                page.cancel_rename(cx);
+                page.cancel_rename(window, cx);
             })
             .unwrap();
     }
@@ -182,7 +201,7 @@ mod tests {
         window
             .update(cx, |page, window, cx| {
                 page.begin_rename(0, window, cx);
-                page.cancel_rename(cx);
+                page.cancel_rename(window, cx);
                 assert!(page.renaming.is_none());
             })
             .unwrap();

@@ -14,7 +14,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::time::Duration;
 
-use gpui::{AppContext, TestAppContext, WindowHandle, point, px};
+use gpui::{AppContext, Entity, TestAppContext, WindowHandle, point, px};
 use gpui_component::input::InputState;
 use gpui_component::resizable::ResizableState;
 use chronos_fm_core::config;
@@ -1404,4 +1404,178 @@ async fn search_service_arrives_after_window_opens(cx: &mut TestAppContext) {
             assert!(!pane.read(cx).search_initializing);
         })
         .unwrap();
+}
+
+// -- T054: window-level undo/redo --
+
+/// Renames the pane's first visible row through the real inline-rename path
+/// (begin_rename → set value → commit) inside the page's update context, so
+/// the pane's `PaneEvent::Undoable` reaches the page's subscription
+/// synchronously and lands on the window-level stack.
+fn rename_first_row(
+    pane: &Entity<ExplorerPane>,
+    window: &mut gpui::Window,
+    cx: &mut gpui::Context<ExplorerPage>,
+    new_name: &str,
+) {
+    pane.update(cx, |pane, cx| {
+        pane.begin_rename(0, window, cx);
+        let (_, input) = pane.renaming.clone().expect("inline rename started");
+        input.update(cx, |state, cx| {
+            state.set_value(new_name.to_string(), window, cx)
+        });
+        pane.commit_rename(window, cx);
+    });
+}
+
+#[gpui::test]
+async fn page_undo_redo_rename_round_trips(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("old.txt"), "x").unwrap();
+    let window = new_explorer_page(cx);
+
+    // The mutation runs in its own update; the pane's `PaneEvent::Undoable`
+    // lands on the page's stack when gpui flushes effects at the end of it.
+    window
+        .update(cx, |page, window, cx| {
+            let pane = page.pane(0);
+            pane.update(cx, |pane, _cx| {
+                pane.cwd = dir.path().to_string_lossy().to_string();
+                pane.reload();
+            });
+            rename_first_row(&pane, window, cx, "new.txt");
+        })
+        .unwrap();
+    assert!(dir.path().join("new.txt").exists());
+
+    window
+        .update(cx, |page, _window, cx| {
+            assert!(page.can_undo(), "a rename records an undo entry on the page");
+            assert!(!page.can_redo());
+            page.undo(cx);
+        })
+        .unwrap();
+    assert!(dir.path().join("old.txt").exists(), "undo restores the original name");
+    assert!(!dir.path().join("new.txt").exists());
+
+    window
+        .update(cx, |page, _window, cx| {
+            assert!(page.can_redo());
+            page.redo(cx);
+        })
+        .unwrap();
+    assert!(!dir.path().join("old.txt").exists(), "redo re-applies the rename");
+    assert!(dir.path().join("new.txt").exists());
+}
+
+#[gpui::test]
+async fn page_undo_paste_copy_removes_the_copy_and_redo_recopies(cx: &mut TestAppContext) {
+    let src_dir = tempfile::tempdir().unwrap();
+    let dst_dir = tempfile::tempdir().unwrap();
+    std::fs::write(src_dir.path().join("a.txt"), "hello").unwrap();
+    let window = new_explorer_page(cx);
+
+    window
+        .update(cx, |page, _window, cx| {
+            let pane = page.pane(0);
+            pane.update(cx, |pane, _cx| {
+                pane.cwd = dst_dir.path().to_string_lossy().to_string();
+                pane.reload();
+            });
+            pane.update(cx, |_pane, cx| {
+                super::clipboard::set_copy(
+                    vec![src_dir.path().join("a.txt").to_string_lossy().to_string()],
+                    cx,
+                );
+            });
+            pane.update(cx, |pane, cx| pane.paste_clipboard(cx));
+        })
+        .unwrap();
+    assert!(dst_dir.path().join("a.txt").exists(), "the paste copied the file");
+
+    window
+        .update(cx, |page, _window, cx| {
+            assert!(page.can_undo(), "a paste records one undo entry on the page");
+            page.undo(cx);
+        })
+        .unwrap();
+    assert!(
+        !dst_dir.path().join("a.txt").exists(),
+        "undo of a copy removes the destination"
+    );
+    assert!(src_dir.path().join("a.txt").exists(), "the source survives undo");
+
+    window
+        .update(cx, |page, _window, cx| page.redo(cx))
+        .unwrap();
+    assert!(dst_dir.path().join("a.txt").exists(), "redo re-copies the file");
+}
+
+#[gpui::test]
+async fn page_undo_new_folder_deletes_it(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    let window = new_explorer_page(cx);
+
+    window
+        .update(cx, |page, window, cx| {
+            let pane = page.pane(0);
+            pane.update(cx, |pane, _cx| {
+                pane.cwd = dir.path().to_string_lossy().to_string();
+                pane.reload();
+            });
+            pane.update(cx, |pane, cx| {
+                pane.new_folder(window, cx);
+                // Drop the inline rename before repaint: the pane-rooted page
+                // harness has no `gpui_component::Root`, and a live `Input`
+                // across a repaint boundary panics (same pattern as the
+                // file_ops new-folder test).
+                pane.cancel_rename(window, cx);
+            });
+        })
+        .unwrap();
+    assert!(dir.path().join("New Folder").is_dir());
+
+    window
+        .update(cx, |page, _window, cx| {
+            assert!(page.can_undo(), "new folder records an undo entry");
+            page.undo(cx);
+        })
+        .unwrap();
+
+    assert!(
+        !dir.path().join("New Folder").exists(),
+        "undo deletes the created folder"
+    );
+}
+
+#[gpui::test]
+async fn page_undo_is_window_scoped_across_panes(cx: &mut TestAppContext) {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(dir.path().join("old.txt"), "x").unwrap();
+    let window = new_explorer_page(cx);
+
+    window
+        .update(cx, |page, window, cx| {
+            // The op happens in pane 1; the stack lives on the page (§1.3: one
+            // stack across panes), so undo still reverses it from anywhere.
+            page.split(SplitDirection::Vertical, window, cx);
+            let second = page.pane(1);
+            second.update(cx, |pane, _cx| {
+                pane.cwd = dir.path().to_string_lossy().to_string();
+                pane.reload();
+            });
+            rename_first_row(&second, window, cx, "new.txt");
+        })
+        .unwrap();
+    assert!(dir.path().join("new.txt").exists());
+
+    window
+        .update(cx, |page, _window, cx| {
+            assert!(page.can_undo(), "a pane-1 rename lands on the page stack");
+            page.undo(cx);
+        })
+        .unwrap();
+
+    assert!(dir.path().join("old.txt").exists());
+    assert!(!dir.path().join("new.txt").exists());
 }

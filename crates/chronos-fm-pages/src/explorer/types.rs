@@ -1,6 +1,8 @@
 use gpui::{Pixels, Point};
 use std::time::Instant;
 
+use super::undo::UndoEntry;
+
 #[derive(Clone, Copy, PartialEq, Eq)]
 #[allow(dead_code)]
 pub enum SortKey {
@@ -68,10 +70,14 @@ pub struct StatusMessage {
     pub level: StatusLevel,
 }
 
-/// Events a single pane emits to its containing split view, so the container can
-/// mirror navigation across panes when `synced_panes` is enabled (§3.2).
+/// Events a single pane emits to its containing page, so the container can
+/// mirror navigation across panes when `synced_panes` is enabled (§3.2) and
+/// keep the window-level undo stack (T054).
 #[derive(Clone)]
-pub enum PaneEvent {
+pub(crate) enum PaneEvent {
     /// The pane navigated to a new directory (carries the new absolute path).
     Navigated(String),
+    /// The pane finished an undoable filesystem mutation (T054); the page
+    /// pushes it onto the window-scoped undo stack (§1.3).
+    Undoable(UndoEntry),
 }

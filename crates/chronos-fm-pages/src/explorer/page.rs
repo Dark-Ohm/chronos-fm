@@ -23,7 +23,8 @@ use chronos_fm_ui::theme::theme;
 use serde::{Deserialize, Serialize};
 
 use super::state::ExplorerPane;
-use super::types::PaneEvent;
+use super::types::{PaneEvent, StatusLevel};
+use super::undo::UndoStack;
 use crate::pane_group::{PaneGroup, PaneGroupCallbacks};
 
 // Key context the pane shortcuts are bound under, so they only fire while the
@@ -93,6 +94,10 @@ actions!(
         CloseTab,
         /// Toggle the active tab's left quick-access sidebar.
         ToggleSidebar,
+        /// Undo the most recent undoable filesystem operation (T054, §1.3).
+        Undo,
+        /// Re-apply the most recently undone operation (T054, §1.3).
+        Redo,
     ]
 );
 
@@ -127,6 +132,10 @@ fn bind_pane_keys(cx: &mut App) {
             KeyBinding::new("ctrl-w", CloseTab, Some(PANES_CONTEXT)),
             KeyBinding::new("cmd-b", ToggleSidebar, Some(PANES_CONTEXT)),
             KeyBinding::new("ctrl-b", ToggleSidebar, Some(PANES_CONTEXT)),
+            KeyBinding::new("cmd-z", Undo, Some(PANES_CONTEXT)),
+            KeyBinding::new("ctrl-z", Undo, Some(PANES_CONTEXT)),
+            KeyBinding::new("cmd-shift-z", Redo, Some(PANES_CONTEXT)),
+            KeyBinding::new("ctrl-shift-z", Redo, Some(PANES_CONTEXT)),
         ]);
     });
 }
@@ -178,6 +187,9 @@ pub struct ExplorerPage {
     focus_handle: FocusHandle,
     // Shared deferred search-service state read by the pane factory (T058).
     search_service_state: Rc<RefCell<SearchServiceState>>,
+    // Window-scoped undo/redo history for filesystem operations (T054, §1.3:
+    // one stack across panes and tabs; session-only, capped at 50).
+    undo_stack: UndoStack,
 }
 
 impl Focusable for ExplorerPage {
@@ -233,6 +245,7 @@ impl ExplorerPage {
             save_task: None,
             focus_handle: cx.focus_handle(),
             search_service_state,
+            undo_stack: UndoStack::new(),
         };
         page.subscribe_tab(&first_tab, cx);
         // The root pane's tab shows its sidebar; tabs opened later default to
@@ -422,32 +435,43 @@ impl ExplorerPage {
         }
     }
 
-    // Mirrors a tab's navigation into the other panes while syncing is enabled.
+    // Mirrors a tab's navigation into the other panes while syncing is enabled,
+    // and collects undoable mutations onto the window-level stack (T054).
     fn on_pane_event(
         &mut self,
         source: Entity<ExplorerPane>,
         event: &PaneEvent,
         cx: &mut Context<Self>,
     ) {
-        let PaneEvent::Navigated(path) = event;
-        // A tab changed directory: persist the new session (a tab's cwd is part
-        // of the snapshot), regardless of whether syncing is on.
-        self.schedule_save(cx);
-        if !self.synced_panes {
-            return;
-        }
-        // Only mirror navigation from a visible (active) tab; a background tab
-        // (e.g. one restored on startup) must not move the other panes.
-        if !self.group.is_active_tab(source.entity_id()) {
-            return;
-        }
-        for tab in self.group.other_active_tabs(source.entity_id()) {
-            let path = path.clone();
-            // `navigate_to_synced` (not `change_dir`) is deliberate: it does not
-            // re-emit `PaneEvent::Navigated`, which would mirror back to the
-            // source and loop indefinitely. Don't replace it with a regular
-            // navigation method.
-            tab.update(cx, |pane, cx| pane.navigate_to_synced(path, cx));
+        match event {
+            PaneEvent::Navigated(path) => {
+                // A tab changed directory: persist the new session (a tab's cwd
+                // is part of the snapshot), regardless of whether syncing is on.
+                self.schedule_save(cx);
+                if !self.synced_panes {
+                    return;
+                }
+                // Only mirror navigation from a visible (active) tab; a
+                // background tab (e.g. one restored on startup) must not move
+                // the other panes.
+                if !self.group.is_active_tab(source.entity_id()) {
+                    return;
+                }
+                for tab in self.group.other_active_tabs(source.entity_id()) {
+                    let path = path.clone();
+                    // `navigate_to_synced` (not `change_dir`) is deliberate: it
+                    // does not re-emit `PaneEvent::Navigated`, which would
+                    // mirror back to the source and loop indefinitely. Don't
+                    // replace it with a regular navigation method.
+                    tab.update(cx, |pane, cx| pane.navigate_to_synced(path, cx));
+                }
+            }
+            PaneEvent::Undoable(entry) => {
+                // A pane finished an undoable mutation: record it on the
+                // window-scoped stack (§1.3 — one stack shared by panes). A
+                // fresh mutation clears the redo branch inside `push`.
+                self.undo_stack.push(entry.clone());
+            }
         }
     }
 
@@ -641,6 +665,64 @@ impl ExplorerPage {
         }));
     }
 
+    /// Undo (`Ctrl+Z` / `Cmd+Z`, §1.3): reverses the most recent undoable
+    /// operation, reloads every pane so listings reflect the reverted
+    /// filesystem, and reports through the active pane's footer status. A
+    /// failed undo is dropped from the history (it never becomes a redo).
+    pub(crate) fn undo(&mut self, cx: &mut Context<Self>) {
+        let Some(entry) = self.undo_stack.undo() else {
+            return;
+        };
+        match entry.reverse() {
+            Ok(()) => {
+                self.undo_stack.record_undone(entry.clone());
+                self.reload_all_tabs(cx);
+                self.active_pane_status(StatusLevel::Info, format!("Undid {}", entry.describe()), cx);
+            }
+            Err(error) => {
+                self.active_pane_status(StatusLevel::Error, format!("Undo failed: {error}"), cx);
+            }
+        }
+    }
+
+    /// Redo (`Ctrl+Shift+Z` / `Cmd+Shift+Z`, §1.3): re-applies the most
+    /// recently undone operation. Mirror of [`Self::undo`]; a failed redo is
+    /// dropped from the history.
+    pub(crate) fn redo(&mut self, cx: &mut Context<Self>) {
+        let Some(entry) = self.undo_stack.redo() else {
+            return;
+        };
+        match entry.forward() {
+            Ok(()) => {
+                self.undo_stack.record_redone(entry.clone());
+                self.reload_all_tabs(cx);
+                self.active_pane_status(StatusLevel::Info, format!("Redid {}", entry.describe()), cx);
+            }
+            Err(error) => {
+                self.active_pane_status(StatusLevel::Error, format!("Redo failed: {error}"), cx);
+            }
+        }
+    }
+
+    // Re-reads every live tab so undo/redo results show up in all listings
+    // (window-scoped: the reverted filesystem may affect any pane).
+    fn reload_all_tabs(&mut self, cx: &mut Context<Self>) {
+        for tab in self.group.all_tabs() {
+            tab.update(cx, |pane, cx| {
+                pane.reload();
+                cx.notify();
+            });
+        }
+    }
+
+    // Reports undo/redo feedback through the active pane's footer status.
+    fn active_pane_status(&mut self, level: StatusLevel, text: String, cx: &mut Context<Self>) {
+        self.group.active_pane().update(cx, |pane, cx| {
+            pane.set_status(level, text);
+            cx.notify();
+        });
+    }
+
     // Builds the render callbacks routing every tab/pane interaction back here.
     fn pane_callbacks() -> PaneGroupCallbacks<Self> {
         PaneGroupCallbacks {
@@ -712,6 +794,12 @@ impl Render for ExplorerPage {
                     tab.update(cx, |tab, cx| tab.toggle_sidebar(cx));
                 }
             }))
+            .on_action(cx.listener(|this, _: &Undo, _window, cx| {
+                this.undo(cx);
+            }))
+            .on_action(cx.listener(|this, _: &Redo, _window, cx| {
+                this.redo(cx);
+            }))
             .child(body)
     }
 }
@@ -738,6 +826,14 @@ impl ExplorerPage {
 
     pub(crate) fn is_synced(&self) -> bool {
         self.synced_panes
+    }
+
+    pub(crate) fn can_undo(&self) -> bool {
+        self.undo_stack.can_undo()
+    }
+
+    pub(crate) fn can_redo(&self) -> bool {
+        self.undo_stack.can_redo()
     }
 
     /// Number of tabs in `pane_index`.

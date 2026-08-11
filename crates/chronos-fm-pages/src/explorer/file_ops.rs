@@ -13,7 +13,8 @@ use chronos_fm_services::fs::ops;
 
 use super::ExplorerPane;
 use super::clipboard::{self, ClipboardMode};
-use super::types::StatusLevel;
+use super::types::{PaneEvent, StatusLevel};
+use super::undo::{UndoEntry, transfer_entry};
 
 impl ExplorerPane {
     /// Puts the current selection on the clipboard in Copy mode. No-op if
@@ -70,6 +71,11 @@ impl ExplorerPane {
             move |pane, pane_cx, resolutions| {
                 let report =
                     ops::transfer_paths_resolved(&sources, &dst_dir, transfer_mode, &resolutions);
+                if let Some(entry) = transfer_entry(&report, transfer_mode) {
+                    // T054: one window-level undo entry for the paste gesture
+                    // (Overwrite successes are excluded inside `transfer_entry`).
+                    pane_cx.emit(PaneEvent::Undoable(entry));
+                }
                 if is_cut {
                     clipboard::clear(pane_cx);
                 }
@@ -113,6 +119,9 @@ impl ExplorerPane {
         self.reload();
         match result {
             Ok(path) => {
+                // T054: undo deletes the created folder; a subsequent rename
+                // pushes its own entry on top (architect decision #3).
+                cx.emit(PaneEvent::Undoable(UndoEntry::CreateFolder { path: path.clone() }));
                 let path_str = path.to_string_lossy().to_string();
                 if let Some(ix) = self
                     .filtered_entries
@@ -163,10 +172,16 @@ impl ExplorerPane {
     /// collected and reported together rather than aborting the whole batch.
     pub(crate) fn delete_paths(&mut self, paths: Vec<String>, cx: &mut Context<Self>) {
         let mut errors: Vec<String> = Vec::new();
+        let mut trashed: Vec<ops::TrashItem> = Vec::new();
         for path in &paths {
-            if let Err(error) = ops::trash_path(Path::new(path)) {
-                errors.push(format!("{path}: {error}"));
+            match ops::trash_path_undoable(Path::new(path)) {
+                Ok(item) => trashed.push(item),
+                Err(error) => errors.push(format!("{path}: {error}")),
             }
+        }
+        if !trashed.is_empty() {
+            // T054: one undo entry per delete gesture — restores from trash.
+            cx.emit(PaneEvent::Undoable(UndoEntry::Trash { items: trashed }));
         }
         self.reload();
         if !errors.is_empty() {
@@ -509,7 +524,7 @@ mod tests {
             .update(cx, |page, window, cx| {
                 page.new_folder(window, cx);
                 assert!(page.renaming.is_some());
-                page.cancel_rename(cx);
+                page.cancel_rename(window, cx);
             })
             .unwrap();
 

@@ -7,6 +7,7 @@
 //! `ops::rename_in_place` and reports per-file failures through the
 //! `on_committed` callback (which the pane uses to reload and surface errors).
 
+use std::path::PathBuf;
 use std::rc::Rc;
 
 use chronos_fm_services::fs::batch_rename::{build_preview, RenamePreview, RenameStatus, Template};
@@ -18,8 +19,13 @@ use gpui::*;
 use gpui_component::button::Button;
 use gpui_component::input::{Input, InputEvent, InputState};
 
-/// Called on Apply with the per-file errors (empty `Vec` = success).
-type CommitCallback = Rc<dyn Fn(&mut App, Vec<String>)>;
+use super::types::PaneEvent;
+use super::undo::UndoEntry;
+
+/// Called on Apply with the per-file errors (empty `Vec` = success) and the
+/// successful `(old_path, new_path)` renames in application order, so the pane
+/// can record one compound undo entry per batch gesture (T054).
+type CommitCallback = Rc<dyn Fn(&mut App, Vec<String>, Vec<(PathBuf, PathBuf)>)>;
 
 /// Called on Cancel to close the dialog through the pane.
 type CancelCallback = Rc<dyn Fn(&mut App)>;
@@ -140,26 +146,29 @@ impl BatchRenameDialog {
     }
 
     /// Applies every previewed rename via `ops::rename_in_place` (resolved names
-    /// in preview order), collects per-file errors, then fires `on_committed`.
+    /// in preview order), collects per-file errors, then fires `on_committed`
+    /// with the successful `(old, new)` pairs for the undo entry (T054).
     pub fn apply(&mut self, cx: &mut Context<Self>) {
         if !self.can_apply() {
             return;
         }
         let mut errors: Vec<String> = Vec::new();
+        let mut renamed: Vec<(PathBuf, PathBuf)> = Vec::new();
         // `build_preview` iterates `entries` in order, so the previews align
         // one-to-one with the entries (names are unique within one directory).
         for (entry, preview) in self.entries.iter().zip(self.preview.iter()) {
             let src = std::path::Path::new(&entry.path);
             match chronos_fm_services::fs::ops::rename_in_place(src, &preview.new_name) {
-                Ok(_) => {}
+                Ok(dst) => renamed.push((PathBuf::from(&entry.path), dst)),
                 Err(error) => errors.push(format!("{}: {error}", preview.old_name)),
             }
         }
         let on_committed = std::mem::replace(
             &mut self.on_committed,
-            Rc::new(|_cx: &mut App, _errors: Vec<String>| {}) as CommitCallback,
+            Rc::new(|_cx: &mut App, _errors: Vec<String>, _renamed: Vec<(PathBuf, PathBuf)>| {})
+                as CommitCallback,
         );
-        on_committed(cx, errors);
+        on_committed(cx, errors, renamed);
     }
 
     /// Cancels without applying anything, via the pane.
@@ -242,9 +251,16 @@ impl super::ExplorerPane {
         self.cancel_marquee();
         let pane = cx.entity();
         let pane_for_cancel = pane.clone();
-        let on_committed: CommitCallback = Rc::new(move |cx, errors| {
+        let on_committed: CommitCallback = Rc::new(move |cx, errors, renamed| {
             pane.update(cx, |pane, cx| {
                 pane.batch_rename = None;
+                if !renamed.is_empty() {
+                    // T054: one undo entry per batch gesture, not one per file
+                    // (architect decision #2).
+                    cx.emit(PaneEvent::Undoable(UndoEntry::BatchRename {
+                        renames: renamed,
+                    }));
+                }
                 pane.reload();
                 if !errors.is_empty() {
                     pane.set_status(

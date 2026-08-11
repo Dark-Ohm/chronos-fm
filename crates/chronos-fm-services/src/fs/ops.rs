@@ -11,6 +11,10 @@ use chronos_fm_core::errors::{Error, Result};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+// Re-exported so the undo stack (T054) can hold trash entries without
+// depending on the trash crate itself; restore still routes through this module.
+pub use trash::TrashItem;
+
 /// How a [`move_path`] operation was carried out.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum MoveKind {
@@ -41,6 +45,11 @@ pub struct TransferSuccess {
     pub renamed: bool,
     /// How a move was performed, or `None` for a copy.
     pub move_kind: Option<MoveKind>,
+    /// Whether the transfer replaced an existing destination entry (a T053
+    /// `Overwrite` resolution that actually hit an occupied path). Overwritten
+    /// transfers destroy the destination's prior contents and are therefore
+    /// excluded from the undo stack (T054 architect decision #1).
+    pub overwrote: bool,
 }
 
 /// One source that could not be transferred.
@@ -227,12 +236,19 @@ pub fn transfer_paths_resolved(
         };
 
         match result {
-            Ok(move_kind) => report.successes.push(TransferSuccess {
-                source: source.clone(),
-                destination: resolved_destination,
-                renamed,
-                move_kind,
-            }),
+            Ok(move_kind) => {
+                // Only an Overwrite decision that actually replaced an occupied
+                // destination destroys prior contents; a stale Overwrite plan
+                // against a freed path is a plain transfer.
+                let overwrote = overwrite && path_occupied(&resolved_destination);
+                report.successes.push(TransferSuccess {
+                    source: source.clone(),
+                    destination: resolved_destination,
+                    renamed,
+                    move_kind,
+                    overwrote,
+                });
+            }
             Err(error) => report.failures.push(TransferFailure {
                 source: source.clone(),
                 error,
@@ -339,6 +355,71 @@ pub fn create_dir(parent: &Path, name: &str) -> Result<PathBuf> {
 /// Moves `path` to the operating system's trash/recycle bin.
 pub fn trash_path(path: &Path) -> Result<()> {
     trash::delete(path).map_err(|error| Error::Other(format!("failed to move to trash: {error}")))
+}
+
+/// Moves `path` to the OS trash and returns its [`TrashItem`], so the move can
+/// later be undone by restoring it (T054).
+///
+/// `trash::delete` discards everything about where the item went, and restore
+/// (`trash::os_limited::restore_all`) consumes [`TrashItem`]s obtained from
+/// `trash::os_limited::list()` — so the entry is captured here by matching the
+/// original path right after the delete, at the caller's expense of one list.
+pub fn trash_path_undoable(path: &Path) -> Result<TrashItem> {
+    trash_path(path)?;
+    let items = trash::os_limited::list()
+        .map_err(|error| Error::Other(format!("failed to list trash: {error}")))?;
+    items
+        .into_iter()
+        .find(|item| item.original_path() == path)
+        .ok_or_else(|| {
+            Error::Other(format!(
+                "moved {} to trash but could not locate its trash entry",
+                path.display()
+            ))
+        })
+}
+
+/// Restores `items` from the OS trash to their original locations (T054 undo).
+///
+/// Each recorded item is restored by identity when its trashinfo is still
+/// present. When a recorded item's trashinfo no longer exists — undo → redo
+/// re-trashes the file and creates a *new* trash entry, so the recorded id is
+/// stale — the restore falls back to the live entry whose original path
+/// matches (T054 redo of a trash op). A recorded item with neither a live
+/// trashinfo nor a matching entry is passed through untouched so the restore
+/// error surfaces honestly.
+pub fn restore_trash_items(items: Vec<TrashItem>) -> Result<()> {
+    let live = trash::os_limited::list()
+        .map_err(|error| Error::Other(format!("failed to list trash: {error}")))?;
+    let resolved = items
+        .into_iter()
+        .map(|item| {
+            if live.iter().any(|candidate| candidate.id == item.id) {
+                item
+            } else {
+                live.iter()
+                    .find(|candidate| candidate.original_path() == item.original_path())
+                    .cloned()
+                    .unwrap_or(item)
+            }
+        })
+        .collect::<Vec<_>>();
+    trash::os_limited::restore_all(resolved)
+        .map_err(|error| Error::Other(format!("failed to restore from trash: {error}")))
+}
+
+/// Deletes a directory only when it is empty, with a user-facing error when it
+/// is not. Undo of "New Folder" must never recurse into a folder the user has
+/// since populated (T054) — `delete_permanent` is recursive and would destroy
+/// their files.
+pub fn delete_empty_dir(path: &Path) -> Result<()> {
+    fs::remove_dir(path).map_err(|error| {
+        if error.kind() == std::io::ErrorKind::DirectoryNotEmpty {
+            Error::Other(format!("{} is not empty; undo aborted", path.display()))
+        } else {
+            Error::Io(error)
+        }
+    })
 }
 
 /// Permanently deletes `path`, whether it is a file, symlink, or directory
@@ -714,6 +795,75 @@ mod tests {
             fs::read_to_string(dst_dir.path().join("d.txt")).unwrap(),
             "old-d"
         );
+
+        // The report marks exactly the Overwrite success as `overwrote` (T054
+        // uses it to exclude overwritten transfers from the undo stack).
+        for success in &report.successes {
+            if success.source == sources[1] {
+                assert!(success.overwrote, "Overwrite success is marked");
+            } else {
+                assert!(!success.overwrote, "plain/renamed success is not an overwrite");
+            }
+        }
+        assert!(report.successes.iter().any(|s| s.source == sources[0]));
+        assert!(report.successes.iter().any(|s| s.source == sources[3]));
+    }
+
+    #[test]
+    fn trash_path_undoable_and_restore_round_trip() {
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("trash-me.txt");
+        fs::write(&file, "x").unwrap();
+
+        let item = trash_path_undoable(&file).expect("delete to trash and locate entry");
+        assert!(!file.exists(), "trash removes the original");
+        assert_eq!(item.original_path(), file);
+
+        restore_trash_items(vec![item]).expect("restore from trash");
+        assert_eq!(fs::read_to_string(&file).unwrap(), "x", "restore brings the file back");
+    }
+
+    #[test]
+    fn restore_trash_items_recovers_after_redo_retrash_created_a_new_entry() {
+        // T054 undo → redo → undo on a trash op: redo re-trashes the file and
+        // creates a *new* trash entry, so the recorded `TrashItem`'s id is
+        // stale. Restoring the recorded item must fall back to the live entry
+        // with the same original path instead of failing on the dead id.
+        let dir = tempdir().unwrap();
+        let file = dir.path().join("retrash.txt");
+        fs::write(&file, "x").unwrap();
+
+        let recorded = trash_path_undoable(&file).expect("first delete to trash");
+        restore_trash_items(vec![recorded.clone()]).expect("first restore (undo)");
+        assert!(file.exists());
+
+        // Redo: re-trash without capturing (the redo path only re-trashes).
+        trash_path(&file).expect("re-trash (redo)");
+        assert!(!file.exists());
+
+        // Second undo restores via the stale recorded item.
+        restore_trash_items(vec![recorded]).expect("second restore through the stale id");
+        assert!(file.exists(), "stale recorded item resolves to the live entry");
+    }
+
+    #[test]
+    fn delete_empty_dir_only_removes_empty_directories() {
+        let dir = tempdir().unwrap();
+        let empty = dir.path().join("empty");
+        fs::create_dir(&empty).unwrap();
+        delete_empty_dir(&empty).expect("empty dir deletes");
+        assert!(!empty.exists());
+
+        let populated = dir.path().join("populated");
+        fs::create_dir(&populated).unwrap();
+        fs::write(populated.join("file.txt"), "x").unwrap();
+        let error = delete_empty_dir(&populated).expect_err("non-empty dir refuses");
+        assert!(
+            error.to_string().contains("not empty"),
+            "friendly message, got: {error}"
+        );
+        assert!(populated.exists(), "the folder and its contents survive");
+        assert!(populated.join("file.txt").exists());
     }
 
     #[test]
