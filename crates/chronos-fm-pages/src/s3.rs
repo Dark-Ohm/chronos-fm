@@ -120,7 +120,7 @@ impl S3Page {
             state
         });
         let state = Self::derive_state(&config);
-        Self {
+        let mut page = Self {
             config,
             focus_handle: cx.focus_handle(),
             access_key_input,
@@ -134,7 +134,42 @@ impl S3Page {
             transfers: Vec::new(),
             next_job_id: 0,
             view_error: None,
+        };
+        page.maybe_auto_connect_from_env(window, cx);
+        page
+    }
+
+    /// T039 verification seam (same spirit as the `--page=` debug flag):
+    /// when `CHRONOS_FM_S3_ACCESS_KEY` and `CHRONOS_FM_S3_SECRET_KEY` are set
+    /// and a profile exists, seed the credentials form and auto-connect so
+    /// the 4-view chrome is reachable without interactive typing (the
+    /// sandbox's click-focus blocker, T039 report §4). Verification-only:
+    /// secrets never land in config or reports — the normal keyring store
+    /// still runs, and without both env vars this is a no-op.
+    fn maybe_auto_connect_from_env(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !matches!(self.state, S3State::NeedCredentials) {
+            return;
         }
+        let Ok(access) = std::env::var("CHRONOS_FM_S3_ACCESS_KEY") else {
+            return;
+        };
+        let Ok(secret) = std::env::var("CHRONOS_FM_S3_SECRET_KEY") else {
+            return;
+        };
+        if access.is_empty() || secret.is_empty() {
+            return;
+        }
+        self.access_key_input.update(cx, |input, cx| {
+            input.replace_all(access, window, cx);
+        });
+        self.secret_key_input.update(cx, |input, cx| {
+            input.replace_all(secret, window, cx);
+        });
+        tracing::info!(
+            "T039 verification seam: auto-connecting with credentials from env (profile '{}')",
+            self.config.s3.default_profile
+        );
+        self.start_connect(window, cx, false);
     }
 
     pub fn set_config(&mut self, config: Config) {
@@ -169,7 +204,7 @@ impl S3Page {
     /// async connect flow. The pane is created synchronously (before the
     /// spawn) so it exists for the Connecting render; the S3 provider is
     /// wired in asynchronously when the client is ready.
-    fn start_connect(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn start_connect(&mut self, window: &mut Window, cx: &mut Context<Self>, persist_credentials: bool) {
         let profile_name = self.config.s3.default_profile.clone();
         let profile = match self.config.s3.profiles.get(&profile_name) {
             Some(p) => chronos_fm_services::s3::S3Profile {
@@ -212,10 +247,15 @@ impl S3Page {
         cx.spawn_in(window, move |this: WeakEntity<Self>, cx: &mut AsyncWindowContext| {
             let mut cx = cx.clone();
             async move {
-                if let Ok(Some(manager)) = S3CredentialsManager::connect().await {
-                    let _ = manager
-                        .store(&profile_name, &access_key, &secret_key)
-                        .await;
+                // Persist to the keyring only on the interactive Connect path;
+                // the env-credential seam (verification-only) must not
+                // overwrite real stored credentials for the profile.
+                if persist_credentials {
+                    if let Ok(Some(manager)) = S3CredentialsManager::connect().await {
+                        let _ = manager
+                            .store(&profile_name, &access_key, &secret_key)
+                            .await;
+                    }
                 }
 
                 match S3Client::from_profile(
@@ -293,6 +333,16 @@ impl S3Page {
             pane.reload_provider(window, cx);
         });
         self.state = S3State::Browsing;
+        tracing::info!(
+            "S3 connect: wire_pane done — view={:?} buckets={} client={}",
+            self.view,
+            self.buckets.len(),
+            self.client.is_some()
+        );
+        if self.view == S3View::Buckets && self.buckets.is_empty() && !self.buckets_loading {
+            tracing::info!("S3 connect: retrying load_buckets after client arrived");
+            self.load_buckets(cx);
+        }
         cx.notify();
     }
 
@@ -361,10 +411,14 @@ impl S3Page {
                     this.buckets_loading = false;
                     match result {
                         Ok(list) => {
+                            tracing::info!("S3 buckets: loaded {} buckets", list.len());
                             this.buckets = list;
                             this.view_error = None;
                         }
-                        Err(e) => this.view_error = Some(format!("list_buckets: {e}")),
+                        Err(e) => {
+                            tracing::warn!("S3 buckets: list failed: {e}");
+                            this.view_error = Some(format!("list_buckets: {e}"))
+                        }
                     }
                     cx.notify();
                 });
@@ -1124,7 +1178,7 @@ fn credentials_form(page: &mut S3Page, cx: &mut Context<S3Page>) -> AnyElement {
                         let this = cx.weak_entity();
                         move |_event, window, cx: &mut App| {
                             this.update(cx, |this, cx| {
-                                this.start_connect(window, cx);
+                                this.start_connect(window, cx, true);
                             })
                             .ok();
                         }
