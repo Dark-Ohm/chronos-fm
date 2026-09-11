@@ -312,16 +312,20 @@ impl ExplorerPane {
     }
 
     /// Open the context menu for a file row at the given click position.
-    /// `index` is the row's position in `filtered_entries`, used by Rename.
+    /// `index` is the row's position in `filtered_entries`, used by Rename;
+    /// `is_dir` comes from the listing's `kind == "dir"` (T055 — the menu
+    /// shows "Open Terminal Here" only for folders, never a filesystem stat).
     pub(crate) fn open_context_menu(
         &mut self,
         file_path: String,
         index: usize,
+        is_dir: bool,
         position: gpui::Point<gpui::Pixels>,
         cx: &mut gpui::Context<Self>,
     ) {
         self.cancel_marquee();
-        let state = super::context_menu::ContextMenuState::for_file(&file_path, index, position);
+        let state =
+            super::context_menu::ContextMenuState::for_file(&file_path, index, is_dir, position);
         self.context_menu = Some(state);
         cx.notify();
     }

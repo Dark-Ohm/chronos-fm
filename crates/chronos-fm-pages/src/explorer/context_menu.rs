@@ -29,12 +29,22 @@ pub struct ContextMenuState {
     pub mime_type: String,
     /// Applications that claim to handle this MIME type.
     pub apps: Vec<DesktopApp>,
+    /// Whether `file_path` is a directory, derived from the listing metadata
+    /// (`kind == "dir"`) at the row/tile call site — never a filesystem stat
+    /// (T055). Gates the "Open Terminal Here" menu item.
+    pub is_dir: bool,
 }
 
 impl ContextMenuState {
     /// Create a context menu state for the given file path and its row index.
+    /// `is_dir` comes from the listing's `kind == "dir"` (T055), not a stat.
     /// Detects the MIME type and finds matching applications synchronously.
-    pub fn for_file(file_path: &str, index: usize, position: gpui::Point<Pixels>) -> Self {
+    pub fn for_file(
+        file_path: &str,
+        index: usize,
+        is_dir: bool,
+        position: gpui::Point<Pixels>,
+    ) -> Self {
         let mime_type = chronos_fm_services::mime::detect_mime_type(file_path)
             .unwrap_or_else(|| "application/octet-stream".to_string());
         let apps = chronos_fm_services::mime::find_apps_for_mime(&mime_type);
@@ -44,6 +54,7 @@ impl ContextMenuState {
             index: Some(index),
             mime_type,
             apps,
+            is_dir,
         }
     }
 
@@ -55,6 +66,7 @@ impl ContextMenuState {
             index: None,
             mime_type: String::new(),
             apps: Vec::new(),
+            is_dir: false,
         }
     }
 }
@@ -122,6 +134,23 @@ fn file_menu_items(
             )
             .into_any_element(),
     );
+
+    // "Open Terminal Here" — directory rows only (kind == "dir", T055).
+    // Launches the user's terminal emulator rooted at the folder.
+    if state.is_dir {
+        let term_path = file_path.to_string();
+        items.push(
+            menu_row("Open Terminal Here", fg, hover_bg, row_height)
+                .on_mouse_down(
+                    gpui::MouseButton::Left,
+                    cx.listener(move |this, _event, _window, cx| {
+                        this.open_terminal_here(&term_path, cx);
+                        this.close_context_menu(cx);
+                    }),
+                )
+                .into_any_element(),
+        );
+    }
 
     items.push(separator(border).into_any_element());
 
@@ -321,6 +350,21 @@ fn directory_menu_items(cx: &mut Context<ExplorerPane>) -> Vec<AnyElement> {
     } else {
         items.push(disabled_menu_row("Paste", muted, row_height).into_any_element());
     }
+
+    // "Open Terminal Here" — launches the terminal in the pane's current
+    // directory (T055). This one item covers both empty-area call sites
+    // (list and grid) since both build through this menu.
+    items.push(
+        menu_row("Open Terminal Here", fg, hover_bg, row_height)
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(move |this, _event, _window, cx| {
+                    this.open_terminal_here(&this.cwd.clone(), cx);
+                    this.close_context_menu(cx);
+                }),
+            )
+            .into_any_element(),
+    );
 
     items.push(
         menu_row("Refresh", fg, hover_bg, row_height)

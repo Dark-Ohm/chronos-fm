@@ -9,6 +9,7 @@ pub mod search;
 pub mod archive;
 /// MIME type detection and freedesktop.org application resolution.
 pub mod mime;
+pub mod terminal;
 /// Removable media device listing and mount control via `udisks2`.
 pub mod devices;
 /// Git repository status and operations (T010, probe).

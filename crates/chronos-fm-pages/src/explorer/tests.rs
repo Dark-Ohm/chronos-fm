@@ -1131,10 +1131,32 @@ fn context_menu_for_file_sets_path_and_index() {
     let state = super::context_menu::ContextMenuState::for_file(
         "/tmp/a.txt",
         3,
+        false,
         point(px(10.0), px(10.0)),
     );
     assert_eq!(state.file_path.as_deref(), Some("/tmp/a.txt"));
     assert_eq!(state.index, Some(3));
+    assert!(!state.is_dir, "a file row is not a directory (T055)");
+}
+
+#[test]
+fn context_menu_for_file_carries_is_dir_for_folders() {
+    // T055: the menu shows "Open Terminal Here" on folder rows only; `is_dir`
+    // is threaded from the listing's `kind == "dir"`, never a filesystem stat.
+    let state = super::context_menu::ContextMenuState::for_file(
+        "/tmp/a",
+        0,
+        true,
+        point(px(10.0), px(10.0)),
+    );
+    assert!(state.is_dir);
+    let non_dir = super::context_menu::ContextMenuState::for_file(
+        "/tmp/a.txt",
+        0,
+        false,
+        point(px(10.0), px(10.0)),
+    );
+    assert!(!non_dir.is_dir);
 }
 
 /// In-memory `FileSystemProvider` for the T021 regression tests: counts

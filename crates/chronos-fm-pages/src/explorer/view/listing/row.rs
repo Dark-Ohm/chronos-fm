@@ -75,6 +75,7 @@ pub fn render(
     let item_for_preview = item.clone();
     let item_for_activate = item.clone();
     let context_menu_path = item_for_preview.path.clone();
+    let context_menu_is_dir = item_for_preview.kind == "dir";
     let entity = cx.entity().clone();
     let geometry_entity = entity.clone();
     let file_drag = file_drag_for_item(page, item, ix, entity.clone());
@@ -180,6 +181,7 @@ pub fn render(
                 this.open_context_menu(
                     context_menu_path.clone(),
                     ix,
+                    context_menu_is_dir,
                     event.position,
                     cx,
                 );

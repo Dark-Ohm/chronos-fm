@@ -801,7 +801,13 @@ mod tests {
 
                 measure_pane(pane);
                 assert!(pane.begin_marquee(point(px(0.), px(0.)), additive));
-                pane.open_context_menu("/tmp/selected".to_string(), 0, point(px(0.), px(0.)), cx);
+                pane.open_context_menu(
+                    "/tmp/selected".to_string(),
+                    0,
+                    false,
+                    point(px(0.), px(0.)),
+                    cx,
+                );
                 assert!(pane.marquee.is_none());
             })
             .unwrap();

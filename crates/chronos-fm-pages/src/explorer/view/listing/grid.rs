@@ -67,6 +67,7 @@ fn render_grid_item(
     let activation_item = item.clone();
     let preview_item = item.clone();
     let context_menu_path = item.path.clone();
+    let context_menu_is_dir = item.kind == "dir";
     let entity = cx.entity().clone();
     let geometry_entity = entity.clone();
     let file_drag = file_drag_for_item(page, &item, ix, entity.clone());
@@ -134,7 +135,13 @@ fn render_grid_item(
                 if !this.is_selected(ix) {
                     this.select_single(ix);
                 }
-                this.open_context_menu(context_menu_path.clone(), ix, event.position, cx);
+                this.open_context_menu(
+                    context_menu_path.clone(),
+                    ix,
+                    context_menu_is_dir,
+                    event.position,
+                    cx,
+                );
                 cx.stop_propagation();
             }),
         )

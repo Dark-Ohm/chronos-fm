@@ -138,6 +138,18 @@ impl ExplorerPane {
         cx.notify();
     }
 
+    /// Launches the user's terminal emulator rooted at `path` (T055). Thin
+    /// wrapper over `chronos_fm_services::terminal` — the resolution and
+    /// argv-array construction live in the service; this only reports a
+    /// launch failure through the footer status, naming the command that
+    /// failed.
+    pub(crate) fn open_terminal_here(&mut self, path: &str, cx: &mut Context<Self>) {
+        if let Err(error) = chronos_fm_services::terminal::open_terminal_here(path) {
+            self.set_status(StatusLevel::Error, error);
+        }
+        cx.notify();
+    }
+
     /// Opens the shared trash-confirmation dialog for the current selection.
     /// Empty selections and repeated Delete events while a dialog is active
     /// are no-ops.
